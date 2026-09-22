@@ -185,6 +185,12 @@
       </div>
 
       <ul id="exercisesManageList"></ul>
+
+      <!-- Collapsed by default so the common view (active exercises) isn't
+           cluttered — archiving with no way back would defeat the point of
+           archiving instead of deleting. -->
+      <button id="toggleArchivedExercisesButton" class="card-action-button">Show archived</button>
+      <ul id="archivedExercisesList" hidden></ul>
     </section>
 
 
@@ -228,6 +234,9 @@
       </div>
 
       <ul id="gymsManageList"></ul>
+
+      <button id="toggleArchivedGymsButton" class="card-action-button">Show archived</button>
+      <ul id="archivedGymsList" hidden></ul>
     </section>
 
 
@@ -304,6 +313,9 @@
         <button id="addSchemeButton">Add scheme</button>
       </div>
       <ul id="schemesList"></ul>
+
+      <button id="toggleArchivedSchemesButton" class="card-action-button">Show archived</button>
+      <ul id="archivedSchemesList" hidden></ul>
     </section>
 
 

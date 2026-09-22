@@ -1037,12 +1037,52 @@ function renderExercisesManageList() {
       exercise.isArchived = true;
       saveDatabase(appState.database);
       renderExercisesManageList();
+      renderArchivedExercisesList();
     });
 
     rowElement.append(infoElement, musclesButton, gymToggleButton, archiveButton);
     listElement.appendChild(rowElement);
   }
 }
+
+// Collapsed by default (see the toggle button below) — archiving something
+// with no way back through the UI would defeat the reason it's archived
+// instead of deleted in the first place.
+function renderArchivedExercisesList() {
+  const listElement = document.getElementById("archivedExercisesList");
+  listElement.innerHTML = "";
+
+  for (const exercise of appState.database.exercises.filter((candidate) => candidate.isArchived)) {
+    const rowElement = document.createElement("li");
+    rowElement.className = "scheme-list-item";
+
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = exercise.name;
+
+    const unarchiveButton = document.createElement("button");
+    unarchiveButton.type = "button";
+    unarchiveButton.className = "small-button";
+    unarchiveButton.textContent = "Unarchive";
+    unarchiveButton.addEventListener("click", () => {
+      exercise.isArchived = false;
+      saveDatabase(appState.database);
+      renderExercisesManageList();
+      renderArchivedExercisesList();
+    });
+
+    rowElement.append(nameSpan, unarchiveButton);
+    listElement.appendChild(rowElement);
+  }
+}
+
+document.getElementById("toggleArchivedExercisesButton").addEventListener("click", (event) => {
+  const archivedListElement = document.getElementById("archivedExercisesList");
+  archivedListElement.hidden = !archivedListElement.hidden;
+  event.currentTarget.textContent = archivedListElement.hidden ? "Show archived" : "Hide archived";
+  if (!archivedListElement.hidden) {
+    renderArchivedExercisesList();
+  }
+});
 
 document.getElementById("addExerciseButton").addEventListener("click", () => {
   const nameInput = document.getElementById("newExerciseNameInput");
@@ -1252,12 +1292,49 @@ function renderGymsManageList() {
       gym.isArchived = true;
       saveDatabase(appState.database);
       renderGymsManageList();
+      renderArchivedGymsList();
     });
 
     rowElement.append(nameSpan, archiveButton);
     listElement.appendChild(rowElement);
   }
 }
+
+function renderArchivedGymsList() {
+  const listElement = document.getElementById("archivedGymsList");
+  listElement.innerHTML = "";
+
+  for (const gym of appState.database.gyms.filter((candidate) => candidate.isArchived)) {
+    const rowElement = document.createElement("li");
+    rowElement.className = "scheme-list-item";
+
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = gym.name;
+
+    const unarchiveButton = document.createElement("button");
+    unarchiveButton.type = "button";
+    unarchiveButton.className = "small-button";
+    unarchiveButton.textContent = "Unarchive";
+    unarchiveButton.addEventListener("click", () => {
+      gym.isArchived = false;
+      saveDatabase(appState.database);
+      renderGymsManageList();
+      renderArchivedGymsList();
+    });
+
+    rowElement.append(nameSpan, unarchiveButton);
+    listElement.appendChild(rowElement);
+  }
+}
+
+document.getElementById("toggleArchivedGymsButton").addEventListener("click", (event) => {
+  const archivedListElement = document.getElementById("archivedGymsList");
+  archivedListElement.hidden = !archivedListElement.hidden;
+  event.currentTarget.textContent = archivedListElement.hidden ? "Show archived" : "Hide archived";
+  if (!archivedListElement.hidden) {
+    renderArchivedGymsList();
+  }
+});
 
 document.getElementById("addGymButton").addEventListener("click", () => {
   const nameInput = document.getElementById("newGymNameInput");
@@ -1749,12 +1826,51 @@ function renderSchemesList() {
       template.isArchived = true;
       saveDatabase(appState.database);
       renderSchemesList();
+      renderArchivedSchemesList();
     });
 
     rowElement.append(nameSpan, editButton, archiveButton);
     listElement.appendChild(rowElement);
   }
 }
+
+function renderArchivedSchemesList() {
+  const listElement = document.getElementById("archivedSchemesList");
+  listElement.innerHTML = "";
+
+  const archivedTemplates = appState.database.workoutTemplates.filter((template) => template.isArchived);
+  for (const template of archivedTemplates) {
+    const rowElement = document.createElement("li");
+    rowElement.className = "scheme-list-item";
+
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = template.name;
+
+    const unarchiveButton = document.createElement("button");
+    unarchiveButton.type = "button";
+    unarchiveButton.className = "small-button";
+    unarchiveButton.textContent = "Unarchive";
+    unarchiveButton.addEventListener("click", () => {
+      template.isArchived = false;
+      saveDatabase(appState.database);
+      renderSchemesList();
+      renderArchivedSchemesList();
+      renderStartWorkoutChoices();
+    });
+
+    rowElement.append(nameSpan, unarchiveButton);
+    listElement.appendChild(rowElement);
+  }
+}
+
+document.getElementById("toggleArchivedSchemesButton").addEventListener("click", (event) => {
+  const archivedListElement = document.getElementById("archivedSchemesList");
+  archivedListElement.hidden = !archivedListElement.hidden;
+  event.currentTarget.textContent = archivedListElement.hidden ? "Show archived" : "Hide archived";
+  if (!archivedListElement.hidden) {
+    renderArchivedSchemesList();
+  }
+});
 
 document.getElementById("addSchemeButton").addEventListener("click", () => {
   appState.schemeDraft = {
