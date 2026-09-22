@@ -54,34 +54,57 @@ const schemesScreen = document.getElementById("schemesScreen");
 const schemeEditorScreen = document.getElementById("schemeEditorScreen");
 const exercisePickerScreen = document.getElementById("exercisePickerScreen");
 const plannedExerciseEntryPanel = document.getElementById("plannedExerciseEntryPanel");
+const exercisesScreen = document.getElementById("exercisesScreen");
+const historyScreen = document.getElementById("historyScreen");
+
+// Every top-level screen, so each show*Screen() function below can hide all
+// of them and then reveal just its own, without repeating this list six times.
+const allScreens = [
+  mainScreen, schemesScreen, schemeEditorScreen, exercisePickerScreen,
+  plannedExerciseEntryPanel, exercisesScreen, historyScreen
+];
+
+function hideAllScreens() {
+  for (const screen of allScreens) {
+    screen.hidden = true;
+  }
+}
 
 function showMainScreen() {
+  hideAllScreens();
   mainScreen.hidden = false;
-  schemesScreen.hidden = true;
-  schemeEditorScreen.hidden = true;
-  exercisePickerScreen.hidden = true;
-  plannedExerciseEntryPanel.hidden = true;
 }
 
 function showSchemesScreen() {
-  mainScreen.hidden = true;
+  hideAllScreens();
   schemesScreen.hidden = false;
-  schemeEditorScreen.hidden = true;
-  exercisePickerScreen.hidden = true;
-  plannedExerciseEntryPanel.hidden = true;
   renderSchemesList();
 }
 
 function showSchemeEditorScreen() {
-  schemesScreen.hidden = true;
+  hideAllScreens();
   schemeEditorScreen.hidden = false;
-  exercisePickerScreen.hidden = true;
-  plannedExerciseEntryPanel.hidden = true;
   renderSchemeEditor();
+}
+
+function showExercisesScreen() {
+  hideAllScreens();
+  exercisesScreen.hidden = false;
+  renderExercisesManageList();
+}
+
+function showHistoryScreen() {
+  hideAllScreens();
+  historyScreen.hidden = false;
+  renderHistoryList();
 }
 
 document.getElementById("manageSchemesButton").addEventListener("click", showSchemesScreen);
 document.getElementById("backFromSchemesButton").addEventListener("click", showMainScreen);
+document.getElementById("manageExercisesButton").addEventListener("click", showExercisesScreen);
+document.getElementById("backFromExercisesButton").addEventListener("click", showMainScreen);
+document.getElementById("viewHistoryButton").addEventListener("click", showHistoryScreen);
+document.getElementById("backFromHistoryButton").addEventListener("click", showMainScreen);
 
 
 // ---------------------------------------------------------------------------
@@ -126,7 +149,9 @@ function renderFreeformExerciseList() {
   const listElement = document.getElementById("exerciseList");
   listElement.innerHTML = "";
 
-  for (const exercise of appState.database.exercises) {
+  // Archived exercises stay in the data (old sets/schemes still reference
+  // them) but shouldn't be offered for new logging.
+  for (const exercise of appState.database.exercises.filter((candidate) => !candidate.isArchived)) {
     const itemElement = document.createElement("li");
     const buttonElement = document.createElement("button");
     buttonElement.type = "button";
@@ -490,6 +515,172 @@ document.getElementById("closeChecklistButton").addEventListener("click", () => 
 
 
 // ---------------------------------------------------------------------------
+// Exercise library (add new exercises, archive old ones)
+// ---------------------------------------------------------------------------
+
+// Turns a name into the kind of id schema.js expects for Exercise records:
+// stable, lowercase, hyphenated (see the Exercise shape comment in
+// schema.js). Runs once when an exercise is created; the id never changes
+// after that even if the name is edited later.
+function slugify(name) {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function renderExercisesManageList() {
+  const listElement = document.getElementById("exercisesManageList");
+  listElement.innerHTML = "";
+
+  for (const exercise of appState.database.exercises.filter((candidate) => !candidate.isArchived)) {
+    const rowElement = document.createElement("li");
+    rowElement.className = "scheme-list-item";
+
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = exercise.name;
+
+    const archiveButton = document.createElement("button");
+    archiveButton.type = "button";
+    archiveButton.className = "small-button";
+    archiveButton.textContent = "Archive";
+    archiveButton.addEventListener("click", () => {
+      // Archiving instead of deleting keeps past sets and schemes that
+      // reference this exercise resolvable.
+      exercise.isArchived = true;
+      saveDatabase(appState.database);
+      renderExercisesManageList();
+    });
+
+    rowElement.append(nameSpan, archiveButton);
+    listElement.appendChild(rowElement);
+  }
+}
+
+document.getElementById("addExerciseButton").addEventListener("click", () => {
+  const nameInput = document.getElementById("newExerciseNameInput");
+  const name = nameInput.value.trim();
+  if (name === "") {
+    alert("Enter a name for the exercise.");
+    return;
+  }
+
+  const baseId = slugify(name);
+  if (baseId === "") {
+    alert("That name needs at least one letter or number.");
+    return;
+  }
+
+  // Exercise ids must be stable and unique (schema.js: "never changes"), so
+  // two exercises can't share one — append a number if the plain slug is
+  // already taken.
+  let id = baseId;
+  let suffix = 2;
+  while (appState.database.exercises.some((exercise) => exercise.id === id)) {
+    id = `${baseId}-${suffix}`;
+    suffix++;
+  }
+
+  appState.database.exercises.push({
+    id,
+    name,
+    // Left empty on purpose — per schema.js, muscle weights are for the
+    // future training engine and nothing reads them yet.
+    muscles: {},
+    isArchived: false
+  });
+  saveDatabase(appState.database);
+  nameInput.value = "";
+  renderExercisesManageList();
+});
+
+
+// ---------------------------------------------------------------------------
+// History (read-only list of finished workouts)
+// ---------------------------------------------------------------------------
+
+function formatSessionDate(isoString) {
+  return new Date(isoString).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric"
+  });
+}
+
+function renderHistoryList() {
+  const listElement = document.getElementById("historyList");
+  listElement.innerHTML = "";
+
+  const pastSessions = appState.database.sessions
+    .filter((session) => session.endedAt !== null)
+    .slice()
+    .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+
+  if (pastSessions.length === 0) {
+    const emptyMessage = document.createElement("p");
+    emptyMessage.textContent = "No finished workouts yet.";
+    listElement.appendChild(emptyMessage);
+    return;
+  }
+
+  for (const session of pastSessions) {
+    const template = session.templateId
+      ? appState.database.workoutTemplates.find((candidate) => candidate.id === session.templateId)
+      : null;
+
+    const cardElement = document.createElement("li");
+    cardElement.className = "history-card";
+
+    const headerElement = document.createElement("div");
+    headerElement.className = "history-card-header";
+    headerElement.textContent =
+      `${formatSessionDate(session.startedAt)} · ${template ? template.name : "Free-form"}`;
+    cardElement.appendChild(headerElement);
+
+    // Group this session's sets by exercise, in the order each exercise was
+    // first worked, so the summary reads like the workout actually went.
+    const setsByExercise = [];
+    const sessionSets = appState.database.sets
+      .filter((set) => set.sessionId === session.id)
+      .sort((a, b) => a.order - b.order);
+
+    for (const set of sessionSets) {
+      let group = setsByExercise.find((candidate) => candidate.exerciseId === set.exerciseId);
+      if (!group) {
+        group = { exerciseId: set.exerciseId, sets: [] };
+        setsByExercise.push(group);
+      }
+      group.sets.push(set);
+    }
+
+    if (setsByExercise.length === 0) {
+      const emptyLine = document.createElement("div");
+      emptyLine.className = "history-card-line";
+      emptyLine.textContent = "No sets logged.";
+      cardElement.appendChild(emptyLine);
+    }
+
+    for (const group of setsByExercise) {
+      const exercise = appState.database.exercises.find((candidate) => candidate.id === group.exerciseId);
+      const setsText = group.sets
+        .map((set) => `${set.load} kg × ${set.reps}${set.isWarmup ? " (warmup)" : ` (RIR ${set.rir})`}`)
+        .join(", ");
+
+      const lineElement = document.createElement("div");
+      lineElement.className = "history-card-line";
+      // Exercise names are never deleted (only archived), so this lookup
+      // always resolves even for a long-retired exercise.
+      lineElement.textContent = `${exercise.name}: ${setsText}`;
+      cardElement.appendChild(lineElement);
+    }
+
+    listElement.appendChild(cardElement);
+  }
+}
+
+
+// ---------------------------------------------------------------------------
 // Schemes list
 // ---------------------------------------------------------------------------
 
@@ -636,7 +827,7 @@ function renderExercisePicker() {
   const listElement = document.getElementById("exercisePickerList");
   listElement.innerHTML = "";
 
-  for (const exercise of appState.database.exercises) {
+  for (const exercise of appState.database.exercises.filter((candidate) => !candidate.isArchived)) {
     const itemElement = document.createElement("li");
     const buttonElement = document.createElement("button");
     buttonElement.type = "button";

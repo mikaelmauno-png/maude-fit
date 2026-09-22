@@ -62,8 +62,17 @@ ul li {
 
 .button-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 16px;
+}
+
+/* A button in a wrapped .button-row would otherwise shrink to a sliver next
+   to its siblings on a narrow phone; this keeps each one a sane minimum
+   width so it wraps to its own space instead. */
+.button-row button {
+  flex: 1 1 auto;
+  min-width: 140px;
 }
 
 /* Same idea as .button-row, but stacked: used for the "Start: <scheme>"
@@ -209,6 +218,27 @@ h1 {
   display: block;
   margin-bottom: 16px;
   font-size: 1.05rem;
+}
+
+/* One finished workout in the History screen. Unlike .scheme-list-item, this
+   holds several lines (date/scheme, then one line per exercise), so it's a
+   plain block rather than a flex row. */
+.history-card {
+  background-color: #1e1e1e;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 8px;
+}
+
+.history-card-header {
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+
+.history-card-line {
+  color: #b0b0b0;
+  font-size: 0.95rem;
+  margin-bottom: 4px;
 }
 
 .text-field input {

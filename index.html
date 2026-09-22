@@ -21,6 +21,8 @@
 
       <div class="button-row">
         <button id="manageSchemesButton">Manage schemes</button>
+        <button id="manageExercisesButton">Manage exercises</button>
+        <button id="viewHistoryButton">History</button>
       </div>
 
       <!-- Filled with one "Start: <scheme name>" button per active scheme,
@@ -108,6 +110,39 @@
       <!-- A real file picker can't be styled to match the other buttons, so
            it stays hidden and the Import button above triggers it instead. -->
       <input type="file" id="importFileInput" accept="application/json" hidden>
+    </section>
+
+
+    <!-- ===================================================================
+         EXERCISE LIBRARY SCREEN: add new exercises, archive old ones.
+         =================================================================== -->
+    <section id="exercisesScreen" hidden>
+      <h1>Exercise library</h1>
+      <div class="button-row">
+        <button id="backFromExercisesButton">Back</button>
+      </div>
+
+      <label class="text-field">
+        New exercise name
+        <input type="text" id="newExerciseNameInput" placeholder="e.g. Incline dumbbell press">
+      </label>
+      <div class="button-row">
+        <button id="addExerciseButton">Add exercise</button>
+      </div>
+
+      <ul id="exercisesManageList"></ul>
+    </section>
+
+
+    <!-- ===================================================================
+         HISTORY SCREEN: read-only list of finished workouts.
+         =================================================================== -->
+    <section id="historyScreen" hidden>
+      <h1>History</h1>
+      <div class="button-row">
+        <button id="backFromHistoryButton">Back</button>
+      </div>
+      <ul id="historyList"></ul>
     </section>
 
 
