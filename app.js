@@ -7,14 +7,29 @@
 // the user taps something.
 // ---------------------------------------------------------------------------
 
-// The single app-state object. `database` is the saved data; `activeSessionId`
-// is null unless a workout is currently in progress; `setDraft` holds the
-// in-progress values for whichever set is currently being entered (null when
-// the entry panel is closed).
+// Loading can fail if localStorage holds data saved under an older
+// SCHEMA_VERSION (see schema.js) — there's no migration written yet, so
+// rather than leaving the app permanently broken, this starts fresh and says
+// so clearly, instead of silently discarding whatever was there.
+let initialDatabase;
+try {
+  initialDatabase = loadDatabase();
+} catch (error) {
+  console.error("Could not load saved data, starting fresh.", error);
+  alert(
+    "Saved data was from an older version of this app and could not be loaded. Starting with a blank database."
+  );
+  initialDatabase = createEmptyDatabase();
+}
+
+// The single app-state object.
 const appState = {
-  database: loadDatabase(),
-  activeSessionId: null,
-  setDraft: null
+  database: initialDatabase,
+  activeSessionId: null,       // null unless a workout is in progress
+  setDraft: null,               // in-progress values for the set being logged
+  checklistExerciseId: null,   // which exercise's set checklist is open
+  schemeDraft: null,           // in-progress copy of the scheme being edited
+  plannedExerciseDraft: null   // in-progress values for a planned exercise
 };
 
 // On a brand-new install the exercise library is empty. Fill it with the
@@ -27,14 +42,87 @@ if (appState.database.exercises.length === 0) {
 
 
 // ---------------------------------------------------------------------------
-// Exercise list
+// Screens
+//
+// The app has several full-screen sections that are never shown at once.
+// Rather than a router, this just toggles each section's `hidden` attribute
+// directly — simple enough for the handful of screens this app has.
 // ---------------------------------------------------------------------------
 
-// Rebuild the on-screen exercise list from whatever is currently in
-// `appState.database`. Called on load, after a workout starts or ends (since
-// that changes whether the buttons are tappable), and after a successful
-// import (since import can replace the whole list).
-function renderExerciseList() {
+const mainScreen = document.getElementById("mainScreen");
+const schemesScreen = document.getElementById("schemesScreen");
+const schemeEditorScreen = document.getElementById("schemeEditorScreen");
+const exercisePickerScreen = document.getElementById("exercisePickerScreen");
+const plannedExerciseEntryPanel = document.getElementById("plannedExerciseEntryPanel");
+
+function showMainScreen() {
+  mainScreen.hidden = false;
+  schemesScreen.hidden = true;
+  schemeEditorScreen.hidden = true;
+  exercisePickerScreen.hidden = true;
+  plannedExerciseEntryPanel.hidden = true;
+}
+
+function showSchemesScreen() {
+  mainScreen.hidden = true;
+  schemesScreen.hidden = false;
+  schemeEditorScreen.hidden = true;
+  exercisePickerScreen.hidden = true;
+  plannedExerciseEntryPanel.hidden = true;
+  renderSchemesList();
+}
+
+function showSchemeEditorScreen() {
+  schemesScreen.hidden = true;
+  schemeEditorScreen.hidden = false;
+  exercisePickerScreen.hidden = true;
+  plannedExerciseEntryPanel.hidden = true;
+  renderSchemeEditor();
+}
+
+document.getElementById("manageSchemesButton").addEventListener("click", showSchemesScreen);
+document.getElementById("backFromSchemesButton").addEventListener("click", showMainScreen);
+
+
+// ---------------------------------------------------------------------------
+// Looking up the active session and the scheme it follows
+// ---------------------------------------------------------------------------
+
+function getActiveSession() {
+  if (appState.activeSessionId === null) {
+    return null;
+  }
+  return appState.database.sessions.find((session) => session.id === appState.activeSessionId) || null;
+}
+
+// Returns the WorkoutTemplate the current workout is following, or null for
+// a free-form workout (or when no workout is active).
+function getActiveTemplate() {
+  const session = getActiveSession();
+  if (!session || !session.templateId) {
+    return null;
+  }
+  return appState.database.workoutTemplates.find((template) => template.id === session.templateId) || null;
+}
+
+
+// ---------------------------------------------------------------------------
+// Exercise list (main screen)
+// ---------------------------------------------------------------------------
+
+// Redraws whichever exercise list applies right now: the full library when
+// there's no active scheme, or just that scheme's exercises with their
+// targets and progress when there is one.
+function renderExerciseArea() {
+  const template = getActiveTemplate();
+  if (template) {
+    renderSchemeExerciseList(template);
+  } else {
+    renderFreeformExerciseList();
+  }
+}
+
+function renderFreeformExerciseList() {
   const listElement = document.getElementById("exerciseList");
   listElement.innerHTML = "";
 
@@ -55,52 +143,120 @@ function renderExerciseList() {
   }
 }
 
-renderExerciseList();
+function renderSchemeExerciseList(template) {
+  const listElement = document.getElementById("exerciseList");
+  listElement.innerHTML = "";
+
+  for (const planned of template.plannedExercises) {
+    const exercise = appState.database.exercises.find((candidate) => candidate.id === planned.exerciseId);
+    const loggedCount = appState.database.sets.filter(
+      (set) =>
+        set.sessionId === appState.activeSessionId &&
+        set.exerciseId === planned.exerciseId &&
+        !set.isWarmup
+    ).length;
+
+    const itemElement = document.createElement("li");
+    const buttonElement = document.createElement("button");
+    buttonElement.type = "button";
+    buttonElement.className = "exercise-item";
+
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "exercise-item-name";
+    nameSpan.textContent = exercise.name;
+
+    const detailSpan = document.createElement("span");
+    detailSpan.className = "exercise-item-detail";
+    detailSpan.textContent =
+      `${loggedCount}/${planned.targetSets} sets · ${planned.targetRepsMin}-${planned.targetRepsMax} reps @ ${planned.targetLoad} kg`;
+
+    buttonElement.append(nameSpan, detailSpan);
+    buttonElement.addEventListener("click", () => {
+      openChecklist(planned.exerciseId);
+    });
+
+    itemElement.appendChild(buttonElement);
+    listElement.appendChild(itemElement);
+  }
+}
+
+renderExerciseArea();
 
 
 // ---------------------------------------------------------------------------
 // Starting and ending a workout
 // ---------------------------------------------------------------------------
 
-const startWorkoutButton = document.getElementById("startWorkoutButton");
+const startWorkoutChoices = document.getElementById("startWorkoutChoices");
 const endWorkoutButton = document.getElementById("endWorkoutButton");
 const workoutStatus = document.getElementById("workoutStatus");
 
-// Shows/hides the Start/End buttons and the status line to match whether a
-// workout is currently active. Called whenever activeSessionId changes.
-function updateWorkoutControls() {
-  const isActive = appState.activeSessionId !== null;
-  startWorkoutButton.hidden = isActive;
-  endWorkoutButton.hidden = !isActive;
-  workoutStatus.textContent = isActive ? "Workout in progress" : "";
+// Rebuilds the "Start: <scheme>" / "Start free-form workout" buttons, and
+// hides the whole group once a workout is already in progress.
+function renderStartWorkoutChoices() {
+  startWorkoutChoices.innerHTML = "";
+
+  if (appState.activeSessionId !== null) {
+    startWorkoutChoices.hidden = true;
+    return;
+  }
+  startWorkoutChoices.hidden = false;
+
+  const activeTemplates = appState.database.workoutTemplates.filter((template) => !template.isArchived);
+  for (const template of activeTemplates) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = `Start: ${template.name}`;
+    button.addEventListener("click", () => startWorkout(template.id));
+    startWorkoutChoices.appendChild(button);
+  }
+
+  const freeformButton = document.createElement("button");
+  freeformButton.type = "button";
+  freeformButton.textContent = "Start free-form workout";
+  freeformButton.addEventListener("click", () => startWorkout(null));
+  startWorkoutChoices.appendChild(freeformButton);
 }
 
-startWorkoutButton.addEventListener("click", () => {
+function updateWorkoutControls() {
+  const isActive = appState.activeSessionId !== null;
+  endWorkoutButton.hidden = !isActive;
+  workoutStatus.textContent = isActive ? "Workout in progress" : "";
+  renderStartWorkoutChoices();
+}
+
+function startWorkout(templateId) {
   const session = {
     id: crypto.randomUUID(),
     startedAt: new Date().toISOString(),
     endedAt: null,
     dayStatus: "normal",
-    notes: ""
+    notes: "",
+    templateId: templateId
   };
   appState.database.sessions.push(session);
   appState.activeSessionId = session.id;
   saveDatabase(appState.database);
   updateWorkoutControls();
-  renderExerciseList();
-});
+  renderExerciseArea();
+}
 
 endWorkoutButton.addEventListener("click", () => {
-  const session = appState.database.sessions.find(
-    (candidate) => candidate.id === appState.activeSessionId
-  );
+  const session = getActiveSession();
   session.endedAt = new Date().toISOString();
-  appState.activeSessionId = null;
   saveDatabase(appState.database);
+  // Closing these first, while activeSessionId still points at the session
+  // that's ending, matters: closeSetEntryPanel() can re-render the checklist,
+  // which looks up the active template through activeSessionId — clearing it
+  // first would make that lookup fail.
+  closeChecklist();
   closeSetEntryPanel();
+  appState.activeSessionId = null;
   updateWorkoutControls();
-  renderExerciseList();
+  renderExerciseArea();
 });
+
+renderStartWorkoutChoices();
 
 
 // ---------------------------------------------------------------------------
@@ -109,6 +265,7 @@ endWorkoutButton.addEventListener("click", () => {
 
 const setEntryPanel = document.getElementById("setEntryPanel");
 const setEntryExerciseName = document.getElementById("setEntryExerciseName");
+const plannedTarget = document.getElementById("plannedTarget");
 const previousPerformance = document.getElementById("previousPerformance");
 const rirRow = document.getElementById("rirRow");
 const warmupCheckbox = document.getElementById("warmupCheckbox");
@@ -145,21 +302,31 @@ function renderSetDraft() {
   warmupCheckbox.checked = appState.setDraft.isWarmup;
 }
 
-function openSetEntryPanel(exerciseId) {
+// `planTarget` (optional) is `{ load, repsMin, repsMax }` from a scheme's
+// plan, passed in when opened from the set checklist below. When present,
+// load/reps default to the plan rather than to past performance, since the
+// plan is what today is supposed to follow.
+function openSetEntryPanel(exerciseId, planTarget = null) {
   const exercise = appState.database.exercises.find((candidate) => candidate.id === exerciseId);
   const previous = findPreviousWorkingSet(exerciseId);
 
-  // Pre-fill from the last working set for this exercise, if there is one,
-  // so re-entering the same weight/reps needs zero taps on a typical set.
   appState.setDraft = {
     exerciseId,
-    load: previous ? previous.load : 20,
-    reps: previous ? previous.reps : 8,
+    load: planTarget ? planTarget.load : (previous ? previous.load : 20),
+    reps: planTarget ? planTarget.repsMin : (previous ? previous.reps : 8),
     rir: previous ? previous.rir : 2,
     isWarmup: false
   };
 
   setEntryExerciseName.textContent = exercise.name;
+
+  if (planTarget) {
+    plannedTarget.textContent = `Planned: ${planTarget.repsMin}-${planTarget.repsMax} reps @ ${planTarget.load} kg`;
+    plannedTarget.hidden = false;
+  } else {
+    plannedTarget.hidden = true;
+  }
+
   previousPerformance.textContent = previous
     ? `Last: ${previous.load} kg × ${previous.reps} (RIR ${previous.rir})`
     : "No previous data for this exercise.";
@@ -171,24 +338,36 @@ function openSetEntryPanel(exerciseId) {
 function closeSetEntryPanel() {
   appState.setDraft = null;
   setEntryPanel.hidden = true;
+  // The checklist's logged/remaining counts and the scheme exercise list's
+  // progress both depend on the sets that exist, so refresh them too.
+  if (!document.getElementById("plannedSetChecklist").hidden) {
+    renderChecklist();
+  }
+  renderExerciseArea();
 }
 
-// One shared handler for all six stepper buttons: which field and which
-// direction are read from the button's own data attributes, set in the
-// listener registration below, rather than writing six near-identical
-// functions.
-function adjustSetDraftField(field, step, minimum) {
-  const nextValue = appState.setDraft[field] + step;
-  appState.setDraft[field] = Math.max(nextValue, minimum);
-  renderSetDraft();
+// One shared handler for every stepper button pair (set entry and planned
+// exercise entry both use this): which draft object, field, step, and floor
+// to use are supplied by each button's own listener below, rather than
+// writing a near-identical function per field.
+function adjustDraftField(draftObject, field, step, minimum, render) {
+  const nextValue = draftObject[field] + step;
+  draftObject[field] = Math.max(nextValue, minimum);
+  render();
 }
 
-document.getElementById("loadDecrement").addEventListener("click", () => adjustSetDraftField("load", -2.5, 0));
-document.getElementById("loadIncrement").addEventListener("click", () => adjustSetDraftField("load", 2.5, 0));
-document.getElementById("repsDecrement").addEventListener("click", () => adjustSetDraftField("reps", -1, 1));
-document.getElementById("repsIncrement").addEventListener("click", () => adjustSetDraftField("reps", 1, 1));
-document.getElementById("rirDecrement").addEventListener("click", () => adjustSetDraftField("rir", -1, 0));
-document.getElementById("rirIncrement").addEventListener("click", () => adjustSetDraftField("rir", 1, 0));
+document.getElementById("loadDecrement").addEventListener("click", () =>
+  adjustDraftField(appState.setDraft, "load", -2.5, 0, renderSetDraft));
+document.getElementById("loadIncrement").addEventListener("click", () =>
+  adjustDraftField(appState.setDraft, "load", 2.5, 0, renderSetDraft));
+document.getElementById("repsDecrement").addEventListener("click", () =>
+  adjustDraftField(appState.setDraft, "reps", -1, 1, renderSetDraft));
+document.getElementById("repsIncrement").addEventListener("click", () =>
+  adjustDraftField(appState.setDraft, "reps", 1, 1, renderSetDraft));
+document.getElementById("rirDecrement").addEventListener("click", () =>
+  adjustDraftField(appState.setDraft, "rir", -1, 0, renderSetDraft));
+document.getElementById("rirIncrement").addEventListener("click", () =>
+  adjustDraftField(appState.setDraft, "rir", 1, 0, renderSetDraft));
 
 warmupCheckbox.addEventListener("change", () => {
   appState.setDraft.isWarmup = warmupCheckbox.checked;
@@ -225,6 +404,310 @@ document.getElementById("saveSetButton").addEventListener("click", () => {
 
 document.getElementById("cancelSetButton").addEventListener("click", () => {
   closeSetEntryPanel();
+});
+
+
+// ---------------------------------------------------------------------------
+// Planned-set checklist (shown instead of the plain exercise tap, when the
+// active workout follows a scheme)
+// ---------------------------------------------------------------------------
+
+const plannedSetChecklist = document.getElementById("plannedSetChecklist");
+const checklistExerciseName = document.getElementById("checklistExerciseName");
+const checklistRows = document.getElementById("checklistRows");
+
+function openChecklist(exerciseId) {
+  appState.checklistExerciseId = exerciseId;
+  plannedSetChecklist.hidden = false;
+  renderChecklist();
+}
+
+function closeChecklist() {
+  appState.checklistExerciseId = null;
+  plannedSetChecklist.hidden = true;
+}
+
+function renderChecklist() {
+  const template = getActiveTemplate();
+  const planned = template.plannedExercises.find(
+    (candidate) => candidate.exerciseId === appState.checklistExerciseId
+  );
+  const exercise = appState.database.exercises.find(
+    (candidate) => candidate.id === appState.checklistExerciseId
+  );
+
+  checklistExerciseName.textContent = exercise.name;
+  checklistRows.innerHTML = "";
+
+  const loggedSets = appState.database.sets
+    .filter(
+      (set) =>
+        set.sessionId === appState.activeSessionId &&
+        set.exerciseId === appState.checklistExerciseId &&
+        !set.isWarmup
+    )
+    .sort((a, b) => a.order - b.order);
+
+  for (let setIndex = 0; setIndex < planned.targetSets; setIndex++) {
+    const rowElement = document.createElement("li");
+    rowElement.className = "scheme-list-item";
+    const loggedSet = loggedSets[setIndex];
+
+    if (loggedSet) {
+      const doneSpan = document.createElement("span");
+      doneSpan.textContent =
+        `Set ${setIndex + 1}: ${loggedSet.load} kg × ${loggedSet.reps} (RIR ${loggedSet.rir}) ✓`;
+      rowElement.appendChild(doneSpan);
+    } else {
+      const rowButton = document.createElement("button");
+      rowButton.type = "button";
+      rowButton.className = "exercise-item";
+      rowButton.textContent =
+        `Set ${setIndex + 1}: target ${planned.targetRepsMin}-${planned.targetRepsMax} reps @ ${planned.targetLoad} kg`;
+      rowButton.addEventListener("click", () => {
+        openSetEntryPanel(appState.checklistExerciseId, {
+          load: planned.targetLoad,
+          repsMin: planned.targetRepsMin,
+          repsMax: planned.targetRepsMax
+        });
+      });
+      rowElement.appendChild(rowButton);
+    }
+
+    checklistRows.appendChild(rowElement);
+  }
+}
+
+document.getElementById("addExtraSetButton").addEventListener("click", () => {
+  // Beyond the planned count, fall back to ordinary previous-performance
+  // pre-filling rather than a plan target.
+  openSetEntryPanel(appState.checklistExerciseId);
+});
+
+document.getElementById("closeChecklistButton").addEventListener("click", () => {
+  closeChecklist();
+});
+
+
+// ---------------------------------------------------------------------------
+// Schemes list
+// ---------------------------------------------------------------------------
+
+function renderSchemesList() {
+  const listElement = document.getElementById("schemesList");
+  listElement.innerHTML = "";
+
+  const activeTemplates = appState.database.workoutTemplates.filter((template) => !template.isArchived);
+  for (const template of activeTemplates) {
+    const rowElement = document.createElement("li");
+    rowElement.className = "scheme-list-item";
+
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = template.name;
+
+    const editButton = document.createElement("button");
+    editButton.type = "button";
+    editButton.className = "small-button";
+    editButton.textContent = "Edit";
+    editButton.addEventListener("click", () => {
+      // A deep copy, so cancelling the edit doesn't leave half-applied
+      // changes on the saved scheme.
+      appState.schemeDraft = JSON.parse(JSON.stringify(template));
+      showSchemeEditorScreen();
+    });
+
+    const archiveButton = document.createElement("button");
+    archiveButton.type = "button";
+    archiveButton.className = "small-button";
+    archiveButton.textContent = "Archive";
+    archiveButton.addEventListener("click", () => {
+      // Archiving instead of deleting keeps past sessions that followed this
+      // scheme resolvable, the same reasoning as Exercise.isArchived.
+      template.isArchived = true;
+      saveDatabase(appState.database);
+      renderSchemesList();
+    });
+
+    rowElement.append(nameSpan, editButton, archiveButton);
+    listElement.appendChild(rowElement);
+  }
+}
+
+document.getElementById("addSchemeButton").addEventListener("click", () => {
+  appState.schemeDraft = {
+    id: crypto.randomUUID(),
+    name: "",
+    isArchived: false,
+    plannedExercises: []
+  };
+  showSchemeEditorScreen();
+});
+
+
+// ---------------------------------------------------------------------------
+// Scheme editor
+// ---------------------------------------------------------------------------
+
+const schemeNameInput = document.getElementById("schemeNameInput");
+
+function renderSchemeEditor() {
+  // Whether this id already exists among saved schemes tells new from
+  // existing, without needing extra state that would have to be kept out of
+  // what eventually gets saved.
+  const isNewScheme = !appState.database.workoutTemplates.some(
+    (template) => template.id === appState.schemeDraft.id
+  );
+  document.getElementById("schemeEditorTitle").textContent = isNewScheme ? "New scheme" : "Edit scheme";
+  schemeNameInput.value = appState.schemeDraft.name;
+
+  const listElement = document.getElementById("plannedExerciseList");
+  listElement.innerHTML = "";
+
+  appState.schemeDraft.plannedExercises.forEach((planned, index) => {
+    const exercise = appState.database.exercises.find((candidate) => candidate.id === planned.exerciseId);
+
+    const rowElement = document.createElement("li");
+    rowElement.className = "scheme-list-item";
+
+    const detailSpan = document.createElement("span");
+    detailSpan.textContent =
+      `${exercise.name}: ${planned.targetSets} × ${planned.targetRepsMin}-${planned.targetRepsMax} @ ${planned.targetLoad} kg`;
+
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.className = "small-button";
+    removeButton.textContent = "Remove";
+    removeButton.addEventListener("click", () => {
+      appState.schemeDraft.plannedExercises.splice(index, 1);
+      renderSchemeEditor();
+    });
+
+    rowElement.append(detailSpan, removeButton);
+    listElement.appendChild(rowElement);
+  });
+}
+
+schemeNameInput.addEventListener("input", () => {
+  appState.schemeDraft.name = schemeNameInput.value;
+});
+
+document.getElementById("addPlannedExerciseButton").addEventListener("click", () => {
+  exercisePickerScreen.hidden = false;
+  schemeEditorScreen.hidden = true;
+  renderExercisePicker();
+});
+
+document.getElementById("saveSchemeButton").addEventListener("click", () => {
+  const draft = appState.schemeDraft;
+
+  if (draft.name.trim() === "") {
+    alert("Give the scheme a name before saving.");
+    return;
+  }
+  if (draft.plannedExercises.length === 0) {
+    alert("Add at least one exercise before saving.");
+    return;
+  }
+
+  const existingIndex = appState.database.workoutTemplates.findIndex((template) => template.id === draft.id);
+  if (existingIndex === -1) {
+    appState.database.workoutTemplates.push(draft);
+  } else {
+    appState.database.workoutTemplates[existingIndex] = draft;
+  }
+
+  saveDatabase(appState.database);
+  appState.schemeDraft = null;
+  renderStartWorkoutChoices();
+  showSchemesScreen();
+});
+
+document.getElementById("cancelSchemeEditButton").addEventListener("click", () => {
+  appState.schemeDraft = null;
+  showSchemesScreen();
+});
+
+
+// ---------------------------------------------------------------------------
+// Exercise picker (for adding an exercise to the scheme being edited)
+// ---------------------------------------------------------------------------
+
+function renderExercisePicker() {
+  const listElement = document.getElementById("exercisePickerList");
+  listElement.innerHTML = "";
+
+  for (const exercise of appState.database.exercises) {
+    const itemElement = document.createElement("li");
+    const buttonElement = document.createElement("button");
+    buttonElement.type = "button";
+    buttonElement.className = "exercise-item";
+    buttonElement.textContent = exercise.name;
+    buttonElement.addEventListener("click", () => {
+      appState.plannedExerciseDraft = {
+        exerciseId: exercise.id,
+        targetSets: 3,
+        targetRepsMin: 8,
+        targetRepsMax: 10,
+        targetLoad: 20
+      };
+      document.getElementById("plannedExerciseEntryName").textContent = exercise.name;
+      renderPlannedExerciseDraft();
+      exercisePickerScreen.hidden = true;
+      plannedExerciseEntryPanel.hidden = false;
+    });
+    itemElement.appendChild(buttonElement);
+    listElement.appendChild(itemElement);
+  }
+}
+
+document.getElementById("cancelExercisePickerButton").addEventListener("click", () => {
+  exercisePickerScreen.hidden = true;
+  schemeEditorScreen.hidden = false;
+});
+
+
+// ---------------------------------------------------------------------------
+// Planned exercise target entry (sets / rep range / load for one exercise
+// within the scheme being edited)
+// ---------------------------------------------------------------------------
+
+function renderPlannedExerciseDraft() {
+  const draft = appState.plannedExerciseDraft;
+  document.getElementById("targetSetsValue").textContent = draft.targetSets;
+  document.getElementById("targetRepsMinValue").textContent = draft.targetRepsMin;
+  document.getElementById("targetRepsMaxValue").textContent = draft.targetRepsMax;
+  document.getElementById("targetLoadValue").textContent = `${draft.targetLoad} kg`;
+}
+
+document.getElementById("targetSetsDecrement").addEventListener("click", () =>
+  adjustDraftField(appState.plannedExerciseDraft, "targetSets", -1, 1, renderPlannedExerciseDraft));
+document.getElementById("targetSetsIncrement").addEventListener("click", () =>
+  adjustDraftField(appState.plannedExerciseDraft, "targetSets", 1, 1, renderPlannedExerciseDraft));
+document.getElementById("targetRepsMinDecrement").addEventListener("click", () =>
+  adjustDraftField(appState.plannedExerciseDraft, "targetRepsMin", -1, 1, renderPlannedExerciseDraft));
+document.getElementById("targetRepsMinIncrement").addEventListener("click", () =>
+  adjustDraftField(appState.plannedExerciseDraft, "targetRepsMin", 1, 1, renderPlannedExerciseDraft));
+document.getElementById("targetRepsMaxDecrement").addEventListener("click", () =>
+  adjustDraftField(appState.plannedExerciseDraft, "targetRepsMax", -1, 1, renderPlannedExerciseDraft));
+document.getElementById("targetRepsMaxIncrement").addEventListener("click", () =>
+  adjustDraftField(appState.plannedExerciseDraft, "targetRepsMax", 1, 1, renderPlannedExerciseDraft));
+document.getElementById("targetLoadDecrement").addEventListener("click", () =>
+  adjustDraftField(appState.plannedExerciseDraft, "targetLoad", -2.5, 0, renderPlannedExerciseDraft));
+document.getElementById("targetLoadIncrement").addEventListener("click", () =>
+  adjustDraftField(appState.plannedExerciseDraft, "targetLoad", 2.5, 0, renderPlannedExerciseDraft));
+
+document.getElementById("savePlannedExerciseButton").addEventListener("click", () => {
+  appState.schemeDraft.plannedExercises.push(appState.plannedExerciseDraft);
+  appState.plannedExerciseDraft = null;
+  plannedExerciseEntryPanel.hidden = true;
+  schemeEditorScreen.hidden = false;
+  renderSchemeEditor();
+});
+
+document.getElementById("cancelPlannedExerciseButton").addEventListener("click", () => {
+  appState.plannedExerciseDraft = null;
+  plannedExerciseEntryPanel.hidden = true;
+  schemeEditorScreen.hidden = false;
 });
 
 
@@ -270,14 +753,22 @@ importFileInput.addEventListener("change", () => {
     }
 
     try {
+      // Closed before swapping in the new database and clearing
+      // activeSessionId: closeSetEntryPanel() can re-render the checklist,
+      // which looks up the active template through the *current* database
+      // and session — doing that lookup against a database that no longer
+      // has them (or after the session's already cleared) would crash.
+      closeChecklist();
+      closeSetEntryPanel();
+
       appState.database = importDatabase(fileText);
       // An import can bring in a database with no session in progress, so
       // treat any active workout as no longer valid rather than pointing at
       // a session that may not exist in the freshly imported data.
       appState.activeSessionId = null;
-      closeSetEntryPanel();
+      showMainScreen();
       updateWorkoutControls();
-      renderExerciseList();
+      renderExerciseArea();
       alert("Import complete.");
     } catch (error) {
       alert(error.message);

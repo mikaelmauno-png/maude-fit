@@ -12,79 +12,209 @@
 <body>
 
   <main>
-    <h1>Exercises</h1>
 
-    <div class="button-row">
-      <button id="startWorkoutButton">Start workout</button>
+    <!-- ===================================================================
+         MAIN SCREEN: start/end a workout, log sets, export/import.
+         =================================================================== -->
+    <section id="mainScreen">
+      <h1>Exercises</h1>
+
+      <div class="button-row">
+        <button id="manageSchemesButton">Manage schemes</button>
+      </div>
+
+      <!-- Filled with one "Start: <scheme name>" button per active scheme,
+           plus a "Start free-form workout" button. Hidden once a workout is
+           in progress. -->
+      <div id="startWorkoutChoices" class="button-stack"></div>
+
       <button id="endWorkoutButton" hidden>End workout</button>
-    </div>
-    <p id="workoutStatus"></p>
+      <p id="workoutStatus"></p>
 
-    <!-- Exercises are rendered as buttons (not just list text) so they can be
-         tapped to open the set entry panel below, but only once a workout has
-         been started. -->
-    <ul id="exerciseList"></ul>
+      <!-- Exercises are rendered as buttons so they can be tapped to log a
+           set, but only once a workout has been started. When the active
+           workout follows a scheme, this list is narrowed to that scheme's
+           exercises and shows each one's target; otherwise it's the full
+           exercise library. -->
+      <ul id="exerciseList"></ul>
 
-    <!-- Hidden until an exercise is tapped. One shared panel is reused for
-         whichever exercise is currently being logged, rather than building a
-         separate form per exercise. -->
-    <section id="setEntryPanel" hidden>
-      <h2 id="setEntryExerciseName"></h2>
-      <p id="previousPerformance"></p>
+      <!-- Shown instead of the set entry panel when the active workout
+           follows a scheme and an exercise with planned sets is tapped: a
+           checklist of that exercise's target number of sets. -->
+      <section id="plannedSetChecklist" hidden>
+        <h2 id="checklistExerciseName"></h2>
+        <ul id="checklistRows"></ul>
+        <div class="button-row">
+          <button id="addExtraSetButton">Add extra set</button>
+          <button id="closeChecklistButton">Close</button>
+        </div>
+      </section>
+
+      <!-- Hidden until an exercise (or a checklist row) is tapped. One
+           shared panel is reused for whichever set is currently being
+           logged, rather than building a separate form each time. -->
+      <section id="setEntryPanel" hidden>
+        <h2 id="setEntryExerciseName"></h2>
+        <!-- Only shown when this set came from a scheme's plan. -->
+        <p id="plannedTarget" hidden></p>
+        <p id="previousPerformance"></p>
+
+        <div class="stepper-row">
+          <span class="stepper-label">Load (kg)</span>
+          <div class="stepper">
+            <button type="button" id="loadDecrement">&minus;</button>
+            <span id="loadValue"></span>
+            <button type="button" id="loadIncrement">+</button>
+          </div>
+        </div>
+
+        <div class="stepper-row">
+          <span class="stepper-label">Reps</span>
+          <div class="stepper">
+            <button type="button" id="repsDecrement">&minus;</button>
+            <span id="repsValue"></span>
+            <button type="button" id="repsIncrement">+</button>
+          </div>
+        </div>
+
+        <!-- Hidden instead of removed when a set is marked warmup, so RIR
+             isn't lost if the warmup checkbox gets toggled back off before
+             saving. -->
+        <div class="stepper-row" id="rirRow">
+          <span class="stepper-label">RIR</span>
+          <div class="stepper">
+            <button type="button" id="rirDecrement">&minus;</button>
+            <span id="rirValue"></span>
+            <button type="button" id="rirIncrement">+</button>
+          </div>
+        </div>
+
+        <label class="warmup-toggle">
+          <input type="checkbox" id="warmupCheckbox">
+          Warmup set
+        </label>
+
+        <div class="button-row">
+          <button id="saveSetButton">Save set</button>
+          <button id="cancelSetButton">Cancel</button>
+        </div>
+      </section>
+
+      <div class="button-row">
+        <button id="exportButton">Export</button>
+        <button id="importButton">Import</button>
+      </div>
+
+      <!-- A real file picker can't be styled to match the other buttons, so
+           it stays hidden and the Import button above triggers it instead. -->
+      <input type="file" id="importFileInput" accept="application/json" hidden>
+    </section>
+
+
+    <!-- ===================================================================
+         SCHEMES SCREEN: list of saved weekly schemes.
+         =================================================================== -->
+    <section id="schemesScreen" hidden>
+      <h1>Schemes</h1>
+      <div class="button-row">
+        <button id="backFromSchemesButton">Back</button>
+        <button id="addSchemeButton">Add scheme</button>
+      </div>
+      <ul id="schemesList"></ul>
+    </section>
+
+
+    <!-- ===================================================================
+         SCHEME EDITOR: create or edit one scheme's name and exercise list.
+         =================================================================== -->
+    <section id="schemeEditorScreen" hidden>
+      <h1 id="schemeEditorTitle">Edit scheme</h1>
+
+      <label class="text-field">
+        Name
+        <input type="text" id="schemeNameInput" placeholder="e.g. Weekly workout 1">
+      </label>
+
+      <ul id="plannedExerciseList"></ul>
+
+      <div class="button-row">
+        <button id="addPlannedExerciseButton">Add exercise</button>
+      </div>
+
+      <div class="button-row">
+        <button id="saveSchemeButton">Save scheme</button>
+        <button id="cancelSchemeEditButton">Cancel</button>
+      </div>
+    </section>
+
+
+    <!-- ===================================================================
+         EXERCISE PICKER: choose which exercise to add to the scheme being
+         edited. Reuses the same exercise-item button style as the main list.
+         =================================================================== -->
+    <section id="exercisePickerScreen" hidden>
+      <h1>Choose exercise</h1>
+      <ul id="exercisePickerList"></ul>
+      <div class="button-row">
+        <button id="cancelExercisePickerButton">Cancel</button>
+      </div>
+    </section>
+
+
+    <!-- ===================================================================
+         PLANNED EXERCISE TARGET PANEL: set the target sets/reps/load for
+         whichever exercise was just chosen from the picker above.
+         =================================================================== -->
+    <section id="plannedExerciseEntryPanel" hidden>
+      <h2 id="plannedExerciseEntryName"></h2>
+
+      <div class="stepper-row">
+        <span class="stepper-label">Sets</span>
+        <div class="stepper">
+          <button type="button" id="targetSetsDecrement">&minus;</button>
+          <span id="targetSetsValue"></span>
+          <button type="button" id="targetSetsIncrement">+</button>
+        </div>
+      </div>
+
+      <div class="stepper-row">
+        <span class="stepper-label">Reps min</span>
+        <div class="stepper">
+          <button type="button" id="targetRepsMinDecrement">&minus;</button>
+          <span id="targetRepsMinValue"></span>
+          <button type="button" id="targetRepsMinIncrement">+</button>
+        </div>
+      </div>
+
+      <div class="stepper-row">
+        <span class="stepper-label">Reps max</span>
+        <div class="stepper">
+          <button type="button" id="targetRepsMaxDecrement">&minus;</button>
+          <span id="targetRepsMaxValue"></span>
+          <button type="button" id="targetRepsMaxIncrement">+</button>
+        </div>
+      </div>
 
       <div class="stepper-row">
         <span class="stepper-label">Load (kg)</span>
         <div class="stepper">
-          <button type="button" id="loadDecrement">&minus;</button>
-          <span id="loadValue"></span>
-          <button type="button" id="loadIncrement">+</button>
+          <button type="button" id="targetLoadDecrement">&minus;</button>
+          <span id="targetLoadValue"></span>
+          <button type="button" id="targetLoadIncrement">+</button>
         </div>
       </div>
-
-      <div class="stepper-row">
-        <span class="stepper-label">Reps</span>
-        <div class="stepper">
-          <button type="button" id="repsDecrement">&minus;</button>
-          <span id="repsValue"></span>
-          <button type="button" id="repsIncrement">+</button>
-        </div>
-      </div>
-
-      <!-- Hidden instead of removed when a set is marked warmup, so RIR isn't
-           lost if the warmup checkbox gets toggled back off before saving. -->
-      <div class="stepper-row" id="rirRow">
-        <span class="stepper-label">RIR</span>
-        <div class="stepper">
-          <button type="button" id="rirDecrement">&minus;</button>
-          <span id="rirValue"></span>
-          <button type="button" id="rirIncrement">+</button>
-        </div>
-      </div>
-
-      <label class="warmup-toggle">
-        <input type="checkbox" id="warmupCheckbox">
-        Warmup set
-      </label>
 
       <div class="button-row">
-        <button id="saveSetButton">Save set</button>
-        <button id="cancelSetButton">Cancel</button>
+        <button id="savePlannedExerciseButton">Add to scheme</button>
+        <button id="cancelPlannedExerciseButton">Cancel</button>
       </div>
     </section>
 
-    <div class="button-row">
-      <button id="exportButton">Export</button>
-      <button id="importButton">Import</button>
-    </div>
-
-    <!-- A real file picker can't be styled to match the other buttons, so it
-         stays hidden and the Import button above triggers it instead. -->
-    <input type="file" id="importFileInput" accept="application/json" hidden>
   </main>
 
   <!-- schema.js must load first: app.js calls functions like loadDatabase()
        that schema.js defines. Both scripts sit at the end of the body so
-       every element above (the list, the buttons) already exists in the
+       every element above (the lists, the buttons) already exists in the
        page by the time these run. -->
   <script src="schema.js"></script>
   <script src="app.js"></script>

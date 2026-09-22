@@ -11,7 +11,10 @@
 // saved data would not survive. The import function refuses to load data with
 // a version it does not recognise, which is what stops a bad import from
 // silently corrupting months of training history.
-const SCHEMA_VERSION = 1;
+//
+// Bumped to 2 for the addition of WorkoutTemplate and Session.templateId
+// below — old saved data doesn't have those fields.
+const SCHEMA_VERSION = 2;
 
 // Every piece of app data lives under this one localStorage key, as a single
 // JSON string. One key is simpler to export, import, and reason about than
@@ -62,11 +65,14 @@ const STORAGE_KEY = "workoutLog";
 // Session — one gym visit.
 //
 // {
-//   id:        "3a41...",
-//   startedAt: "2026-08-31T17:05:00.000Z",
-//   endedAt:   "2026-08-31T18:20:00.000Z",   // null while in progress
-//   dayStatus: "normal",                     // see DAY_STATUSES below
-//   notes:     ""
+//   id:         "3a41...",
+//   startedAt:  "2026-08-31T17:05:00.000Z",
+//   endedAt:    "2026-08-31T18:20:00.000Z",   // null while in progress
+//   dayStatus:  "normal",                     // see DAY_STATUSES below
+//   notes:      "",
+//   templateId: "weekly-workout-1"            // which WorkoutTemplate this
+//                                              // followed, or null for a
+//                                              // free-form workout
 // }
 
 // dayStatus records the context that would otherwise be lost. The engine will
@@ -74,17 +80,40 @@ const STORAGE_KEY = "workoutLog";
 // so it is collected from day one even though nothing reads it yet.
 const DAY_STATUSES = ["normal", "poorSleep", "ill", "stressed"];
 
+// WorkoutTemplate — a reusable weekly scheme, e.g. "Weekly workout 1". Meant
+// to be replaced every 1-3 months as training needs change, which is why old
+// ones are archived rather than deleted: a past Session still points at the
+// template it followed, so that history should stay resolvable.
+//
+// {
+//   id:         "weekly-workout-1",
+//   name:       "Weekly workout 1",
+//   isArchived: false,
+//   plannedExercises: [
+//     {
+//       exerciseId:    "barbell-bench-press",
+//       targetSets:    3,
+//       targetRepsMin: 8,
+//       targetRepsMax: 10,
+//       targetLoad:    60          // kilograms
+//     }
+//     // ...one entry per exercise in this scheme, in the order they're done
+//   ]
+// }
+
 
 // The complete saved payload. This is the object that gets serialised into
 // localStorage and written out by the export button.
 function createEmptyDatabase() {
   return {
     schemaVersion: SCHEMA_VERSION,
-    exercises: [],   // Exercise objects
-    sessions: [],     // Session objects
-    sets: []          // Set objects, stored flat rather than nested inside
-                      // sessions — a flat list is far easier to filter when
-                      // asking questions like "every bench press I have done"
+    exercises: [],        // Exercise objects
+    sessions: [],          // Session objects
+    sets: [],               // Set objects, stored flat rather than nested
+                            // inside sessions — a flat list is far easier to
+                            // filter when asking questions like "every bench
+                            // press I have done"
+    workoutTemplates: []   // WorkoutTemplate objects
   };
 }
 
@@ -189,7 +218,8 @@ function importDatabase(jsonText) {
   // importing an unrelated JSON file by mistake.
   if (!Array.isArray(parsed.exercises) ||
       !Array.isArray(parsed.sessions) ||
-      !Array.isArray(parsed.sets)) {
+      !Array.isArray(parsed.sets) ||
+      !Array.isArray(parsed.workoutTemplates)) {
     throw new Error("That file is not a workout log export.");
   }
 
