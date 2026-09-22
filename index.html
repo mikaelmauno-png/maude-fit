@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <!-- width=device-width makes the page match the phone's actual screen
+       width instead of pretending to be a wide desktop page and shrinking
+       everything down. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Workout log</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <main>
+    <h1>Exercises</h1>
+
+    <ul id="exerciseList"></ul>
+
+    <div class="button-row">
+      <button id="exportButton">Export</button>
+      <button id="importButton">Import</button>
+    </div>
+
+    <!-- A real file picker can't be styled to match the other buttons, so it
+         stays hidden and the Import button above triggers it instead. -->
+    <input type="file" id="importFileInput" accept="application/json" hidden>
+  </main>
+
+  <!-- schema.js must load first: app.js calls functions like loadDatabase()
+       that schema.js defines. Both scripts sit at the end of the body so
+       every element above (the list, the buttons) already exists in the
+       page by the time these run. -->
+  <script src="schema.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
