@@ -132,6 +132,12 @@ button:active {
   font-size: 0.95rem;
 }
 
+#plannedExerciseEntryHint {
+  color: #b0b0b0;
+  font-size: 0.95rem;
+  margin-top: -8px;
+}
+
 /* Distinguishes "what the scheme calls for" from "what you did last time"
    (#previousPerformance above), which sit right next to each other. */
 #plannedTarget {
@@ -209,6 +215,27 @@ button:active {
   color: #ffffff;
   font-size: 1.6rem;
   font-weight: bold;
+}
+
+/* A less-frequent action attached to a card (e.g. "Set goal for next
+   time") — muted so it doesn't compete with the pills above it, but still
+   full width and comfortably tall to tap. */
+.card-action-button {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 12px;
+  padding: 12px;
+  font-size: 0.95rem;
+  background-color: #2a2a2a;
+  color: #c0c0c0;
+  border: 1px solid #3a3a3a;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.card-action-button:active {
+  background-color: #333333;
 }
 
 .stepper-row {

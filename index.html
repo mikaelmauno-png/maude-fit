@@ -238,11 +238,15 @@
 
 
     <!-- ===================================================================
-         PLANNED EXERCISE TARGET PANEL: set the target sets/reps/load for
-         whichever exercise was just chosen from the picker above.
+         PLANNED EXERCISE TARGET PANEL: set the target sets/reps/load for a
+         planned exercise. Reused for two purposes: adding a new exercise to
+         the scheme being edited (from the picker above), and adjusting an
+         existing exercise's target from an active scheme workout's card
+         ("Set goal for next time").
          =================================================================== -->
     <section id="plannedExerciseEntryPanel" hidden>
       <h2 id="plannedExerciseEntryName"></h2>
+      <p id="plannedExerciseEntryHint" hidden></p>
 
       <div class="stepper-row">
         <span class="stepper-label">Sets</span>

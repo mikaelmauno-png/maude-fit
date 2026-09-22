@@ -30,7 +30,8 @@ const appState = {
   editingSetId: null,           // id of an existing set being corrected, or null when logging a new one
   schemeDraft: null,           // in-progress copy of the scheme being edited
   plannedExerciseDraft: null,  // in-progress values for a planned exercise
-  pendingTemplateId: null      // scheme chosen at Start Workout, held while the gym picker is open
+  pendingTemplateId: null,     // scheme chosen at Start Workout, held while the gym picker is open
+  nextGoalTarget: null         // { templateId, exerciseId } while adjusting an existing planned exercise's target from a workout card; null otherwise
 };
 
 // On a brand-new install the exercise library is empty. Fill it with the
@@ -272,6 +273,18 @@ function renderSchemeWorkoutCards(template) {
     pillRowElement.appendChild(addPill);
 
     cardElement.appendChild(pillRowElement);
+
+    // Adjusts this exercise's target sets/reps/load on the scheme itself,
+    // so it's what shows next time this scheme is started (and for any of
+    // today's pills for this exercise not yet logged, since they read the
+    // same target).
+    const nextGoalButton = document.createElement("button");
+    nextGoalButton.type = "button";
+    nextGoalButton.className = "card-action-button";
+    nextGoalButton.textContent = "Set goal for next time";
+    nextGoalButton.addEventListener("click", () => openNextGoalEditor(template.id, planned.exerciseId));
+    cardElement.appendChild(nextGoalButton);
+
     schemeWorkoutCardsElement.appendChild(cardElement);
   }
 }
@@ -1079,8 +1092,40 @@ document.getElementById("cancelExercisePickerButton").addEventListener("click", 
 
 // ---------------------------------------------------------------------------
 // Planned exercise target entry (sets / rep range / load for one exercise
-// within the scheme being edited)
+// within the scheme being edited) — also reused, via nextGoalTarget, to
+// adjust an existing planned exercise's target from an active workout card.
 // ---------------------------------------------------------------------------
+
+const plannedExerciseEntryHint = document.getElementById("plannedExerciseEntryHint");
+
+// Opens the same panel used to add a new exercise to a scheme, but for
+// changing an *existing* one's target — triggered by "Set goal for next
+// time" on a workout card. Doesn't touch appState.schemeDraft: this saves
+// straight to the template in appState.database, not to an in-progress edit.
+function openNextGoalEditor(templateId, exerciseId) {
+  const template = appState.database.workoutTemplates.find((candidate) => candidate.id === templateId);
+  const planned = template.plannedExercises.find((candidate) => candidate.exerciseId === exerciseId);
+  const exercise = appState.database.exercises.find((candidate) => candidate.id === exerciseId);
+
+  appState.nextGoalTarget = { templateId, exerciseId };
+  appState.plannedExerciseDraft = {
+    targetSets: planned.targetSets,
+    targetRepsMin: planned.targetRepsMin,
+    targetRepsMax: planned.targetRepsMax,
+    targetLoad: planned.targetLoad
+  };
+
+  document.getElementById("plannedExerciseEntryName").textContent = exercise.name;
+  plannedExerciseEntryHint.textContent =
+    `Changes the target in "${template.name}" from now on, including any of today's sets for this exercise not yet logged.`;
+  plannedExerciseEntryHint.hidden = false;
+  document.getElementById("savePlannedExerciseButton").textContent = "Save goal";
+
+  renderPlannedExerciseDraft();
+  // Deliberately not hideAllScreens(): mainScreen (with the workout cards)
+  // stays visible underneath, same as how the set entry panel works.
+  plannedExerciseEntryPanel.hidden = false;
+}
 
 function renderPlannedExerciseDraft() {
   const draft = appState.plannedExerciseDraft;
@@ -1107,7 +1152,35 @@ document.getElementById("targetLoadDecrement").addEventListener("click", () =>
 document.getElementById("targetLoadIncrement").addEventListener("click", () =>
   adjustDraftField(appState.plannedExerciseDraft, "targetLoad", 2.5, 0, renderPlannedExerciseDraft));
 
+// Resets the panel back to its "add a new exercise to the scheme being
+// edited" defaults, so the next time it's opened for that purpose it
+// doesn't carry over the next-goal wording.
+function resetPlannedExerciseEntryPanelToAddMode() {
+  plannedExerciseEntryHint.hidden = true;
+  document.getElementById("savePlannedExerciseButton").textContent = "Add to scheme";
+}
+
 document.getElementById("savePlannedExerciseButton").addEventListener("click", () => {
+  if (appState.nextGoalTarget) {
+    const { templateId, exerciseId } = appState.nextGoalTarget;
+    const template = appState.database.workoutTemplates.find((candidate) => candidate.id === templateId);
+    const planned = template.plannedExercises.find((candidate) => candidate.exerciseId === exerciseId);
+    const draft = appState.plannedExerciseDraft;
+
+    planned.targetSets = draft.targetSets;
+    planned.targetRepsMin = draft.targetRepsMin;
+    planned.targetRepsMax = draft.targetRepsMax;
+    planned.targetLoad = draft.targetLoad;
+    saveDatabase(appState.database);
+
+    appState.nextGoalTarget = null;
+    appState.plannedExerciseDraft = null;
+    plannedExerciseEntryPanel.hidden = true;
+    resetPlannedExerciseEntryPanelToAddMode();
+    renderExerciseArea();
+    return;
+  }
+
   appState.schemeDraft.plannedExercises.push(appState.plannedExerciseDraft);
   appState.plannedExerciseDraft = null;
   plannedExerciseEntryPanel.hidden = true;
@@ -1116,6 +1189,14 @@ document.getElementById("savePlannedExerciseButton").addEventListener("click", (
 });
 
 document.getElementById("cancelPlannedExerciseButton").addEventListener("click", () => {
+  if (appState.nextGoalTarget) {
+    appState.nextGoalTarget = null;
+    appState.plannedExerciseDraft = null;
+    plannedExerciseEntryPanel.hidden = true;
+    resetPlannedExerciseEntryPanelToAddMode();
+    return;
+  }
+
   appState.plannedExerciseDraft = null;
   plannedExerciseEntryPanel.hidden = true;
   schemeEditorScreen.hidden = false;
