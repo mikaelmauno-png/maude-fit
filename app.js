@@ -57,6 +57,7 @@ if (appState.database.exercises.length === 0) {
 // ---------------------------------------------------------------------------
 
 const mainScreen = document.getElementById("mainScreen");
+const settingsScreen = document.getElementById("settingsScreen");
 const schemesScreen = document.getElementById("schemesScreen");
 const schemeEditorScreen = document.getElementById("schemeEditorScreen");
 const exercisePickerScreen = document.getElementById("exercisePickerScreen");
@@ -81,7 +82,7 @@ const setEntryPanel = document.getElementById("setEntryPanel");
 // Every top-level screen, so each show*Screen() function below can hide all
 // of them and then reveal just its own, without repeating this list six times.
 const allScreens = [
-  mainScreen, schemesScreen, schemeEditorScreen, exercisePickerScreen,
+  mainScreen, settingsScreen, schemesScreen, schemeEditorScreen, exercisePickerScreen,
   plannedExerciseEntryPanel, exercisesScreen, historyScreen, gymsScreen, gymPickerScreen,
   setEntryPanel, exerciseStatsListScreen, exerciseStatsDetailScreen, muscleEditorPanel,
   personalBestsScreen, muscleStatsListScreen, muscleStatsDetailScreen
@@ -98,6 +99,11 @@ function showMainScreen() {
   mainScreen.hidden = false;
   renderWeeklySchemeSummary();
   renderMuscleCounters();
+}
+
+function showSettingsScreen() {
+  hideAllScreens();
+  settingsScreen.hidden = false;
 }
 
 function showSchemesScreen() {
@@ -171,14 +177,18 @@ function showMuscleStatsDetailScreen(muscle) {
   renderMuscleStatsDetail(muscle);
 }
 
+document.getElementById("viewSettingsButton").addEventListener("click", showSettingsScreen);
+document.getElementById("backFromSettingsButton").addEventListener("click", showMainScreen);
 document.getElementById("manageSchemesButton").addEventListener("click", showSchemesScreen);
-document.getElementById("backFromSchemesButton").addEventListener("click", showMainScreen);
+// These three "Back" buttons return to Settings, not the main screen —
+// Settings is where each of these screens was actually opened from now.
+document.getElementById("backFromSchemesButton").addEventListener("click", showSettingsScreen);
 document.getElementById("manageExercisesButton").addEventListener("click", showExercisesScreen);
-document.getElementById("backFromExercisesButton").addEventListener("click", showMainScreen);
+document.getElementById("backFromExercisesButton").addEventListener("click", showSettingsScreen);
 document.getElementById("viewHistoryButton").addEventListener("click", showHistoryScreen);
 document.getElementById("backFromHistoryButton").addEventListener("click", showMainScreen);
 document.getElementById("manageGymsButton").addEventListener("click", showGymsScreen);
-document.getElementById("backFromGymsButton").addEventListener("click", showMainScreen);
+document.getElementById("backFromGymsButton").addEventListener("click", showSettingsScreen);
 
 
 // ---------------------------------------------------------------------------

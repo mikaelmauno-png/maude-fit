@@ -20,9 +20,7 @@
       <h1>Exercises</h1>
 
       <div class="button-row">
-        <button id="manageSchemesButton">Manage schemes</button>
-        <button id="manageExercisesButton">Manage exercises</button>
-        <button id="manageGymsButton">Manage gyms</button>
+        <button id="viewSettingsButton">Settings</button>
         <button id="viewHistoryButton">History</button>
       </div>
 
@@ -112,6 +110,23 @@
       <!-- A real file picker can't be styled to match the other buttons, so
            it stays hidden and the Import button above triggers it instead. -->
       <input type="file" id="importFileInput" accept="application/json" hidden>
+    </section>
+
+
+    <!-- ===================================================================
+         SETTINGS SCREEN: entry point for the three "manage a list" screens,
+         kept off the main screen so its own button row stays short.
+         =================================================================== -->
+    <section id="settingsScreen" hidden>
+      <h1>Settings</h1>
+      <div class="button-row">
+        <button id="backFromSettingsButton">Back</button>
+      </div>
+      <div class="button-stack">
+        <button id="manageSchemesButton">Manage schemes</button>
+        <button id="manageExercisesButton">Manage exercises</button>
+        <button id="manageGymsButton">Manage gyms</button>
+      </div>
     </section>
 
 
