@@ -38,8 +38,15 @@
       <p id="restTimer"></p>
 
       <!-- Free-form only: exercises rendered as plain buttons, tapped to log
-           a set directly. Only enabled once a workout has been started. -->
+           a set directly. Only enabled once a workout has been started. Each
+           row also gets a small "review" button once at least one set has
+           been logged for it this session, opening freeformReviewCard below. -->
       <ul id="exerciseList"></ul>
+
+      <!-- Free-form only: the sets already logged this session for whichever
+           exercise's "review" button was tapped, shown as the same kind of
+           pills as a scheme card, so a mis-logged set can be corrected. -->
+      <div id="freeformReviewCard" hidden></div>
 
       <!-- Scheme-based only: one card per planned exercise, all shown at
            once (order doesn't matter — any set in any exercise can be

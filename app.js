@@ -31,7 +31,8 @@ const appState = {
   schemeDraft: null,           // in-progress copy of the scheme being edited
   plannedExerciseDraft: null,  // in-progress values for a planned exercise
   pendingTemplateId: null,     // scheme chosen at Start Workout, held while the gym picker is open
-  nextGoalTarget: null         // { templateId, exerciseId } while adjusting an existing planned exercise's target from a workout card; null otherwise
+  nextGoalTarget: null,        // { templateId, exerciseId } while adjusting an existing planned exercise's target from a workout card; null otherwise
+  freeformReviewExerciseId: null // which exercise's logged-sets review card is open, in a free-form workout; null otherwise
 };
 
 // On a brand-new install the exercise library is empty. Fill it with the
@@ -188,8 +189,93 @@ function renderFreeformExerciseList() {
       openSetEntryPanel(exercise.id);
     });
     itemElement.appendChild(buttonElement);
+
+    const loggedCount = appState.database.sets.filter(
+      (set) => set.sessionId === appState.activeSessionId && set.exerciseId === exercise.id
+    ).length;
+    // Only shown once there's something to review, so a fresh exercise row
+    // stays a single fast tap-to-log button, same as before this existed.
+    if (loggedCount > 0) {
+      const reviewButton = document.createElement("button");
+      reviewButton.type = "button";
+      reviewButton.className = "card-action-button";
+      reviewButton.textContent = `${loggedCount} set${loggedCount === 1 ? "" : "s"} logged · review`;
+      reviewButton.addEventListener("click", () => openFreeformReview(exercise.id));
+      itemElement.appendChild(reviewButton);
+    }
+
     exerciseListElement.appendChild(itemElement);
   }
+}
+
+const freeformReviewCardElement = document.getElementById("freeformReviewCard");
+
+function openFreeformReview(exerciseId) {
+  appState.freeformReviewExerciseId = exerciseId;
+  renderFreeformReview();
+  freeformReviewCardElement.hidden = false;
+}
+
+function closeFreeformReview() {
+  appState.freeformReviewExerciseId = null;
+  freeformReviewCardElement.hidden = true;
+}
+
+function renderFreeformReview() {
+  freeformReviewCardElement.innerHTML = "";
+  if (appState.freeformReviewExerciseId === null) {
+    return;
+  }
+
+  const exerciseId = appState.freeformReviewExerciseId;
+  const exercise = appState.database.exercises.find((candidate) => candidate.id === exerciseId);
+  const loggedSets = appState.database.sets
+    .filter((set) => set.sessionId === appState.activeSessionId && set.exerciseId === exerciseId)
+    .sort((a, b) => a.order - b.order);
+
+  // The exercise's sets could all have been deleted while this was open;
+  // closing rather than showing an empty card avoids a confusing dead end.
+  if (loggedSets.length === 0) {
+    closeFreeformReview();
+    return;
+  }
+
+  const cardElement = document.createElement("div");
+  cardElement.className = "exercise-card";
+
+  const headingElement = document.createElement("h3");
+  headingElement.textContent = exercise.name;
+  cardElement.appendChild(headingElement);
+
+  const pillRowElement = document.createElement("div");
+  pillRowElement.className = "set-pills";
+  for (const set of loggedSets) {
+    const pill = document.createElement("button");
+    pill.type = "button";
+    pill.className = "set-pill set-pill-done";
+
+    const weightSpan = document.createElement("span");
+    weightSpan.className = "set-pill-weight";
+    weightSpan.textContent = `${set.load} kg`;
+
+    const repsSpan = document.createElement("span");
+    repsSpan.className = "set-pill-reps";
+    repsSpan.textContent = set.isWarmup ? `${set.reps} (warmup)` : `${set.reps} reps`;
+
+    pill.append(weightSpan, repsSpan);
+    pill.addEventListener("click", () => openSetEntryPanelForEdit(set.id));
+    pillRowElement.appendChild(pill);
+  }
+  cardElement.appendChild(pillRowElement);
+
+  const closeButton = document.createElement("button");
+  closeButton.type = "button";
+  closeButton.className = "card-action-button";
+  closeButton.textContent = "Close";
+  closeButton.addEventListener("click", closeFreeformReview);
+  cardElement.appendChild(closeButton);
+
+  freeformReviewCardElement.appendChild(cardElement);
 }
 
 // Builds one "pill" button for a single set: weight on top, reps below (the
@@ -362,6 +448,7 @@ function startWorkout(templateId, gymId) {
   appState.activeSessionId = session.id;
   appState.pendingTemplateId = null;
   saveDatabase(appState.database);
+  closeFreeformReview();
   showMainScreen();
   updateWorkoutControls();
   renderExerciseArea();
@@ -372,6 +459,7 @@ endWorkoutButton.addEventListener("click", () => {
   session.endedAt = new Date().toISOString();
   saveDatabase(appState.database);
   closeSetEntryPanel();
+  closeFreeformReview();
   appState.activeSessionId = null;
   updateWorkoutControls();
   renderExerciseArea();
@@ -565,6 +653,9 @@ function closeSetEntryPanel() {
   setEntryPanel.hidden = true;
   // The cards' pills depend on which sets exist, so refresh them too.
   renderExerciseArea();
+  if (!freeformReviewCardElement.hidden) {
+    renderFreeformReview();
+  }
   updateRestTimer();
 }
 
@@ -1246,6 +1337,7 @@ importFileInput.addEventListener("change", () => {
 
     try {
       closeSetEntryPanel();
+      closeFreeformReview();
 
       appState.database = importDatabase(fileText);
       // An import can bring in a database with no session in progress, so
