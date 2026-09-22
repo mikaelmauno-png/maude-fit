@@ -449,6 +449,7 @@ function startWorkout(templateId, gymId) {
   appState.pendingTemplateId = null;
   saveDatabase(appState.database);
   closeFreeformReview();
+  hidePersonalBestBanner();
   showMainScreen();
   updateWorkoutControls();
   renderExerciseArea();
@@ -460,6 +461,7 @@ endWorkoutButton.addEventListener("click", () => {
   saveDatabase(appState.database);
   closeSetEntryPanel();
   closeFreeformReview();
+  hidePersonalBestBanner();
   appState.activeSessionId = null;
   updateWorkoutControls();
   renderExerciseArea();
@@ -509,6 +511,87 @@ function updateRestTimer() {
 // cleanly when there's nothing to show.
 setInterval(updateRestTimer, 1000);
 updateRestTimer();
+
+
+// ---------------------------------------------------------------------------
+// Personal-best notification
+//
+// Checked only when a brand-new set is saved (not when correcting an
+// existing one, to keep this scoped to "you just did that" moments rather
+// than retroactive data fixes). Two independent kinds of PR: heaviest
+// weight ever, and highest single-set volume (load × reps) ever, for that
+// exercise. Warmups never count, and for a gym-specific exercise the
+// comparison is scoped to the same gym, matching findPreviousWorkingSet().
+// ---------------------------------------------------------------------------
+
+const prBannerElement = document.getElementById("prBanner");
+let prBannerTimeoutId = null;
+
+function checkForPersonalBest(exerciseId, newSet) {
+  if (newSet.isWarmup) {
+    return { isWeightPR: false, isVolumePR: false };
+  }
+
+  const exercise = appState.database.exercises.find((candidate) => candidate.id === exerciseId);
+  const activeSession = getActiveSession();
+
+  let priorSets = appState.database.sets.filter(
+    (set) => set.exerciseId === exerciseId && !set.isWarmup && set.id !== newSet.id
+  );
+
+  if (exercise.isGymSpecific && activeSession && activeSession.gymId) {
+    const sessionIdsAtThisGym = new Set(
+      appState.database.sessions
+        .filter((session) => session.gymId === activeSession.gymId)
+        .map((session) => session.id)
+    );
+    priorSets = priorSets.filter((set) => sessionIdsAtThisGym.has(set.sessionId));
+  }
+
+  // No prior sets means nothing to beat yet — the first time you log an
+  // exercise isn't a "personal best" in any meaningful sense.
+  if (priorSets.length === 0) {
+    return { isWeightPR: false, isVolumePR: false };
+  }
+
+  const previousMaxLoad = Math.max(...priorSets.map((set) => set.load));
+  const previousMaxVolume = Math.max(...priorSets.map((set) => set.load * set.reps));
+
+  return {
+    isWeightPR: newSet.load > previousMaxLoad,
+    isVolumePR: newSet.load * newSet.reps > previousMaxVolume
+  };
+}
+
+function showPersonalBestBanner(exerciseName, personalBest) {
+  let message;
+  if (personalBest.isWeightPR && personalBest.isVolumePR) {
+    message = `Personal best for ${exerciseName} — heaviest weight and highest volume yet.`;
+  } else if (personalBest.isWeightPR) {
+    message = `Personal best for ${exerciseName} — heaviest weight yet.`;
+  } else {
+    message = `Personal best for ${exerciseName} — highest volume yet.`;
+  }
+
+  prBannerElement.textContent = message;
+  prBannerElement.hidden = false;
+
+  if (prBannerTimeoutId) {
+    clearTimeout(prBannerTimeoutId);
+  }
+  prBannerTimeoutId = setTimeout(() => {
+    prBannerElement.hidden = true;
+    prBannerTimeoutId = null;
+  }, 6000);
+}
+
+function hidePersonalBestBanner() {
+  if (prBannerTimeoutId) {
+    clearTimeout(prBannerTimeoutId);
+    prBannerTimeoutId = null;
+  }
+  prBannerElement.hidden = true;
+}
 
 
 // ---------------------------------------------------------------------------
@@ -582,6 +665,7 @@ function openSetEntryPanel(exerciseId, planTarget = null) {
   const exercise = appState.database.exercises.find((candidate) => candidate.id === exerciseId);
   const previous = findPreviousWorkingSet(exerciseId);
 
+  hidePersonalBestBanner();
   appState.editingSetId = null;
   appState.setDraft = {
     exerciseId,
@@ -626,6 +710,7 @@ function openSetEntryPanelForEdit(setId) {
   const set = appState.database.sets.find((candidate) => candidate.id === setId);
   const exercise = appState.database.exercises.find((candidate) => candidate.id === set.exerciseId);
 
+  hidePersonalBestBanner();
   appState.editingSetId = setId;
   appState.setDraft = {
     exerciseId: set.exerciseId,
@@ -709,7 +794,7 @@ saveSetButton.addEventListener("click", () => {
       (set) => set.sessionId === appState.activeSessionId
     ).length;
 
-    appState.database.sets.push({
+    const newSet = {
       id: crypto.randomUUID(),
       sessionId: appState.activeSessionId,
       exerciseId: draft.exerciseId,
@@ -719,7 +804,17 @@ saveSetButton.addEventListener("click", () => {
       rir,
       isWarmup: draft.isWarmup,
       performedAt: new Date().toISOString()
-    });
+    };
+
+    // Checked against sets logged before this one, so it has to run before
+    // the push below adds this set to that same list.
+    const personalBest = checkForPersonalBest(draft.exerciseId, newSet);
+    appState.database.sets.push(newSet);
+
+    if (personalBest.isWeightPR || personalBest.isVolumePR) {
+      const exercise = appState.database.exercises.find((candidate) => candidate.id === draft.exerciseId);
+      showPersonalBestBanner(exercise.name, personalBest);
+    }
   }
 
   saveDatabase(appState.database);
@@ -1338,6 +1433,7 @@ importFileInput.addEventListener("change", () => {
     try {
       closeSetEntryPanel();
       closeFreeformReview();
+      hidePersonalBestBanner();
 
       appState.database = importDatabase(fileText);
       // An import can bring in a database with no session in progress, so

@@ -70,6 +70,19 @@ ul li {
   font-weight: bold;
 }
 
+/* Amber/gold rather than the app's usual blue or green, so a personal best
+   reads as a distinct, celebratory moment rather than routine status text. */
+#prBanner {
+  background-color: #4a3a10;
+  color: #ffd76a;
+  border: 1px solid #7a5f1a;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  font-weight: bold;
+  font-size: 1rem;
+}
+
 .button-row {
   display: flex;
   flex-wrap: wrap;
