@@ -1,3 +1,10 @@
+/* Without this, any element that also has a `display` rule of its own (like
+   .stepper-row below) would ignore the `hidden` attribute, because a class
+   selector beats the browser's default styling for [hidden]. */
+[hidden] {
+  display: none !important;
+}
+
 /* Dark background: gyms are bright and the phone is held at arm's length,
    so a light page would be hard to read and glare-y. */
 body {
@@ -19,19 +26,42 @@ h1 {
 }
 
 #exerciseList li {
-  /* Generous padding so each row is a comfortable, unambiguous tap target,
-     not just for tapping now but for features added later (like tapping an
-     exercise to log a set against it). */
-  padding: 16px;
   margin-bottom: 8px;
+}
+
+/* The exercise buttons reuse the row's rounded-card look but need their own
+   rule since they're <button> elements, not the plain <li> text this was
+   originally written for. */
+.exercise-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 16px;
   background-color: #1e1e1e;
-  border-radius: 8px;
+  color: #f0f0f0;
   font-size: 1.1rem;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.exercise-item:disabled {
+  /* Disabled means "no workout in progress yet" rather than "broken", so it
+     stays legible instead of looking like an error state. */
+  color: #777777;
+  cursor: not-allowed;
+}
+
+#workoutStatus {
+  min-height: 1.2em;
+  color: #9fd39f;
+  font-size: 0.95rem;
 }
 
 .button-row {
   display: flex;
   gap: 12px;
+  margin-bottom: 16px;
 }
 
 button {
@@ -47,4 +77,65 @@ button {
 
 button:active {
   background-color: #1d4fb8;
+}
+
+#setEntryPanel {
+  background-color: #1e1e1e;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 24px;
+}
+
+#previousPerformance {
+  color: #b0b0b0;
+  font-size: 0.95rem;
+}
+
+.stepper-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.stepper-label {
+  font-size: 1.05rem;
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Stepper +/- buttons are square and fixed-size rather than using the
+   flex:1 rule above, which would stretch them to fill the whole row. */
+.stepper button {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.stepper span {
+  min-width: 2.5em;
+  text-align: center;
+  font-size: 1.2rem;
+}
+
+.warmup-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.05rem;
+  margin-bottom: 16px;
+}
+
+/* The checkbox itself is drawn tiny by default in most browsers, which
+   fails the "large tap target" rule, so it's scaled up. */
+.warmup-toggle input {
+  width: 24px;
+  height: 24px;
 }

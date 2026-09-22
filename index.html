@@ -14,7 +14,63 @@
   <main>
     <h1>Exercises</h1>
 
+    <div class="button-row">
+      <button id="startWorkoutButton">Start workout</button>
+      <button id="endWorkoutButton" hidden>End workout</button>
+    </div>
+    <p id="workoutStatus"></p>
+
+    <!-- Exercises are rendered as buttons (not just list text) so they can be
+         tapped to open the set entry panel below, but only once a workout has
+         been started. -->
     <ul id="exerciseList"></ul>
+
+    <!-- Hidden until an exercise is tapped. One shared panel is reused for
+         whichever exercise is currently being logged, rather than building a
+         separate form per exercise. -->
+    <section id="setEntryPanel" hidden>
+      <h2 id="setEntryExerciseName"></h2>
+      <p id="previousPerformance"></p>
+
+      <div class="stepper-row">
+        <span class="stepper-label">Load (kg)</span>
+        <div class="stepper">
+          <button type="button" id="loadDecrement">&minus;</button>
+          <span id="loadValue"></span>
+          <button type="button" id="loadIncrement">+</button>
+        </div>
+      </div>
+
+      <div class="stepper-row">
+        <span class="stepper-label">Reps</span>
+        <div class="stepper">
+          <button type="button" id="repsDecrement">&minus;</button>
+          <span id="repsValue"></span>
+          <button type="button" id="repsIncrement">+</button>
+        </div>
+      </div>
+
+      <!-- Hidden instead of removed when a set is marked warmup, so RIR isn't
+           lost if the warmup checkbox gets toggled back off before saving. -->
+      <div class="stepper-row" id="rirRow">
+        <span class="stepper-label">RIR</span>
+        <div class="stepper">
+          <button type="button" id="rirDecrement">&minus;</button>
+          <span id="rirValue"></span>
+          <button type="button" id="rirIncrement">+</button>
+        </div>
+      </div>
+
+      <label class="warmup-toggle">
+        <input type="checkbox" id="warmupCheckbox">
+        Warmup set
+      </label>
+
+      <div class="button-row">
+        <button id="saveSetButton">Save set</button>
+        <button id="cancelSetButton">Cancel</button>
+      </div>
+    </section>
 
     <div class="button-row">
       <button id="exportButton">Export</button>
