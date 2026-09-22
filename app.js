@@ -30,7 +30,8 @@ const appState = {
   editingSetId: null,           // id of an existing set being corrected, or null when logging a new one
   checklistExerciseId: null,   // which exercise's set checklist is open
   schemeDraft: null,           // in-progress copy of the scheme being edited
-  plannedExerciseDraft: null   // in-progress values for a planned exercise
+  plannedExerciseDraft: null,  // in-progress values for a planned exercise
+  pendingTemplateId: null      // scheme chosen at Start Workout, held while the gym picker is open
 };
 
 // On a brand-new install the exercise library is empty. Fill it with the
@@ -57,12 +58,14 @@ const exercisePickerScreen = document.getElementById("exercisePickerScreen");
 const plannedExerciseEntryPanel = document.getElementById("plannedExerciseEntryPanel");
 const exercisesScreen = document.getElementById("exercisesScreen");
 const historyScreen = document.getElementById("historyScreen");
+const gymsScreen = document.getElementById("gymsScreen");
+const gymPickerScreen = document.getElementById("gymPickerScreen");
 
 // Every top-level screen, so each show*Screen() function below can hide all
 // of them and then reveal just its own, without repeating this list six times.
 const allScreens = [
   mainScreen, schemesScreen, schemeEditorScreen, exercisePickerScreen,
-  plannedExerciseEntryPanel, exercisesScreen, historyScreen
+  plannedExerciseEntryPanel, exercisesScreen, historyScreen, gymsScreen, gymPickerScreen
 ];
 
 function hideAllScreens() {
@@ -100,12 +103,26 @@ function showHistoryScreen() {
   renderHistoryList();
 }
 
+function showGymsScreen() {
+  hideAllScreens();
+  gymsScreen.hidden = false;
+  renderGymsManageList();
+}
+
+function showGymPickerScreen() {
+  hideAllScreens();
+  gymPickerScreen.hidden = false;
+  renderGymPicker();
+}
+
 document.getElementById("manageSchemesButton").addEventListener("click", showSchemesScreen);
 document.getElementById("backFromSchemesButton").addEventListener("click", showMainScreen);
 document.getElementById("manageExercisesButton").addEventListener("click", showExercisesScreen);
 document.getElementById("backFromExercisesButton").addEventListener("click", showMainScreen);
 document.getElementById("viewHistoryButton").addEventListener("click", showHistoryScreen);
 document.getElementById("backFromHistoryButton").addEventListener("click", showMainScreen);
+document.getElementById("manageGymsButton").addEventListener("click", showGymsScreen);
+document.getElementById("backFromGymsButton").addEventListener("click", showMainScreen);
 
 
 // ---------------------------------------------------------------------------
@@ -233,14 +250,14 @@ function renderStartWorkoutChoices() {
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = `Start: ${template.name}`;
-    button.addEventListener("click", () => startWorkout(template.id));
+    button.addEventListener("click", () => beginStartWorkout(template.id));
     startWorkoutChoices.appendChild(button);
   }
 
   const freeformButton = document.createElement("button");
   freeformButton.type = "button";
   freeformButton.textContent = "Start free-form workout";
-  freeformButton.addEventListener("click", () => startWorkout(null));
+  freeformButton.addEventListener("click", () => beginStartWorkout(null));
   startWorkoutChoices.appendChild(freeformButton);
 }
 
@@ -249,20 +266,37 @@ function updateWorkoutControls() {
   endWorkoutButton.hidden = !isActive;
   workoutStatus.textContent = isActive ? "Workout in progress" : "";
   renderStartWorkoutChoices();
+  updateRestTimer();
 }
 
-function startWorkout(templateId) {
+// Called when a scheme (or free-form) is picked to start. If any gyms have
+// been added, asks which one this workout is at before actually starting;
+// otherwise there's nothing to ask, so it starts right away.
+function beginStartWorkout(templateId) {
+  const activeGyms = appState.database.gyms.filter((gym) => !gym.isArchived);
+  if (activeGyms.length === 0) {
+    startWorkout(templateId, null);
+    return;
+  }
+  appState.pendingTemplateId = templateId;
+  showGymPickerScreen();
+}
+
+function startWorkout(templateId, gymId) {
   const session = {
     id: crypto.randomUUID(),
     startedAt: new Date().toISOString(),
     endedAt: null,
     dayStatus: "normal",
     notes: "",
-    templateId: templateId
+    templateId: templateId,
+    gymId: gymId
   };
   appState.database.sessions.push(session);
   appState.activeSessionId = session.id;
+  appState.pendingTemplateId = null;
   saveDatabase(appState.database);
+  showMainScreen();
   updateWorkoutControls();
   renderExerciseArea();
 }
@@ -286,6 +320,49 @@ renderStartWorkoutChoices();
 
 
 // ---------------------------------------------------------------------------
+// Rest timer
+//
+// Counts up from whenever the most recently logged set (in the current
+// workout, any exercise, warmups included — this is about physical
+// exertion, not performance context) was saved. Purely computed from
+// existing Set.performedAt timestamps, so there's no new stored state.
+// ---------------------------------------------------------------------------
+
+const restTimerElement = document.getElementById("restTimer");
+
+function updateRestTimer() {
+  if (appState.activeSessionId === null) {
+    restTimerElement.textContent = "";
+    return;
+  }
+
+  const sessionSets = appState.database.sets.filter((set) => set.sessionId === appState.activeSessionId);
+  if (sessionSets.length === 0) {
+    restTimerElement.textContent = "";
+    return;
+  }
+
+  const mostRecentSet = sessionSets.reduce((latest, set) =>
+    set.performedAt > latest.performedAt ? set : latest
+  );
+
+  const elapsedSeconds = Math.max(
+    0,
+    Math.floor((Date.now() - new Date(mostRecentSet.performedAt).getTime()) / 1000)
+  );
+  const minutes = Math.floor(elapsedSeconds / 60);
+  const seconds = elapsedSeconds % 60;
+  restTimerElement.textContent = `Rest: ${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+// Runs for the lifetime of the page rather than being started/stopped
+// around each workout — simpler, and updateRestTimer() already no-ops
+// cleanly when there's nothing to show.
+setInterval(updateRestTimer, 1000);
+updateRestTimer();
+
+
+// ---------------------------------------------------------------------------
 // Logging a set
 // ---------------------------------------------------------------------------
 
@@ -305,10 +382,28 @@ const deleteSetButton = document.getElementById("deleteSetButton");
 // Finds the most recently performed working (non-warmup) set for an
 // exercise, across all past sessions. Warmups are excluded because they
 // don't represent what was actually trained.
+//
+// For a gym-specific exercise (machine/cable — see schema.js), this only
+// looks at sets from sessions logged at the same gym as the current one,
+// since those load numbers aren't comparable across locations. It falls
+// back to an ungrouped, all-gyms lookup when the exercise isn't flagged
+// gym-specific, or when today's session has no gym set to scope by.
 function findPreviousWorkingSet(exerciseId) {
-  const matchingSets = appState.database.sets.filter(
+  const exercise = appState.database.exercises.find((candidate) => candidate.id === exerciseId);
+  const activeSession = getActiveSession();
+
+  let matchingSets = appState.database.sets.filter(
     (set) => set.exerciseId === exerciseId && !set.isWarmup
   );
+
+  if (exercise.isGymSpecific && activeSession && activeSession.gymId) {
+    const sessionIdsAtThisGym = new Set(
+      appState.database.sessions
+        .filter((session) => session.gymId === activeSession.gymId)
+        .map((session) => session.id)
+    );
+    matchingSets = matchingSets.filter((set) => sessionIdsAtThisGym.has(set.sessionId));
+  }
 
   if (matchingSets.length === 0) {
     return null;
@@ -358,9 +453,18 @@ function openSetEntryPanel(exerciseId, planTarget = null) {
     plannedTarget.hidden = true;
   }
 
-  previousPerformance.textContent = previous
-    ? `Last: ${previous.load} kg × ${previous.reps} (RIR ${previous.rir})`
-    : "No previous data for this exercise.";
+  if (previous) {
+    // Says "at this gym" when the comparison is gym-scoped, so it's clear
+    // why "No previous data" can still show up for an exercise that's
+    // actually been done many times, just not at today's gym.
+    const scopeNote = exercise.isGymSpecific && getActiveSession() && getActiveSession().gymId
+      ? " at this gym"
+      : "";
+    previousPerformance.textContent =
+      `Last${scopeNote}: ${previous.load} kg × ${previous.reps} (RIR ${previous.rir})`;
+  } else {
+    previousPerformance.textContent = "No previous data for this exercise.";
+  }
 
   renderSetDraft();
   setEntryPanel.hidden = false;
@@ -404,6 +508,7 @@ function closeSetEntryPanel() {
     renderChecklist();
   }
   renderExerciseArea();
+  updateRestTimer();
 }
 
 // One shared handler for every stepper button pair (set entry and planned
@@ -607,7 +712,17 @@ function renderExercisesManageList() {
     rowElement.className = "scheme-list-item";
 
     const nameSpan = document.createElement("span");
-    nameSpan.textContent = exercise.name;
+    nameSpan.textContent = exercise.isGymSpecific ? `${exercise.name} (gym-specific)` : exercise.name;
+
+    const gymToggleButton = document.createElement("button");
+    gymToggleButton.type = "button";
+    gymToggleButton.className = "small-button";
+    gymToggleButton.textContent = exercise.isGymSpecific ? "Unmark" : "Mark gym-specific";
+    gymToggleButton.addEventListener("click", () => {
+      exercise.isGymSpecific = !exercise.isGymSpecific;
+      saveDatabase(appState.database);
+      renderExercisesManageList();
+    });
 
     const archiveButton = document.createElement("button");
     archiveButton.type = "button";
@@ -621,13 +736,14 @@ function renderExercisesManageList() {
       renderExercisesManageList();
     });
 
-    rowElement.append(nameSpan, archiveButton);
+    rowElement.append(nameSpan, gymToggleButton, archiveButton);
     listElement.appendChild(rowElement);
   }
 }
 
 document.getElementById("addExerciseButton").addEventListener("click", () => {
   const nameInput = document.getElementById("newExerciseNameInput");
+  const gymSpecificCheckbox = document.getElementById("newExerciseGymSpecificCheckbox");
   const name = nameInput.value.trim();
   if (name === "") {
     alert("Enter a name for the exercise.");
@@ -656,11 +772,89 @@ document.getElementById("addExerciseButton").addEventListener("click", () => {
     // Left empty on purpose — per schema.js, muscle weights are for the
     // future training engine and nothing reads them yet.
     muscles: {},
+    isArchived: false,
+    isGymSpecific: gymSpecificCheckbox.checked
+  });
+  saveDatabase(appState.database);
+  nameInput.value = "";
+  gymSpecificCheckbox.checked = false;
+  renderExercisesManageList();
+});
+
+
+// ---------------------------------------------------------------------------
+// Gyms (add gyms trained at, archive old ones) and the gym picker shown when
+// starting a workout
+// ---------------------------------------------------------------------------
+
+function renderGymsManageList() {
+  const listElement = document.getElementById("gymsManageList");
+  listElement.innerHTML = "";
+
+  for (const gym of appState.database.gyms.filter((candidate) => !candidate.isArchived)) {
+    const rowElement = document.createElement("li");
+    rowElement.className = "scheme-list-item";
+
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = gym.name;
+
+    const archiveButton = document.createElement("button");
+    archiveButton.type = "button";
+    archiveButton.className = "small-button";
+    archiveButton.textContent = "Archive";
+    archiveButton.addEventListener("click", () => {
+      // Archiving instead of deleting keeps past sessions logged at this gym
+      // resolvable, same reasoning as Exercise and WorkoutTemplate.
+      gym.isArchived = true;
+      saveDatabase(appState.database);
+      renderGymsManageList();
+    });
+
+    rowElement.append(nameSpan, archiveButton);
+    listElement.appendChild(rowElement);
+  }
+}
+
+document.getElementById("addGymButton").addEventListener("click", () => {
+  const nameInput = document.getElementById("newGymNameInput");
+  const name = nameInput.value.trim();
+  if (name === "") {
+    alert("Enter a name for the gym.");
+    return;
+  }
+
+  appState.database.gyms.push({
+    id: crypto.randomUUID(),
+    name,
     isArchived: false
   });
   saveDatabase(appState.database);
   nameInput.value = "";
-  renderExercisesManageList();
+  renderGymsManageList();
+});
+
+// Shown right after picking a scheme (or free-form) to start, so the new
+// session's gymId can be set from the moment it's created.
+function renderGymPicker() {
+  const listElement = document.getElementById("gymPickerList");
+  listElement.innerHTML = "";
+
+  for (const gym of appState.database.gyms.filter((candidate) => !candidate.isArchived)) {
+    const itemElement = document.createElement("li");
+    const buttonElement = document.createElement("button");
+    buttonElement.type = "button";
+    buttonElement.className = "exercise-item";
+    buttonElement.textContent = gym.name;
+    buttonElement.addEventListener("click", () => {
+      startWorkout(appState.pendingTemplateId, gym.id);
+    });
+    itemElement.appendChild(buttonElement);
+    listElement.appendChild(itemElement);
+  }
+}
+
+document.getElementById("skipGymPickerButton").addEventListener("click", () => {
+  startWorkout(appState.pendingTemplateId, null);
 });
 
 
@@ -696,6 +890,9 @@ function renderHistoryList() {
     const template = session.templateId
       ? appState.database.workoutTemplates.find((candidate) => candidate.id === session.templateId)
       : null;
+    const gym = session.gymId
+      ? appState.database.gyms.find((candidate) => candidate.id === session.gymId)
+      : null;
 
     const cardElement = document.createElement("li");
     cardElement.className = "history-card";
@@ -703,7 +900,7 @@ function renderHistoryList() {
     const headerElement = document.createElement("div");
     headerElement.className = "history-card-header";
     headerElement.textContent =
-      `${formatSessionDate(session.startedAt)} · ${template ? template.name : "Free-form"}`;
+      `${formatSessionDate(session.startedAt)} · ${template ? template.name : "Free-form"}${gym ? ` · ${gym.name}` : ""}`;
     cardElement.appendChild(headerElement);
 
     // Group this session's sets by exercise, in the order each exercise was

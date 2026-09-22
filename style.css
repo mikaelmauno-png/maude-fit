@@ -60,6 +60,16 @@ ul li {
   font-size: 0.95rem;
 }
 
+/* Large and bold: meant to be glanced at from arm's length while resting
+   between sets, same reasoning as the "large tap targets" rule. */
+#restTimer {
+  min-height: 1.4em;
+  margin: 8px 0 16px;
+  color: #f0f0f0;
+  font-size: 1.8rem;
+  font-weight: bold;
+}
+
 .button-row {
   display: flex;
   flex-wrap: wrap;

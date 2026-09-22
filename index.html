@@ -22,6 +22,7 @@
       <div class="button-row">
         <button id="manageSchemesButton">Manage schemes</button>
         <button id="manageExercisesButton">Manage exercises</button>
+        <button id="manageGymsButton">Manage gyms</button>
         <button id="viewHistoryButton">History</button>
       </div>
 
@@ -32,6 +33,9 @@
 
       <button id="endWorkoutButton" hidden>End workout</button>
       <p id="workoutStatus"></p>
+      <!-- Counts up from whenever the most recently logged set (in the
+           current workout) was saved, so rest time is visible at a glance. -->
+      <p id="restTimer"></p>
 
       <!-- Exercises are rendered as buttons so they can be tapped to log a
            set, but only once a workout has been started. When the active
@@ -131,11 +135,50 @@
         New exercise name
         <input type="text" id="newExerciseNameInput" placeholder="e.g. Incline dumbbell press">
       </label>
+      <label class="warmup-toggle">
+        <input type="checkbox" id="newExerciseGymSpecificCheckbox">
+        Machine/gym-specific (load isn't comparable between gyms)
+      </label>
       <div class="button-row">
         <button id="addExerciseButton">Add exercise</button>
       </div>
 
       <ul id="exercisesManageList"></ul>
+    </section>
+
+
+    <!-- ===================================================================
+         GYMS SCREEN: add gyms you train at, archive old ones.
+         =================================================================== -->
+    <section id="gymsScreen" hidden>
+      <h1>Gyms</h1>
+      <div class="button-row">
+        <button id="backFromGymsButton">Back</button>
+      </div>
+
+      <label class="text-field">
+        New gym name
+        <input type="text" id="newGymNameInput" placeholder="e.g. PureGym Jyväskylä">
+      </label>
+      <div class="button-row">
+        <button id="addGymButton">Add gym</button>
+      </div>
+
+      <ul id="gymsManageList"></ul>
+    </section>
+
+
+    <!-- ===================================================================
+         GYM PICKER: choose which gym today's workout is at, shown right
+         after picking a scheme (or free-form) to start, only when at least
+         one gym has been added.
+         =================================================================== -->
+    <section id="gymPickerScreen" hidden>
+      <h1>Which gym?</h1>
+      <ul id="gymPickerList"></ul>
+      <div class="button-row">
+        <button id="skipGymPickerButton">Skip</button>
+      </div>
     </section>
 
 

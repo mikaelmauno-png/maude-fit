@@ -14,7 +14,10 @@
 //
 // Bumped to 2 for the addition of WorkoutTemplate and Session.templateId
 // below — old saved data doesn't have those fields.
-const SCHEMA_VERSION = 2;
+//
+// Bumped to 3 for the addition of Gym, Session.gymId, and
+// Exercise.isGymSpecific below.
+const SCHEMA_VERSION = 3;
 
 // Every piece of app data lives under this one localStorage key, as a single
 // JSON string. One key is simpler to export, import, and reason about than
@@ -36,7 +39,11 @@ const STORAGE_KEY = "workoutLog";
 //   id:      "barbell-bench-press",   // stable, lowercase, hyphenated, never changes
 //   name:    "Barbell bench press",   // shown in the UI, safe to reword
 //   muscles: { chest: 1.0, frontDelt: 0.5, triceps: 0.5 },
-//   isArchived: false                 // hidden from pickers, kept for old history
+//   isArchived: false,                // hidden from pickers, kept for old history
+//   isGymSpecific: false              // true for machines/cable stacks whose
+//                                     // load numbers aren't comparable between
+//                                     // gyms; false for free weights, where a
+//                                     // kilogram means the same thing anywhere
 // }
 //
 // About `muscles`: a value of 1.0 means the muscle is the prime mover, 0.5
@@ -70,9 +77,11 @@ const STORAGE_KEY = "workoutLog";
 //   endedAt:    "2026-08-31T18:20:00.000Z",   // null while in progress
 //   dayStatus:  "normal",                     // see DAY_STATUSES below
 //   notes:      "",
-//   templateId: "weekly-workout-1"            // which WorkoutTemplate this
+//   templateId: "weekly-workout-1",           // which WorkoutTemplate this
 //                                              // followed, or null for a
 //                                              // free-form workout
+//   gymId:      "gym-uuid..."                 // which Gym this was at, or
+//                                              // null if not recorded
 // }
 
 // dayStatus records the context that would otherwise be lost. The engine will
@@ -101,6 +110,18 @@ const DAY_STATUSES = ["normal", "poorSleep", "ill", "stressed"];
 //   ]
 // }
 
+// Gym — a physical gym the user trains at. Exists because machine and cable
+// weight stacks aren't standardised between locations, so a logged number
+// for a gym-specific exercise only means the same thing when compared within
+// the same gym. Archived rather than deleted, same reasoning as Exercise and
+// WorkoutTemplate: a past Session still points at the gym it was logged at.
+//
+// {
+//   id:         "gym-uuid...",
+//   name:       "PureGym Jyvaskyla",
+//   isArchived: false
+// }
+
 
 // The complete saved payload. This is the object that gets serialised into
 // localStorage and written out by the export button.
@@ -113,7 +134,8 @@ function createEmptyDatabase() {
                             // inside sessions — a flat list is far easier to
                             // filter when asking questions like "every bench
                             // press I have done"
-    workoutTemplates: []   // WorkoutTemplate objects
+    workoutTemplates: [],  // WorkoutTemplate objects
+    gyms: []                // Gym objects
   };
 }
 
@@ -219,7 +241,8 @@ function importDatabase(jsonText) {
   if (!Array.isArray(parsed.exercises) ||
       !Array.isArray(parsed.sessions) ||
       !Array.isArray(parsed.sets) ||
-      !Array.isArray(parsed.workoutTemplates)) {
+      !Array.isArray(parsed.workoutTemplates) ||
+      !Array.isArray(parsed.gyms)) {
     throw new Error("That file is not a workout log export.");
   }
 
@@ -241,30 +264,35 @@ const STARTER_EXERCISES = [
     id: "barbell-bench-press",
     name: "Barbell bench press",
     muscles: { chest: 1.0, frontDelt: 0.5, triceps: 0.5 },
-    isArchived: false
+    isArchived: false,
+    isGymSpecific: false
   },
   {
     id: "barbell-squat",
     name: "Barbell back squat",
     muscles: { quads: 1.0, glutes: 0.5, adductors: 0.5 },
-    isArchived: false
+    isArchived: false,
+    isGymSpecific: false
   },
   {
     id: "romanian-deadlift",
     name: "Romanian deadlift",
     muscles: { hamstrings: 1.0, glutes: 1.0, lowerBack: 0.5 },
-    isArchived: false
+    isArchived: false,
+    isGymSpecific: false
   },
   {
     id: "pull-up",
     name: "Pull-up",
     muscles: { lats: 1.0, biceps: 0.5, upperBack: 0.5 },
-    isArchived: false
+    isArchived: false,
+    isGymSpecific: false
   },
   {
     id: "overhead-press",
     name: "Overhead press",
     muscles: { frontDelt: 1.0, triceps: 0.5, sideDelt: 0.5 },
-    isArchived: false
+    isArchived: false,
+    isGymSpecific: false
   }
 ];
