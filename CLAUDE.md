@@ -79,9 +79,12 @@ The app is used mid-set, one-handed, with chalky hands, sometimes in poor light.
 Do not build, and do not add hooks or placeholders for:
 
 - The autoregulation engine, volume landmarks, deload logic
-- Charts and analytics
 - Social features, sharing, accounts
 - Anything involving a server
+
+Charts are allowed now (weekly scheme-completion summary, per-exercise
+weight/rep-range history), but stay hand-drawn inline SVG — no charting
+library, since nothing can be loaded from a CDN per the Code rules above.
 
 The muscle-weight fields in the exercise library exist in the schema on
 purpose, but nothing reads them yet. Leave them alone.
