@@ -100,6 +100,16 @@ button:active {
   background-color: #1d4fb8;
 }
 
+/* Red instead of blue, so a destructive action (deleting a logged set)
+   looks visibly different from the ordinary buttons around it. */
+.destructive-button {
+  background-color: #a33232;
+}
+
+.destructive-button:active {
+  background-color: #7a2424;
+}
+
 #setEntryPanel {
   background-color: #1e1e1e;
   border-radius: 8px;

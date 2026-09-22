@@ -27,6 +27,7 @@ const appState = {
   database: initialDatabase,
   activeSessionId: null,       // null unless a workout is in progress
   setDraft: null,               // in-progress values for the set being logged
+  editingSetId: null,           // id of an existing set being corrected, or null when logging a new one
   checklistExerciseId: null,   // which exercise's set checklist is open
   schemeDraft: null,           // in-progress copy of the scheme being edited
   plannedExerciseDraft: null   // in-progress values for a planned exercise
@@ -298,6 +299,8 @@ const warmupCheckbox = document.getElementById("warmupCheckbox");
 const loadValueElement = document.getElementById("loadValue");
 const repsValueElement = document.getElementById("repsValue");
 const rirValueElement = document.getElementById("rirValue");
+const saveSetButton = document.getElementById("saveSetButton");
+const deleteSetButton = document.getElementById("deleteSetButton");
 
 // Finds the most recently performed working (non-warmup) set for an
 // exercise, across all past sessions. Warmups are excluded because they
@@ -335,6 +338,7 @@ function openSetEntryPanel(exerciseId, planTarget = null) {
   const exercise = appState.database.exercises.find((candidate) => candidate.id === exerciseId);
   const previous = findPreviousWorkingSet(exerciseId);
 
+  appState.editingSetId = null;
   appState.setDraft = {
     exerciseId,
     load: planTarget ? planTarget.load : (previous ? previous.load : 20),
@@ -344,6 +348,8 @@ function openSetEntryPanel(exerciseId, planTarget = null) {
   };
 
   setEntryExerciseName.textContent = exercise.name;
+  saveSetButton.textContent = "Save set";
+  deleteSetButton.hidden = true;
 
   if (planTarget) {
     plannedTarget.textContent = `Planned: ${planTarget.repsMin}-${planTarget.repsMax} reps @ ${planTarget.load} kg`;
@@ -360,8 +366,37 @@ function openSetEntryPanel(exerciseId, planTarget = null) {
   setEntryPanel.hidden = false;
 }
 
+// Opens the same panel, but pre-filled from an already-logged set so it can
+// be corrected in place, per the data rule that editing a set replaces it
+// rather than creating a duplicate history entry.
+function openSetEntryPanelForEdit(setId) {
+  const set = appState.database.sets.find((candidate) => candidate.id === setId);
+  const exercise = appState.database.exercises.find((candidate) => candidate.id === set.exerciseId);
+
+  appState.editingSetId = setId;
+  appState.setDraft = {
+    exerciseId: set.exerciseId,
+    load: set.load,
+    reps: set.reps,
+    // A warmup's rir is stored as null; the stepper still needs a number to
+    // display and count from if the warmup box gets unchecked.
+    rir: set.rir === null ? 2 : set.rir,
+    isWarmup: set.isWarmup
+  };
+
+  setEntryExerciseName.textContent = exercise.name;
+  plannedTarget.hidden = true;
+  previousPerformance.textContent = "Editing a previously logged set.";
+  saveSetButton.textContent = "Save changes";
+  deleteSetButton.hidden = false;
+
+  renderSetDraft();
+  setEntryPanel.hidden = false;
+}
+
 function closeSetEntryPanel() {
   appState.setDraft = null;
+  appState.editingSetId = null;
   setEntryPanel.hidden = true;
   // The checklist's logged/remaining counts and the scheme exercise list's
   // progress both depend on the sets that exist, so refresh them too.
@@ -399,35 +434,61 @@ warmupCheckbox.addEventListener("change", () => {
   renderSetDraft();
 });
 
-document.getElementById("saveSetButton").addEventListener("click", () => {
+saveSetButton.addEventListener("click", () => {
   const draft = appState.setDraft;
+  // RIR is meaningless for a warmup, so it's stored as null rather than a
+  // made-up number — schema.js's contract calls this out explicitly.
+  const rir = draft.isWarmup ? null : draft.rir;
 
-  // A set's position within its session. Counting existing sets for this
-  // session works as an order number without needing a separate counter.
-  const order = appState.database.sets.filter(
-    (set) => set.sessionId === appState.activeSessionId
-  ).length;
+  if (appState.editingSetId) {
+    // Editing replaces the existing record's fields in place — same id,
+    // same sessionId/order/performedAt — rather than creating a second
+    // history entry for what is still conceptually one set.
+    const existingSet = appState.database.sets.find((set) => set.id === appState.editingSetId);
+    existingSet.load = draft.load;
+    existingSet.reps = draft.reps;
+    existingSet.rir = rir;
+    existingSet.isWarmup = draft.isWarmup;
+  } else {
+    // A set's position within its session. Counting existing sets for this
+    // session works as an order number without needing a separate counter.
+    const order = appState.database.sets.filter(
+      (set) => set.sessionId === appState.activeSessionId
+    ).length;
 
-  const newSet = {
-    id: crypto.randomUUID(),
-    sessionId: appState.activeSessionId,
-    exerciseId: draft.exerciseId,
-    order,
-    load: draft.load,
-    reps: draft.reps,
-    // RIR is meaningless for a warmup, so it's stored as null rather than a
-    // made-up number — schema.js's contract calls this out explicitly.
-    rir: draft.isWarmup ? null : draft.rir,
-    isWarmup: draft.isWarmup,
-    performedAt: new Date().toISOString()
-  };
+    appState.database.sets.push({
+      id: crypto.randomUUID(),
+      sessionId: appState.activeSessionId,
+      exerciseId: draft.exerciseId,
+      order,
+      load: draft.load,
+      reps: draft.reps,
+      rir,
+      isWarmup: draft.isWarmup,
+      performedAt: new Date().toISOString()
+    });
+  }
 
-  appState.database.sets.push(newSet);
   saveDatabase(appState.database);
   closeSetEntryPanel();
 });
 
 document.getElementById("cancelSetButton").addEventListener("click", () => {
+  closeSetEntryPanel();
+});
+
+deleteSetButton.addEventListener("click", () => {
+  // A set is a leaf record nothing else references by id, unlike Exercise or
+  // WorkoutTemplate, so an explicit, confirmed delete (per the data rules)
+  // can remove it outright rather than archiving it.
+  const confirmed = confirm("Delete this set? This can't be undone.");
+  if (!confirmed) {
+    return;
+  }
+
+  const index = appState.database.sets.findIndex((set) => set.id === appState.editingSetId);
+  appState.database.sets.splice(index, 1);
+  saveDatabase(appState.database);
   closeSetEntryPanel();
 });
 
@@ -479,10 +540,17 @@ function renderChecklist() {
     const loggedSet = loggedSets[setIndex];
 
     if (loggedSet) {
-      const doneSpan = document.createElement("span");
-      doneSpan.textContent =
+      // Tappable so a mis-logged set can be corrected or removed, per the
+      // data rule that editing replaces a set rather than leaving it wrong.
+      const doneButton = document.createElement("button");
+      doneButton.type = "button";
+      doneButton.className = "exercise-item";
+      doneButton.textContent =
         `Set ${setIndex + 1}: ${loggedSet.load} kg × ${loggedSet.reps} (RIR ${loggedSet.rir}) ✓`;
-      rowElement.appendChild(doneSpan);
+      doneButton.addEventListener("click", () => {
+        openSetEntryPanelForEdit(loggedSet.id);
+      });
+      rowElement.appendChild(doneButton);
     } else {
       const rowButton = document.createElement("button");
       rowButton.type = "button";
