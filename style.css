@@ -139,18 +139,76 @@ button:active {
   font-size: 0.95rem;
 }
 
-/* Scheme-based exercise buttons hold two lines (name, then target/progress
-   below it in .exercise-item-detail). Free-form ones just use .exercise-item
-   directly with plain text, so this only applies where it's used. */
-.exercise-item-name {
-  display: block;
+#schemeWorkoutCards {
+  margin-bottom: 24px;
 }
 
-.exercise-item-detail {
-  display: block;
+/* One card per planned exercise in a scheme-based workout, holding that
+   exercise's row of set pills (see below). */
+.exercise-card {
+  background-color: #1e1e1e;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.exercise-card h3 {
+  margin: 0 0 12px;
+  font-size: 1.15rem;
+}
+
+.set-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* Weight on top, reps below, stacked inside a rounded tile — a tap target
+   in its own right, not just a label, since tapping it opens the entry
+   panel to log or correct that set. */
+.set-pill {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 68px;
+  min-height: 68px;
+  padding: 8px;
+  border-radius: 12px;
+  border: none;
+  cursor: pointer;
+}
+
+.set-pill-weight {
+  font-size: 0.85rem;
+}
+
+.set-pill-reps {
+  font-size: 1.3rem;
+  font-weight: bold;
+}
+
+/* Logged: green, matching the "done" convention from the reference design. */
+.set-pill-done {
+  background-color: #3a8a45;
+  color: #ffffff;
+}
+
+/* Not yet logged: dim grey, so a glance at the card shows what's left. */
+.set-pill-pending {
+  background-color: #2a2a2a;
   color: #9a9a9a;
-  font-size: 0.9rem;
-  margin-top: 4px;
+}
+
+/* A set beyond the plan — same shape as the others, but styled like the
+   rest of the app's buttons so it reads as "add", not as a set. */
+.set-pill-add {
+  background-color: #2a6df4;
+  color: #ffffff;
+  font-size: 1.6rem;
+  font-weight: bold;
 }
 
 .stepper-row {

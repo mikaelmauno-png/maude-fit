@@ -28,7 +28,6 @@ const appState = {
   activeSessionId: null,       // null unless a workout is in progress
   setDraft: null,               // in-progress values for the set being logged
   editingSetId: null,           // id of an existing set being corrected, or null when logging a new one
-  checklistExerciseId: null,   // which exercise's set checklist is open
   schemeDraft: null,           // in-progress copy of the scheme being edited
   plannedExerciseDraft: null,  // in-progress values for a planned exercise
   pendingTemplateId: null      // scheme chosen at Start Workout, held while the gym picker is open
@@ -151,21 +150,27 @@ function getActiveTemplate() {
 // Exercise list (main screen)
 // ---------------------------------------------------------------------------
 
-// Redraws whichever exercise list applies right now: the full library when
-// there's no active scheme, or just that scheme's exercises with their
-// targets and progress when there is one.
+const exerciseListElement = document.getElementById("exerciseList");
+const schemeWorkoutCardsElement = document.getElementById("schemeWorkoutCards");
+
+// Redraws whichever exercise area applies right now: the full free-form
+// library when there's no active scheme, or a card per planned exercise
+// (each holding one pill per target set) when there is one.
 function renderExerciseArea() {
   const template = getActiveTemplate();
   if (template) {
-    renderSchemeExerciseList(template);
+    exerciseListElement.hidden = true;
+    schemeWorkoutCardsElement.hidden = false;
+    renderSchemeWorkoutCards(template);
   } else {
+    exerciseListElement.hidden = false;
+    schemeWorkoutCardsElement.hidden = true;
     renderFreeformExerciseList();
   }
 }
 
 function renderFreeformExerciseList() {
-  const listElement = document.getElementById("exerciseList");
-  listElement.innerHTML = "";
+  exerciseListElement.innerHTML = "";
 
   // Archived exercises stay in the data (old sets/schemes still reference
   // them) but shouldn't be offered for new logging.
@@ -182,44 +187,92 @@ function renderFreeformExerciseList() {
       openSetEntryPanel(exercise.id);
     });
     itemElement.appendChild(buttonElement);
-    listElement.appendChild(itemElement);
+    exerciseListElement.appendChild(itemElement);
   }
 }
 
-function renderSchemeExerciseList(template) {
-  const listElement = document.getElementById("exerciseList");
-  listElement.innerHTML = "";
+// Builds one "pill" button for a single set: weight on top, reps below (the
+// done vs. pending look and the reps text are the only real difference
+// between an already-logged set and one still waiting to be done).
+function buildSetPill(loggedSet, planned) {
+  const pill = document.createElement("button");
+  pill.type = "button";
+  pill.className = loggedSet ? "set-pill set-pill-done" : "set-pill set-pill-pending";
+
+  const weightSpan = document.createElement("span");
+  weightSpan.className = "set-pill-weight";
+  weightSpan.textContent = `${loggedSet ? loggedSet.load : planned.targetLoad} kg`;
+
+  const repsSpan = document.createElement("span");
+  repsSpan.className = "set-pill-reps";
+  repsSpan.textContent = loggedSet
+    ? `${loggedSet.reps}/${planned.targetRepsMin}-${planned.targetRepsMax}`
+    : `${planned.targetRepsMin}-${planned.targetRepsMax}`;
+
+  pill.append(weightSpan, repsSpan);
+
+  pill.addEventListener("click", () => {
+    if (loggedSet) {
+      openSetEntryPanelForEdit(loggedSet.id);
+    } else {
+      openSetEntryPanel(planned.exerciseId, {
+        load: planned.targetLoad,
+        repsMin: planned.targetRepsMin,
+        repsMax: planned.targetRepsMax
+      });
+    }
+  });
+
+  return pill;
+}
+
+// One card per planned exercise, shown all at once — order doesn't matter,
+// since any pill in any card can be tapped first.
+function renderSchemeWorkoutCards(template) {
+  schemeWorkoutCardsElement.innerHTML = "";
 
   for (const planned of template.plannedExercises) {
     const exercise = appState.database.exercises.find((candidate) => candidate.id === planned.exerciseId);
-    const loggedCount = appState.database.sets.filter(
-      (set) =>
-        set.sessionId === appState.activeSessionId &&
-        set.exerciseId === planned.exerciseId &&
-        !set.isWarmup
-    ).length;
+    const loggedSets = appState.database.sets
+      .filter(
+        (set) =>
+          set.sessionId === appState.activeSessionId &&
+          set.exerciseId === planned.exerciseId &&
+          !set.isWarmup
+      )
+      .sort((a, b) => a.order - b.order);
 
-    const itemElement = document.createElement("li");
-    const buttonElement = document.createElement("button");
-    buttonElement.type = "button";
-    buttonElement.className = "exercise-item";
+    const cardElement = document.createElement("div");
+    cardElement.className = "exercise-card";
 
-    const nameSpan = document.createElement("span");
-    nameSpan.className = "exercise-item-name";
-    nameSpan.textContent = exercise.name;
+    const headingElement = document.createElement("h3");
+    headingElement.textContent = exercise.name;
+    cardElement.appendChild(headingElement);
 
-    const detailSpan = document.createElement("span");
-    detailSpan.className = "exercise-item-detail";
-    detailSpan.textContent =
-      `${loggedCount}/${planned.targetSets} sets · ${planned.targetRepsMin}-${planned.targetRepsMax} reps @ ${planned.targetLoad} kg`;
+    const pillRowElement = document.createElement("div");
+    pillRowElement.className = "set-pills";
 
-    buttonElement.append(nameSpan, detailSpan);
-    buttonElement.addEventListener("click", () => {
-      openChecklist(planned.exerciseId);
-    });
+    // One pill per planned set, filled in from whatever's actually been
+    // logged so far for it.
+    for (let setIndex = 0; setIndex < planned.targetSets; setIndex++) {
+      pillRowElement.appendChild(buildSetPill(loggedSets[setIndex], planned));
+    }
 
-    itemElement.appendChild(buttonElement);
-    listElement.appendChild(itemElement);
+    // Any sets logged beyond the planned count (via the "+" pill below) get
+    // their own pills too, rather than being invisible here.
+    for (let setIndex = planned.targetSets; setIndex < loggedSets.length; setIndex++) {
+      pillRowElement.appendChild(buildSetPill(loggedSets[setIndex], planned));
+    }
+
+    const addPill = document.createElement("button");
+    addPill.type = "button";
+    addPill.className = "set-pill set-pill-add";
+    addPill.textContent = "+";
+    addPill.addEventListener("click", () => openSetEntryPanel(planned.exerciseId));
+    pillRowElement.appendChild(addPill);
+
+    cardElement.appendChild(pillRowElement);
+    schemeWorkoutCardsElement.appendChild(cardElement);
   }
 }
 
@@ -305,11 +358,6 @@ endWorkoutButton.addEventListener("click", () => {
   const session = getActiveSession();
   session.endedAt = new Date().toISOString();
   saveDatabase(appState.database);
-  // Closing these first, while activeSessionId still points at the session
-  // that's ending, matters: closeSetEntryPanel() can re-render the checklist,
-  // which looks up the active template through activeSessionId — clearing it
-  // first would make that lookup fail.
-  closeChecklist();
   closeSetEntryPanel();
   appState.activeSessionId = null;
   updateWorkoutControls();
@@ -426,7 +474,7 @@ function renderSetDraft() {
 }
 
 // `planTarget` (optional) is `{ load, repsMin, repsMax }` from a scheme's
-// plan, passed in when opened from the set checklist below. When present,
+// plan, passed in when opened from a pending set pill. When present,
 // load/reps default to the plan rather than to past performance, since the
 // plan is what today is supposed to follow.
 function openSetEntryPanel(exerciseId, planTarget = null) {
@@ -502,11 +550,7 @@ function closeSetEntryPanel() {
   appState.setDraft = null;
   appState.editingSetId = null;
   setEntryPanel.hidden = true;
-  // The checklist's logged/remaining counts and the scheme exercise list's
-  // progress both depend on the sets that exist, so refresh them too.
-  if (!document.getElementById("plannedSetChecklist").hidden) {
-    renderChecklist();
-  }
+  // The cards' pills depend on which sets exist, so refresh them too.
   renderExerciseArea();
   updateRestTimer();
 }
@@ -595,95 +639,6 @@ deleteSetButton.addEventListener("click", () => {
   appState.database.sets.splice(index, 1);
   saveDatabase(appState.database);
   closeSetEntryPanel();
-});
-
-
-// ---------------------------------------------------------------------------
-// Planned-set checklist (shown instead of the plain exercise tap, when the
-// active workout follows a scheme)
-// ---------------------------------------------------------------------------
-
-const plannedSetChecklist = document.getElementById("plannedSetChecklist");
-const checklistExerciseName = document.getElementById("checklistExerciseName");
-const checklistRows = document.getElementById("checklistRows");
-
-function openChecklist(exerciseId) {
-  appState.checklistExerciseId = exerciseId;
-  plannedSetChecklist.hidden = false;
-  renderChecklist();
-}
-
-function closeChecklist() {
-  appState.checklistExerciseId = null;
-  plannedSetChecklist.hidden = true;
-}
-
-function renderChecklist() {
-  const template = getActiveTemplate();
-  const planned = template.plannedExercises.find(
-    (candidate) => candidate.exerciseId === appState.checklistExerciseId
-  );
-  const exercise = appState.database.exercises.find(
-    (candidate) => candidate.id === appState.checklistExerciseId
-  );
-
-  checklistExerciseName.textContent = exercise.name;
-  checklistRows.innerHTML = "";
-
-  const loggedSets = appState.database.sets
-    .filter(
-      (set) =>
-        set.sessionId === appState.activeSessionId &&
-        set.exerciseId === appState.checklistExerciseId &&
-        !set.isWarmup
-    )
-    .sort((a, b) => a.order - b.order);
-
-  for (let setIndex = 0; setIndex < planned.targetSets; setIndex++) {
-    const rowElement = document.createElement("li");
-    rowElement.className = "scheme-list-item";
-    const loggedSet = loggedSets[setIndex];
-
-    if (loggedSet) {
-      // Tappable so a mis-logged set can be corrected or removed, per the
-      // data rule that editing replaces a set rather than leaving it wrong.
-      const doneButton = document.createElement("button");
-      doneButton.type = "button";
-      doneButton.className = "exercise-item";
-      doneButton.textContent =
-        `Set ${setIndex + 1}: ${loggedSet.load} kg × ${loggedSet.reps} (RIR ${loggedSet.rir}) ✓`;
-      doneButton.addEventListener("click", () => {
-        openSetEntryPanelForEdit(loggedSet.id);
-      });
-      rowElement.appendChild(doneButton);
-    } else {
-      const rowButton = document.createElement("button");
-      rowButton.type = "button";
-      rowButton.className = "exercise-item";
-      rowButton.textContent =
-        `Set ${setIndex + 1}: target ${planned.targetRepsMin}-${planned.targetRepsMax} reps @ ${planned.targetLoad} kg`;
-      rowButton.addEventListener("click", () => {
-        openSetEntryPanel(appState.checklistExerciseId, {
-          load: planned.targetLoad,
-          repsMin: planned.targetRepsMin,
-          repsMax: planned.targetRepsMax
-        });
-      });
-      rowElement.appendChild(rowButton);
-    }
-
-    checklistRows.appendChild(rowElement);
-  }
-}
-
-document.getElementById("addExtraSetButton").addEventListener("click", () => {
-  // Beyond the planned count, fall back to ordinary previous-performance
-  // pre-filling rather than a plan target.
-  openSetEntryPanel(appState.checklistExerciseId);
-});
-
-document.getElementById("closeChecklistButton").addEventListener("click", () => {
-  closeChecklist();
 });
 
 
@@ -1209,12 +1164,6 @@ importFileInput.addEventListener("change", () => {
     }
 
     try {
-      // Closed before swapping in the new database and clearing
-      // activeSessionId: closeSetEntryPanel() can re-render the checklist,
-      // which looks up the active template through the *current* database
-      // and session — doing that lookup against a database that no longer
-      // has them (or after the session's already cleared) would crash.
-      closeChecklist();
       closeSetEntryPanel();
 
       appState.database = importDatabase(fileText);

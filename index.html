@@ -37,28 +37,21 @@
            current workout) was saved, so rest time is visible at a glance. -->
       <p id="restTimer"></p>
 
-      <!-- Exercises are rendered as buttons so they can be tapped to log a
-           set, but only once a workout has been started. When the active
-           workout follows a scheme, this list is narrowed to that scheme's
-           exercises and shows each one's target; otherwise it's the full
-           exercise library. -->
+      <!-- Free-form only: exercises rendered as plain buttons, tapped to log
+           a set directly. Only enabled once a workout has been started. -->
       <ul id="exerciseList"></ul>
 
-      <!-- Shown instead of the set entry panel when the active workout
-           follows a scheme and an exercise with planned sets is tapped: a
-           checklist of that exercise's target number of sets. -->
-      <section id="plannedSetChecklist" hidden>
-        <h2 id="checklistExerciseName"></h2>
-        <ul id="checklistRows"></ul>
-        <div class="button-row">
-          <button id="addExtraSetButton">Add extra set</button>
-          <button id="closeChecklistButton">Close</button>
-        </div>
-      </section>
+      <!-- Scheme-based only: one card per planned exercise, all shown at
+           once (order doesn't matter — any set in any exercise can be
+           logged first). Each card holds one "pill" button per target set,
+           filled in green once logged, grey while still pending, plus a "+"
+           pill for a set beyond the plan. Tapping any pill opens the set
+           entry panel below, either to log it or to correct it. -->
+      <div id="schemeWorkoutCards" hidden></div>
 
-      <!-- Hidden until an exercise (or a checklist row) is tapped. One
-           shared panel is reused for whichever set is currently being
-           logged, rather than building a separate form each time. -->
+      <!-- Hidden until an exercise (or a set pill) is tapped. One shared
+           panel is reused for whichever set is currently being logged,
+           rather than building a separate form each time. -->
       <section id="setEntryPanel" hidden>
         <h2 id="setEntryExerciseName"></h2>
         <!-- Only shown when this set came from a scheme's plan. -->
@@ -105,7 +98,7 @@
           <button id="cancelSetButton">Cancel</button>
         </div>
         <!-- Only shown when editing a set that's already logged (tapped from
-             the checklist below), not when logging a new one. -->
+             a "done" pill), not when logging a new one. -->
         <div class="button-row">
           <button id="deleteSetButton" class="destructive-button" hidden>Delete set</button>
         </div>
