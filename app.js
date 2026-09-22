@@ -68,6 +68,9 @@ const gymPickerScreen = document.getElementById("gymPickerScreen");
 const exerciseStatsListScreen = document.getElementById("exerciseStatsListScreen");
 const exerciseStatsDetailScreen = document.getElementById("exerciseStatsDetailScreen");
 const muscleEditorPanel = document.getElementById("muscleEditorPanel");
+const personalBestsScreen = document.getElementById("personalBestsScreen");
+const muscleStatsListScreen = document.getElementById("muscleStatsListScreen");
+const muscleStatsDetailScreen = document.getElementById("muscleStatsDetailScreen");
 // A top-level section (not nested in mainScreen) so it can be shown over
 // either mainScreen or historyScreen — see the comment above it in
 // index.html for why. Declared here, with the other screens, rather than
@@ -80,7 +83,8 @@ const setEntryPanel = document.getElementById("setEntryPanel");
 const allScreens = [
   mainScreen, schemesScreen, schemeEditorScreen, exercisePickerScreen,
   plannedExerciseEntryPanel, exercisesScreen, historyScreen, gymsScreen, gymPickerScreen,
-  setEntryPanel, exerciseStatsListScreen, exerciseStatsDetailScreen, muscleEditorPanel
+  setEntryPanel, exerciseStatsListScreen, exerciseStatsDetailScreen, muscleEditorPanel,
+  personalBestsScreen, muscleStatsListScreen, muscleStatsDetailScreen
 ];
 
 function hideAllScreens() {
@@ -147,6 +151,24 @@ function showExerciseStatsDetailScreen(exerciseId) {
   // immediately undo that pick.
   appState.exerciseStatsSelectedGymId = null;
   renderExerciseStatsDetail(exerciseId);
+}
+
+function showPersonalBestsScreen() {
+  hideAllScreens();
+  personalBestsScreen.hidden = false;
+  renderPersonalBestsList();
+}
+
+function showMuscleStatsListScreen() {
+  hideAllScreens();
+  muscleStatsListScreen.hidden = false;
+  renderMuscleStatsList();
+}
+
+function showMuscleStatsDetailScreen(muscle) {
+  hideAllScreens();
+  muscleStatsDetailScreen.hidden = false;
+  renderMuscleStatsDetail(muscle);
 }
 
 document.getElementById("manageSchemesButton").addEventListener("click", showSchemesScreen);
@@ -1019,6 +1041,28 @@ function renderExercisesManageList() {
       infoElement.appendChild(muscleSpan);
     }
 
+    const renameButton = document.createElement("button");
+    renameButton.type = "button";
+    renameButton.className = "small-button";
+    renameButton.textContent = "Rename";
+    renameButton.addEventListener("click", () => {
+      // Only Exercise.name changes here — the id (used by every set and
+      // scheme that references this exercise) is stable per schema.js and
+      // is never touched by a rename.
+      const newName = prompt("Rename exercise", exercise.name);
+      if (newName === null) {
+        return;
+      }
+      const trimmedName = newName.trim();
+      if (trimmedName === "") {
+        alert("Name can't be empty.");
+        return;
+      }
+      exercise.name = trimmedName;
+      saveDatabase(appState.database);
+      renderExercisesManageList();
+    });
+
     const musclesButton = document.createElement("button");
     musclesButton.type = "button";
     musclesButton.className = "small-button";
@@ -1048,7 +1092,7 @@ function renderExercisesManageList() {
       renderArchivedExercisesList();
     });
 
-    rowElement.append(infoElement, musclesButton, gymToggleButton, archiveButton);
+    rowElement.append(infoElement, renameButton, musclesButton, gymToggleButton, archiveButton);
     listElement.appendChild(rowElement);
   }
 }
@@ -1290,6 +1334,27 @@ function renderGymsManageList() {
     const nameSpan = document.createElement("span");
     nameSpan.textContent = gym.name;
 
+    const renameButton = document.createElement("button");
+    renameButton.type = "button";
+    renameButton.className = "small-button";
+    renameButton.textContent = "Rename";
+    renameButton.addEventListener("click", () => {
+      // Only Gym.name changes — the id (referenced by Session.gymId) is
+      // never touched by a rename.
+      const newName = prompt("Rename gym", gym.name);
+      if (newName === null) {
+        return;
+      }
+      const trimmedName = newName.trim();
+      if (trimmedName === "") {
+        alert("Name can't be empty.");
+        return;
+      }
+      gym.name = trimmedName;
+      saveDatabase(appState.database);
+      renderGymsManageList();
+    });
+
     const archiveButton = document.createElement("button");
     archiveButton.type = "button";
     archiveButton.className = "small-button";
@@ -1303,7 +1368,7 @@ function renderGymsManageList() {
       renderArchivedGymsList();
     });
 
-    rowElement.append(nameSpan, archiveButton);
+    rowElement.append(nameSpan, renameButton, archiveButton);
     listElement.appendChild(rowElement);
   }
 }
@@ -1903,7 +1968,10 @@ function renderExerciseStatsList() {
     const buttonElement = document.createElement("button");
     buttonElement.type = "button";
     buttonElement.className = "exercise-item";
-    buttonElement.textContent = exercise.name;
+    // Same "(gym-specific)" convention the Manage Exercises list already
+    // uses — otherwise it's not obvious why only some exercises' detail
+    // screens show a gym picker.
+    buttonElement.textContent = exercise.isGymSpecific ? `${exercise.name} (gym-specific)` : exercise.name;
     buttonElement.addEventListener("click", () => showExerciseStatsDetailScreen(exercise.id));
     itemElement.appendChild(buttonElement);
     listElement.appendChild(itemElement);
@@ -1976,6 +2044,195 @@ function renderExerciseStatsDetail(exerciseId) {
 document.getElementById("viewExerciseStatsButton").addEventListener("click", showExerciseStatsListScreen);
 document.getElementById("backFromExerciseStatsListButton").addEventListener("click", showHistoryScreen);
 document.getElementById("backFromExerciseStatsDetailButton").addEventListener("click", showExerciseStatsListScreen);
+
+
+// ---------------------------------------------------------------------------
+// Personal bests — heaviest-ever and highest-single-set-volume-ever, per
+// exercise, across all history (not scoped to "this week" like the other
+// main-screen summaries).
+// ---------------------------------------------------------------------------
+
+// The single set, among all non-warmup sets ever logged for this exercise,
+// that's the best by `metric` — "weight" (heaviest load) or "volume"
+// (highest load x reps in one set). Returns null if the exercise has no
+// working-set history at all.
+function getBestEverSet(exerciseId, metric) {
+  const workingSets = appState.database.sets.filter(
+    (set) => set.exerciseId === exerciseId && !set.isWarmup
+  );
+  if (workingSets.length === 0) {
+    return null;
+  }
+
+  if (metric === "weight") {
+    return workingSets.reduce((best, set) => (set.load > best.load ? set : best));
+  }
+  return workingSets.reduce((best, set) =>
+    (set.load * set.reps > best.load * best.reps ? set : best)
+  );
+}
+
+// Which gym (if any) a given set was logged at, by way of its session —
+// used to label a gym-specific exercise's best set with where it happened,
+// since a single "best fact with attribution" isn't the same kind of
+// misleading-if-mixed problem the stats trend charts have.
+function getGymNameForSet(set) {
+  const session = appState.database.sessions.find((candidate) => candidate.id === set.sessionId);
+  if (!session || !session.gymId) {
+    return null;
+  }
+  const gym = appState.database.gyms.find((candidate) => candidate.id === session.gymId);
+  return gym ? gym.name : null;
+}
+
+function renderPersonalBestsList() {
+  const listElement = document.getElementById("personalBestsList");
+  listElement.innerHTML = "";
+
+  const exercisesWithHistory = appState.database.exercises.filter((exercise) =>
+    appState.database.sets.some((set) => set.exerciseId === exercise.id && !set.isWarmup)
+  );
+
+  if (exercisesWithHistory.length === 0) {
+    const emptyMessage = document.createElement("p");
+    emptyMessage.textContent = "No working sets logged yet.";
+    listElement.appendChild(emptyMessage);
+    return;
+  }
+
+  for (const exercise of exercisesWithHistory) {
+    const weightBest = getBestEverSet(exercise.id, "weight");
+    const volumeBest = getBestEverSet(exercise.id, "volume");
+
+    const cardElement = document.createElement("li");
+    cardElement.className = "history-card";
+
+    const headingElement = document.createElement("div");
+    headingElement.className = "history-card-header";
+    headingElement.textContent = exercise.name;
+    cardElement.appendChild(headingElement);
+
+    const weightGymName = exercise.isGymSpecific ? getGymNameForSet(weightBest) : null;
+    const weightLine = document.createElement("div");
+    weightLine.className = "history-card-line";
+    weightLine.textContent =
+      `Heaviest: ${weightBest.load} kg × ${weightBest.reps} · ${formatSessionDate(weightBest.performedAt)}` +
+      (weightGymName ? ` · ${weightGymName}` : "");
+    cardElement.appendChild(weightLine);
+
+    const volumeGymName = exercise.isGymSpecific ? getGymNameForSet(volumeBest) : null;
+    const volumeLine = document.createElement("div");
+    volumeLine.className = "history-card-line";
+    volumeLine.textContent =
+      `Best single set: ${volumeBest.load} kg × ${volumeBest.reps} (${volumeBest.load * volumeBest.reps} kg total) · ` +
+      `${formatSessionDate(volumeBest.performedAt)}` + (volumeGymName ? ` · ${volumeGymName}` : "");
+    cardElement.appendChild(volumeLine);
+
+    listElement.appendChild(cardElement);
+  }
+}
+
+document.getElementById("viewPersonalBestsButton").addEventListener("click", showPersonalBestsScreen);
+document.getElementById("backFromPersonalBestsButton").addEventListener("click", showHistoryScreen);
+
+
+// ---------------------------------------------------------------------------
+// Muscle stats — a per-muscle trend chart extending the main screen's
+// "this week" counter across the last several weeks, same weighted-sets
+// computation (1.0 main muscle, 0.5 secondary) applied per week instead of
+// just the current one.
+// ---------------------------------------------------------------------------
+
+// One point per week that has data (most recent `weekCount` such weeks):
+// the total weighted sets for `muscle` across every exercise that has it,
+// summed from that week's non-warmup sets.
+function getWeeklyMuscleSetCounts(muscle, weekCount) {
+  const countsByWeekKey = new Map();
+
+  for (const set of appState.database.sets) {
+    if (set.isWarmup) {
+      continue;
+    }
+    const exercise = appState.database.exercises.find((candidate) => candidate.id === set.exerciseId);
+    const weight = exercise ? exercise.muscles[muscle] : undefined;
+    if (weight === undefined) {
+      continue;
+    }
+    const weekKey = getWeekKey(new Date(set.performedAt));
+    countsByWeekKey.set(weekKey, (countsByWeekKey.get(weekKey) || 0) + weight);
+  }
+
+  // Week keys are ISO dates (Monday of that week), so sorting the strings
+  // sorts them chronologically too — same trick getWeeklyBestSets() uses.
+  const sortedWeekKeys = Array.from(countsByWeekKey.keys()).sort();
+  return sortedWeekKeys.slice(-weekCount).map((weekKey) => ({
+    weekKey,
+    value: countsByWeekKey.get(weekKey)
+  }));
+}
+
+function renderMuscleStatsList() {
+  const listElement = document.getElementById("muscleStatsList");
+  listElement.innerHTML = "";
+
+  const musclesWithHistory = MUSCLE_GROUPS.filter((muscle) =>
+    appState.database.sets.some((set) => {
+      if (set.isWarmup) {
+        return false;
+      }
+      const exercise = appState.database.exercises.find((candidate) => candidate.id === set.exerciseId);
+      return exercise && exercise.muscles[muscle] !== undefined;
+    })
+  );
+
+  if (musclesWithHistory.length === 0) {
+    const emptyMessage = document.createElement("p");
+    emptyMessage.textContent = "No exercises with muscles set have been logged yet.";
+    listElement.appendChild(emptyMessage);
+    return;
+  }
+
+  for (const muscle of musclesWithHistory) {
+    const itemElement = document.createElement("li");
+    const buttonElement = document.createElement("button");
+    buttonElement.type = "button";
+    buttonElement.className = "exercise-item";
+    buttonElement.textContent = MUSCLE_GROUP_LABELS[muscle];
+    buttonElement.addEventListener("click", () => showMuscleStatsDetailScreen(muscle));
+    itemElement.appendChild(buttonElement);
+    listElement.appendChild(itemElement);
+  }
+}
+
+function renderMuscleStatsDetail(muscle) {
+  document.getElementById("muscleStatsDetailName").textContent = MUSCLE_GROUP_LABELS[muscle];
+
+  const weeklyCounts = getWeeklyMuscleSetCounts(muscle, 8);
+  const emptyMessage = document.getElementById("muscleStatsEmptyMessage");
+  const chartContainer = document.getElementById("muscleStatsChartContainer");
+
+  if (weeklyCounts.length === 0) {
+    emptyMessage.hidden = false;
+    chartContainer.hidden = true;
+    return;
+  }
+  emptyMessage.hidden = true;
+  chartContainer.hidden = false;
+
+  const points = weeklyCounts.map((entry) => ({
+    // weekKey is already an ISO date (that week's Monday), so it can be
+    // formatted the same way a set's performedAt is elsewhere.
+    label: formatSessionDate(entry.weekKey),
+    value: entry.value
+  }));
+
+  document.getElementById("muscleStatsChart").innerHTML =
+    buildLineChartSVG(points, (value) => formatSetCount(value));
+}
+
+document.getElementById("viewMuscleStatsButton").addEventListener("click", showMuscleStatsListScreen);
+document.getElementById("backFromMuscleStatsListButton").addEventListener("click", showHistoryScreen);
+document.getElementById("backFromMuscleStatsDetailButton").addEventListener("click", showMuscleStatsListScreen);
 
 
 // ---------------------------------------------------------------------------

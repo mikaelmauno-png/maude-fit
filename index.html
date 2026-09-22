@@ -275,8 +275,27 @@
       <div class="button-row">
         <button id="backFromHistoryButton">Back</button>
         <button id="viewExerciseStatsButton">Exercise stats</button>
+        <button id="viewPersonalBestsButton">Personal bests</button>
+        <button id="viewMuscleStatsButton">Muscle stats</button>
       </div>
       <ul id="historyList"></ul>
+    </section>
+
+
+    <!-- ===================================================================
+         PERSONAL BESTS: heaviest-ever and highest-single-set-volume-ever,
+         per exercise with any logged history. For a gym-specific exercise,
+         the gym each best was achieved at is shown alongside it rather than
+         silently merging gyms — this is a single best fact with
+         attribution, not a progression comparison, so it doesn't have the
+         same "misleading if mixed" problem the stats trend charts do.
+         =================================================================== -->
+    <section id="personalBestsScreen" hidden>
+      <h1>Personal bests</h1>
+      <div class="button-row">
+        <button id="backFromPersonalBestsButton">Back</button>
+      </div>
+      <ul id="personalBestsList"></ul>
     </section>
 
 
@@ -317,9 +336,38 @@
 
       <div id="exerciseStatsCharts" hidden>
         <h3>Weight (heaviest set per week, kg)</h3>
-        <div id="exerciseStatsWeightChart"></div>
+        <div id="exerciseStatsWeightChart" class="stats-chart"></div>
         <h3>Reps (at that heaviest set)</h3>
-        <div id="exerciseStatsRepsChart"></div>
+        <div id="exerciseStatsRepsChart" class="stats-chart"></div>
+      </div>
+    </section>
+
+
+    <!-- ===================================================================
+         MUSCLE STATS: flat list of muscles with any logged history (i.e.
+         used by an exercise that's actually been trained), each opening a
+         single trend chart — weighted sets per week (1.0 main muscle, 0.5
+         secondary), same computation as the main screen's "this week"
+         counter, extended across the last several weeks instead of just
+         the current one.
+         =================================================================== -->
+    <section id="muscleStatsListScreen" hidden>
+      <h1>Muscle stats</h1>
+      <div class="button-row">
+        <button id="backFromMuscleStatsListButton">Back</button>
+      </div>
+      <ul id="muscleStatsList"></ul>
+    </section>
+
+    <section id="muscleStatsDetailScreen" hidden>
+      <div class="button-row">
+        <button id="backFromMuscleStatsDetailButton">Back</button>
+      </div>
+      <h1 id="muscleStatsDetailName"></h1>
+      <p id="muscleStatsEmptyMessage" hidden>No sets logged for this muscle yet.</p>
+      <div id="muscleStatsChartContainer" hidden>
+        <h3>Weighted sets per week</h3>
+        <div id="muscleStatsChart" class="stats-chart"></div>
       </div>
     </section>
 
