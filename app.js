@@ -33,7 +33,9 @@ const appState = {
   pendingTemplateId: null,     // scheme chosen at Start Workout, held while the gym picker is open
   nextGoalTarget: null,        // { templateId, exerciseId } while adjusting an existing planned exercise's target from a workout card; null otherwise
   freeformReviewExerciseId: null, // which exercise's logged-sets review card is open, in a free-form workout; null otherwise
-  dayStatusDraft: null            // { dayStatus, notes } while the today's-status panel is open; null otherwise
+  dayStatusDraft: null,           // { dayStatus, notes } while the today's-status panel is open; null otherwise
+  muscleEditorExerciseId: null,   // which exercise's muscle editor is open; null otherwise
+  muscleDraft: null               // { mainMuscle, secondaryMuscles } while the muscle editor is open; null otherwise
 };
 
 // On a brand-new install the exercise library is empty. Fill it with the
@@ -64,6 +66,7 @@ const gymsScreen = document.getElementById("gymsScreen");
 const gymPickerScreen = document.getElementById("gymPickerScreen");
 const exerciseStatsListScreen = document.getElementById("exerciseStatsListScreen");
 const exerciseStatsDetailScreen = document.getElementById("exerciseStatsDetailScreen");
+const muscleEditorPanel = document.getElementById("muscleEditorPanel");
 // A top-level section (not nested in mainScreen) so it can be shown over
 // either mainScreen or historyScreen — see the comment above it in
 // index.html for why. Declared here, with the other screens, rather than
@@ -76,7 +79,7 @@ const setEntryPanel = document.getElementById("setEntryPanel");
 const allScreens = [
   mainScreen, schemesScreen, schemeEditorScreen, exercisePickerScreen,
   plannedExerciseEntryPanel, exercisesScreen, historyScreen, gymsScreen, gymPickerScreen,
-  setEntryPanel, exerciseStatsListScreen, exerciseStatsDetailScreen
+  setEntryPanel, exerciseStatsListScreen, exerciseStatsDetailScreen, muscleEditorPanel
 ];
 
 function hideAllScreens() {
@@ -962,6 +965,29 @@ function slugify(name) {
     .replace(/^-+|-+$/g, "");
 }
 
+// Builds the "Main: X · Secondary: Y, Z" summary line for one exercise's
+// muscles, or null when none are set yet — used both in the manage list and
+// nowhere else, so callers decide what to show instead when it's null.
+function describeMuscles(muscles) {
+  const mainEntry = Object.entries(muscles).find(([, weight]) => weight === 1.0);
+  const secondaryEntries = Object.entries(muscles).filter(
+    ([key, weight]) => weight !== 1.0 || key !== (mainEntry ? mainEntry[0] : null)
+  );
+
+  if (!mainEntry && secondaryEntries.length === 0) {
+    return null;
+  }
+
+  const parts = [];
+  if (mainEntry) {
+    parts.push(`Main: ${MUSCLE_GROUP_LABELS[mainEntry[0]]}`);
+  }
+  if (secondaryEntries.length > 0) {
+    parts.push(`Secondary: ${secondaryEntries.map(([key]) => MUSCLE_GROUP_LABELS[key]).join(", ")}`);
+  }
+  return parts.join(" · ");
+}
+
 function renderExercisesManageList() {
   const listElement = document.getElementById("exercisesManageList");
   listElement.innerHTML = "";
@@ -970,8 +996,26 @@ function renderExercisesManageList() {
     const rowElement = document.createElement("li");
     rowElement.className = "scheme-list-item";
 
+    const infoElement = document.createElement("div");
+    infoElement.className = "scheme-list-item-info";
+
     const nameSpan = document.createElement("span");
     nameSpan.textContent = exercise.isGymSpecific ? `${exercise.name} (gym-specific)` : exercise.name;
+    infoElement.appendChild(nameSpan);
+
+    const musclesDescription = describeMuscles(exercise.muscles);
+    if (musclesDescription) {
+      const muscleSpan = document.createElement("span");
+      muscleSpan.className = "history-card-line";
+      muscleSpan.textContent = musclesDescription;
+      infoElement.appendChild(muscleSpan);
+    }
+
+    const musclesButton = document.createElement("button");
+    musclesButton.type = "button";
+    musclesButton.className = "small-button";
+    musclesButton.textContent = "Set muscles";
+    musclesButton.addEventListener("click", () => openMuscleEditor(exercise.id));
 
     const gymToggleButton = document.createElement("button");
     gymToggleButton.type = "button";
@@ -995,7 +1039,7 @@ function renderExercisesManageList() {
       renderExercisesManageList();
     });
 
-    rowElement.append(nameSpan, gymToggleButton, archiveButton);
+    rowElement.append(infoElement, musclesButton, gymToggleButton, archiveButton);
     listElement.appendChild(rowElement);
   }
 }
@@ -1028,8 +1072,9 @@ document.getElementById("addExerciseButton").addEventListener("click", () => {
   appState.database.exercises.push({
     id,
     name,
-    // Left empty on purpose — per schema.js, muscle weights are for the
-    // future training engine and nothing reads them yet.
+    // Empty until set via "Set muscles" in the exercise list below — kept
+    // out of the add-exercise form itself to keep adding an exercise a
+    // single quick step.
     muscles: {},
     isArchived: false,
     isGymSpecific: gymSpecificCheckbox.checked
@@ -1038,6 +1083,146 @@ document.getElementById("addExerciseButton").addEventListener("click", () => {
   nameInput.value = "";
   gymSpecificCheckbox.checked = false;
   renderExercisesManageList();
+});
+
+
+// ---------------------------------------------------------------------------
+// Muscle editor — one main muscle (weight 1.0) and any number of secondary
+// muscles (weight 0.5) for one exercise, per schema.js's Exercise.muscles
+// contract.
+// ---------------------------------------------------------------------------
+
+const MUSCLE_GROUP_LABELS = {
+  chest: "Chest",
+  upperBack: "Upper back",
+  lats: "Lats",
+  lowerBack: "Lower back",
+  traps: "Traps",
+  frontDelt: "Front delt",
+  sideDelt: "Side delt",
+  rearDelt: "Rear delt",
+  biceps: "Biceps",
+  triceps: "Triceps",
+  forearms: "Forearms",
+  abs: "Abs",
+  obliques: "Obliques",
+  glutes: "Glutes",
+  quads: "Quads",
+  hamstrings: "Hamstrings",
+  adductors: "Adductors",
+  calves: "Calves"
+};
+
+const mainMuscleOptionsElement = document.getElementById("mainMuscleOptions");
+const secondaryMuscleOptionsElement = document.getElementById("secondaryMuscleOptions");
+
+// Built once from MUSCLE_GROUPS (schema.js), same reasoning as the
+// dayStatus options — the UI can't drift from the schema's own list.
+for (const muscle of MUSCLE_GROUPS) {
+  const optionButton = document.createElement("button");
+  optionButton.type = "button";
+  optionButton.className = "day-status-option";
+  optionButton.textContent = MUSCLE_GROUP_LABELS[muscle];
+  optionButton.dataset.muscle = muscle;
+  optionButton.addEventListener("click", () => {
+    appState.muscleDraft.mainMuscle = muscle;
+    // A muscle can't be both main and secondary at once, so promoting one
+    // to main drops it from the secondary list if it was there.
+    appState.muscleDraft.secondaryMuscles = appState.muscleDraft.secondaryMuscles.filter(
+      (candidate) => candidate !== muscle
+    );
+    renderMuscleEditor();
+  });
+  mainMuscleOptionsElement.appendChild(optionButton);
+}
+
+function renderMuscleEditor() {
+  for (const optionButton of mainMuscleOptionsElement.children) {
+    optionButton.classList.toggle(
+      "day-status-option-selected",
+      optionButton.dataset.muscle === appState.muscleDraft.mainMuscle
+    );
+  }
+
+  // Rebuilt each time, since which muscle to exclude (the current main
+  // one) can change — unlike the main list above, which never changes.
+  secondaryMuscleOptionsElement.innerHTML = "";
+  for (const muscle of MUSCLE_GROUPS) {
+    if (muscle === appState.muscleDraft.mainMuscle) {
+      continue;
+    }
+    const optionButton = document.createElement("button");
+    optionButton.type = "button";
+    optionButton.className = "day-status-option";
+    optionButton.textContent = MUSCLE_GROUP_LABELS[muscle];
+    if (appState.muscleDraft.secondaryMuscles.includes(muscle)) {
+      optionButton.classList.add("day-status-option-selected");
+    }
+    optionButton.addEventListener("click", () => {
+      const index = appState.muscleDraft.secondaryMuscles.indexOf(muscle);
+      if (index === -1) {
+        appState.muscleDraft.secondaryMuscles.push(muscle);
+      } else {
+        appState.muscleDraft.secondaryMuscles.splice(index, 1);
+      }
+      renderMuscleEditor();
+    });
+    secondaryMuscleOptionsElement.appendChild(optionButton);
+  }
+}
+
+function openMuscleEditor(exerciseId) {
+  const exercise = appState.database.exercises.find((candidate) => candidate.id === exerciseId);
+
+  // Derives main/secondary from the stored weighted object rather than
+  // assuming it already fits that shape: the first muscle at weight 1.0 is
+  // "main" for editing, everything else stored counts as "secondary" —
+  // which also means saving normalizes any legacy data (like the starter
+  // Romanian deadlift, stored with two muscles at 1.0) to the clean shape
+  // the moment it's edited.
+  const muscleEntries = Object.entries(exercise.muscles);
+  const mainEntry = muscleEntries.find(([, weight]) => weight === 1.0);
+  const mainMuscle = mainEntry ? mainEntry[0] : null;
+
+  appState.muscleEditorExerciseId = exerciseId;
+  appState.muscleDraft = {
+    mainMuscle,
+    secondaryMuscles: muscleEntries.map(([key]) => key).filter((key) => key !== mainMuscle)
+  };
+
+  document.getElementById("muscleEditorExerciseName").textContent = exercise.name;
+  renderMuscleEditor();
+  // Deliberately not hideAllScreens(): exercisesScreen stays visible
+  // underneath, same pattern as the other in-context panels.
+  muscleEditorPanel.hidden = false;
+}
+
+function closeMuscleEditor() {
+  appState.muscleEditorExerciseId = null;
+  appState.muscleDraft = null;
+  muscleEditorPanel.hidden = true;
+}
+
+document.getElementById("saveMusclesButton").addEventListener("click", () => {
+  const exercise = appState.database.exercises.find(
+    (candidate) => candidate.id === appState.muscleEditorExerciseId
+  );
+  const newMuscles = {};
+  if (appState.muscleDraft.mainMuscle) {
+    newMuscles[appState.muscleDraft.mainMuscle] = 1.0;
+  }
+  for (const muscle of appState.muscleDraft.secondaryMuscles) {
+    newMuscles[muscle] = 0.5;
+  }
+  exercise.muscles = newMuscles;
+
+  saveDatabase(appState.database);
+  closeMuscleEditor();
+  renderExercisesManageList();
+});
+
+document.getElementById("cancelMusclesButton").addEventListener("click", () => {
+  closeMuscleEditor();
 });
 
 

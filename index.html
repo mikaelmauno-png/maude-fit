@@ -189,6 +189,28 @@
 
 
     <!-- ===================================================================
+         MUSCLE EDITOR: pick one main muscle (weight 1.0) and any number of
+         secondary muscles (weight 0.5) for one exercise. A top-level
+         section shown over exercisesScreen (not a full screen swap), same
+         pattern as plannedExerciseEntryPanel and setEntryPanel.
+         =================================================================== -->
+    <section id="muscleEditorPanel" hidden>
+      <h2 id="muscleEditorExerciseName"></h2>
+
+      <h3>Main muscle</h3>
+      <div class="button-row" id="mainMuscleOptions"></div>
+
+      <h3>Secondary muscles</h3>
+      <div class="button-row" id="secondaryMuscleOptions"></div>
+
+      <div class="button-row">
+        <button id="saveMusclesButton">Save</button>
+        <button id="cancelMusclesButton">Cancel</button>
+      </div>
+    </section>
+
+
+    <!-- ===================================================================
          GYMS SCREEN: add gyms you train at, archive old ones.
          =================================================================== -->
     <section id="gymsScreen" hidden>

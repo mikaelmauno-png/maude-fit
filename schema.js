@@ -46,11 +46,19 @@ const STORAGE_KEY = "workoutLog";
 //                                     // kilogram means the same thing anywhere
 // }
 //
-// About `muscles`: a value of 1.0 means the muscle is the prime mover, 0.5
-// means it is meaningfully involved but not the target. Nothing in the logger
-// reads this yet. It is here because the training engine added later will
-// depend on it, and because assigning these values retroactively across a
-// large exercise library is tedious.
+// About `muscles`: a value of 1.0 means the muscle is the prime mover
+// ("main muscle" in the UI), 0.5 means it is meaningfully involved but not
+// the target ("secondary muscle"). An exercise can have at most one muscle
+// at 1.0 and any number at 0.5. The training engine added later will
+// depend on this data, so it exists even though nothing computes volume
+// or landmarks from it yet.
+const MUSCLE_GROUPS = [
+  "chest", "upperBack", "lats", "lowerBack", "traps",
+  "frontDelt", "sideDelt", "rearDelt",
+  "biceps", "triceps", "forearms",
+  "abs", "obliques",
+  "glutes", "quads", "hamstrings", "adductors", "calves"
+];
 
 // Set — one working or warmup set actually performed.
 //

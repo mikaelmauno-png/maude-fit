@@ -335,6 +335,21 @@ h1 {
   flex: 1;
 }
 
+/* Wraps a name plus an optional subtitle (e.g. the muscle summary) so they
+   stack as one flex:1 block instead of each span individually stretching
+   under the ".scheme-list-item span" rule above. */
+.scheme-list-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.scheme-list-item-info span {
+  flex: none;
+}
+
 /* Overrides button's flex:1/full-padding defaults for the small "Edit" /
    "Archive" / "Remove" actions that sit inside a .scheme-list-item, so they
    size to their text instead of stretching. */
