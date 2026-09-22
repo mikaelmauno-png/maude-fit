@@ -39,7 +39,8 @@ const appState = {
   muscleDraft: null,              // { mainMuscle, secondaryMuscles } while the muscle editor is open; null otherwise
   exerciseStatsSelectedGymId: null, // which gym's data the stats charts are scoped to, when the exercise is gym-specific and used at more than one gym
   bodyweightDraftWeightKg: null,    // value shown on the bodyweight stepper; null only before the Bodyweight screen has been opened once
-  editingBodyweightEntryId: null    // id of a past entry being corrected, or null while logging today's weight
+  editingBodyweightEntryId: null,   // id of a past entry being corrected, or null while logging today's weight
+  bodyDiagramView: "front"          // which side of the muscle-diagram body outline is showing, "front" or "back"
 };
 
 // On a brand-new install the exercise library is empty. Fill it with the
@@ -177,6 +178,7 @@ function showPersonalBestsScreen() {
 function showMuscleStatsListScreen() {
   hideAllScreens();
   muscleStatsListScreen.hidden = false;
+  renderBodyDiagram();
   renderMuscleStatsList();
 }
 
@@ -2114,6 +2116,182 @@ function renderMuscleCounters() {
     muscleCounterRowsElement.appendChild(rowElement);
   }
 }
+
+
+// ---------------------------------------------------------------------------
+// Muscle diagram — the same weekly completed/projected numbers as the bars
+// above, drawn onto a stylized body outline instead. Two views (front/back)
+// because no single flat silhouette shows every muscle at once; each of the
+// 18 groups in MUSCLE_GROUPS appears in exactly one view, whichever side
+// it's normally visible from. This is a schematic (simple rounded
+// rectangles and circles placed by eye), not an anatomical illustration —
+// good enough to show "which muscles have I been neglecting", not to teach
+// anatomy.
+// ---------------------------------------------------------------------------
+
+// The plain grey body shape both views are drawn on top of. Shared between
+// front and back since, at this level of simplification, the two look the
+// same — only which regions light up differs.
+const BODY_DIAGRAM_OUTLINE = [
+  { shape: "circle", cx: 100, cy: 22, r: 16 },                        // head
+  { shape: "rect", x: 92, y: 36, width: 16, height: 10 },              // neck
+  { shape: "rect", x: 70, y: 46, width: 60, height: 90, rx: 14 },      // torso
+  { shape: "rect", x: 72, y: 136, width: 56, height: 40, rx: 10 },     // hips
+  { shape: "rect", x: 36, y: 50, width: 22, height: 80, rx: 10 },      // left upper arm
+  { shape: "rect", x: 142, y: 50, width: 22, height: 80, rx: 10 },     // right upper arm
+  { shape: "rect", x: 34, y: 132, width: 20, height: 70, rx: 8 },      // left forearm
+  { shape: "rect", x: 146, y: 132, width: 20, height: 70, rx: 8 },     // right forearm
+  { shape: "rect", x: 74, y: 176, width: 24, height: 90, rx: 10 },     // left thigh
+  { shape: "rect", x: 102, y: 176, width: 24, height: 90, rx: 10 },    // right thigh
+  { shape: "rect", x: 76, y: 268, width: 20, height: 80, rx: 8 },      // left calf
+  { shape: "rect", x: 104, y: 268, width: 20, height: 80, rx: 8 }      // right calf
+];
+
+// A bilateral muscle (e.g. biceps) gets two entries, one per limb, both
+// colored from the same data — there's only one tracked value per muscle,
+// not a separate left and right.
+const BODY_DIAGRAM_REGIONS = {
+  front: [
+    { muscle: "chest", shape: "rect", x: 74, y: 54, width: 52, height: 26, rx: 8 },
+    { muscle: "abs", shape: "rect", x: 80, y: 84, width: 40, height: 40, rx: 6 },
+    { muscle: "obliques", shape: "rect", x: 70, y: 84, width: 10, height: 40 },
+    { muscle: "obliques", shape: "rect", x: 120, y: 84, width: 10, height: 40 },
+    // Front delt sits toward the torso side of the shoulder, side delt
+    // toward the outer edge — placed apart rather than stacked, so the one
+    // drawn second doesn't just paint over the other.
+    { muscle: "frontDelt", shape: "circle", cx: 52, cy: 56, r: 9 },
+    { muscle: "frontDelt", shape: "circle", cx: 148, cy: 56, r: 9 },
+    { muscle: "sideDelt", shape: "rect", x: 36, y: 52, width: 8, height: 26 },
+    { muscle: "sideDelt", shape: "rect", x: 156, y: 52, width: 8, height: 26 },
+    { muscle: "biceps", shape: "rect", x: 38, y: 82, width: 18, height: 40, rx: 6 },
+    { muscle: "biceps", shape: "rect", x: 144, y: 82, width: 18, height: 40, rx: 6 },
+    { muscle: "forearms", shape: "rect", x: 36, y: 136, width: 18, height: 60, rx: 6 },
+    { muscle: "forearms", shape: "rect", x: 146, y: 136, width: 18, height: 60, rx: 6 },
+    { muscle: "quads", shape: "rect", x: 76, y: 182, width: 20, height: 76, rx: 8 },
+    { muscle: "quads", shape: "rect", x: 104, y: 182, width: 20, height: 76, rx: 8 },
+    { muscle: "adductors", shape: "rect", x: 96, y: 182, width: 8, height: 76 }
+  ],
+  back: [
+    { muscle: "traps", shape: "rect", x: 86, y: 40, width: 28, height: 18, rx: 6 },
+    { muscle: "upperBack", shape: "rect", x: 76, y: 58, width: 48, height: 30, rx: 8 },
+    { muscle: "lats", shape: "rect", x: 68, y: 70, width: 14, height: 40 },
+    { muscle: "lats", shape: "rect", x: 118, y: 70, width: 14, height: 40 },
+    { muscle: "lowerBack", shape: "rect", x: 80, y: 112, width: 40, height: 26, rx: 6 },
+    { muscle: "rearDelt", shape: "circle", cx: 44, cy: 54, r: 10 },
+    { muscle: "rearDelt", shape: "circle", cx: 156, cy: 54, r: 10 },
+    { muscle: "triceps", shape: "rect", x: 38, y: 82, width: 18, height: 40, rx: 6 },
+    { muscle: "triceps", shape: "rect", x: 144, y: 82, width: 18, height: 40, rx: 6 },
+    { muscle: "glutes", shape: "rect", x: 76, y: 138, width: 48, height: 36, rx: 10 },
+    { muscle: "hamstrings", shape: "rect", x: 76, y: 182, width: 20, height: 76, rx: 8 },
+    { muscle: "hamstrings", shape: "rect", x: 104, y: 182, width: 20, height: 76, rx: 8 },
+    { muscle: "calves", shape: "rect", x: 76, y: 268, width: 20, height: 76, rx: 8 },
+    { muscle: "calves", shape: "rect", x: 104, y: 268, width: 20, height: 76, rx: 8 }
+  ]
+};
+
+// Linear blend between two "#rrggbb" colors — `ratio` 0 gives `fromColor`,
+// 1 gives `toColor`, anything between is a proportional mix of each
+// channel. Used instead of an SVG gradient so the same color logic works
+// for both the diagram (many small shapes) and could be reused anywhere
+// else a "how close to the target" color is needed.
+function blendColor(fromColor, toColor, ratio) {
+  const fromChannels = [fromColor.slice(1, 3), fromColor.slice(3, 5), fromColor.slice(5, 7)]
+    .map((hex) => parseInt(hex, 16));
+  const toChannels = [toColor.slice(1, 3), toColor.slice(3, 5), toColor.slice(5, 7)]
+    .map((hex) => parseInt(hex, 16));
+
+  const blendedChannels = fromChannels.map((fromValue, index) => {
+    const toValue = toChannels[index];
+    const value = Math.round(fromValue + (toValue - fromValue) * ratio);
+    return value.toString(16).padStart(2, "0");
+  });
+
+  return `#${blendedChannels.join("")}`;
+}
+
+// Same grey-to-green as the muscle-counter bars (empty track color to full
+// fill color), so the diagram and the bars read as the same scale.
+function colorForMuscleCompletion(row) {
+  if (!row || (row.completed === 0 && row.projected === 0)) {
+    return "#2a2a2a";
+  }
+  const ratio = row.projected > 0
+    ? Math.min(1, row.completed / row.projected)
+    : 1; // logged with nothing planned (pure free-form work) reads as "done"
+  return blendColor("#2a2a2a", "#3a8a45", ratio);
+}
+
+function buildBodyDiagramSVG(view, muscleRows) {
+  const rowsByMuscle = {};
+  for (const row of muscleRows) {
+    rowsByMuscle[row.muscle] = row;
+  }
+
+  function regionToSVG(region, fill, isTappable) {
+    const fillAttr = fill
+      ? `fill="${fill}"`
+      : `fill="none" stroke="#555555" stroke-width="2"`;
+    // data-muscle plus a shared class is how the single click listener
+    // below (added once, not per-shape) figures out which muscle a tap
+    // landed on.
+    const tapAttrs = isTappable ? `class="body-diagram-region" data-muscle="${region.muscle}"` : "";
+
+    if (region.shape === "circle") {
+      return `<circle cx="${region.cx}" cy="${region.cy}" r="${region.r}" ${fillAttr} ${tapAttrs} />`;
+    }
+    const rxAttr = region.rx ? `rx="${region.rx}"` : "";
+    return `<rect x="${region.x}" y="${region.y}" width="${region.width}" height="${region.height}" ${rxAttr} ${fillAttr} ${tapAttrs} />`;
+  }
+
+  const outlineSVG = BODY_DIAGRAM_OUTLINE
+    .map((region) => regionToSVG(region, null, false))
+    .join("");
+
+  const regionsSVG = BODY_DIAGRAM_REGIONS[view]
+    .map((region) => regionToSVG(region, colorForMuscleCompletion(rowsByMuscle[region.muscle]), true))
+    .join("");
+
+  return `<svg viewBox="0 0 200 360" xmlns="http://www.w3.org/2000/svg">${outlineSVG}${regionsSVG}</svg>`;
+}
+
+const bodyDiagramElement = document.getElementById("bodyDiagram");
+const bodyDiagramFrontButton = document.getElementById("bodyDiagramFrontButton");
+const bodyDiagramBackButton = document.getElementById("bodyDiagramBackButton");
+
+function renderBodyDiagram() {
+  const rows = computeMuscleCounters();
+  if (rows.length === 0) {
+    // Same "nothing meaningful to show" condition as the main-screen bars.
+    bodyDiagramElement.hidden = true;
+    return;
+  }
+  bodyDiagramElement.hidden = false;
+
+  bodyDiagramFrontButton.classList.toggle("day-status-option-selected", appState.bodyDiagramView === "front");
+  bodyDiagramBackButton.classList.toggle("day-status-option-selected", appState.bodyDiagramView === "back");
+
+  document.getElementById("bodyDiagramSVG").innerHTML = buildBodyDiagramSVG(appState.bodyDiagramView, rows);
+}
+
+bodyDiagramFrontButton.addEventListener("click", () => {
+  appState.bodyDiagramView = "front";
+  renderBodyDiagram();
+});
+bodyDiagramBackButton.addEventListener("click", () => {
+  appState.bodyDiagramView = "back";
+  renderBodyDiagram();
+});
+
+// One listener for every region, rather than one per shape — the shapes
+// themselves are rebuilt from scratch (via innerHTML) on every render, so
+// listeners attached directly to them would just be thrown away each time.
+document.getElementById("bodyDiagramSVG").addEventListener("click", (event) => {
+  const regionElement = event.target.closest("[data-muscle]");
+  if (!regionElement) {
+    return;
+  }
+  showMuscleStatsDetailScreen(regionElement.dataset.muscle);
+});
 
 
 // ---------------------------------------------------------------------------

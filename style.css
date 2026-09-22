@@ -527,6 +527,13 @@ h1 {
   height: auto;
 }
 
+/* Each colored shape in the muscle diagram (see buildBodyDiagramSVG in
+   app.js) opens that muscle's stats when tapped — the pointer cursor is the
+   only hint of that, since it's plain SVG rather than a real <button>. */
+.body-diagram-region {
+  cursor: pointer;
+}
+
 .text-field input {
   display: block;
   width: 100%;

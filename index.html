@@ -422,6 +422,20 @@
       <div class="button-row">
         <button id="backFromMuscleStatsListButton">Back</button>
       </div>
+
+      <!-- Same weighted completed/projected data as the main screen's "Sets
+           per muscle this week" bars, drawn onto a body outline instead —
+           see buildBodyDiagramSVG in app.js. Only shown once at least one
+           exercise has muscles set, same as the bars. -->
+      <section id="bodyDiagram" hidden>
+        <h2>Sets per muscle this week</h2>
+        <div class="button-row" id="bodyDiagramViewToggle">
+          <button type="button" id="bodyDiagramFrontButton" class="day-status-option day-status-option-selected">Front</button>
+          <button type="button" id="bodyDiagramBackButton" class="day-status-option">Back</button>
+        </div>
+        <div id="bodyDiagramSVG" class="stats-chart"></div>
+      </section>
+
       <ul id="muscleStatsList"></ul>
     </section>
 
