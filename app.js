@@ -32,7 +32,8 @@ const appState = {
   plannedExerciseDraft: null,  // in-progress values for a planned exercise
   pendingTemplateId: null,     // scheme chosen at Start Workout, held while the gym picker is open
   nextGoalTarget: null,        // { templateId, exerciseId } while adjusting an existing planned exercise's target from a workout card; null otherwise
-  freeformReviewExerciseId: null // which exercise's logged-sets review card is open, in a free-form workout; null otherwise
+  freeformReviewExerciseId: null, // which exercise's logged-sets review card is open, in a free-form workout; null otherwise
+  dayStatusDraft: null            // { dayStatus, notes } while the today's-status panel is open; null otherwise
 };
 
 // On a brand-new install the exercise library is empty. Fill it with the
@@ -385,6 +386,7 @@ renderExerciseArea();
 const startWorkoutChoices = document.getElementById("startWorkoutChoices");
 const endWorkoutButton = document.getElementById("endWorkoutButton");
 const workoutStatus = document.getElementById("workoutStatus");
+const dayStatusButton = document.getElementById("dayStatusButton");
 
 // Rebuilds the "Start: <scheme>" / "Start free-form workout" buttons, and
 // hides the whole group once a workout is already in progress.
@@ -416,6 +418,7 @@ function renderStartWorkoutChoices() {
 function updateWorkoutControls() {
   const isActive = appState.activeSessionId !== null;
   endWorkoutButton.hidden = !isActive;
+  dayStatusButton.hidden = !isActive;
   workoutStatus.textContent = isActive ? "Workout in progress" : "";
   renderStartWorkoutChoices();
   updateRestTimer();
@@ -450,6 +453,7 @@ function startWorkout(templateId, gymId) {
   saveDatabase(appState.database);
   closeFreeformReview();
   hidePersonalBestBanner();
+  closeDayStatusPanel();
   showMainScreen();
   updateWorkoutControls();
   renderExerciseArea();
@@ -462,6 +466,7 @@ endWorkoutButton.addEventListener("click", () => {
   closeSetEntryPanel();
   closeFreeformReview();
   hidePersonalBestBanner();
+  closeDayStatusPanel();
   appState.activeSessionId = null;
   updateWorkoutControls();
   renderExerciseArea();
@@ -592,6 +597,79 @@ function hidePersonalBestBanner() {
   }
   prBannerElement.hidden = true;
 }
+
+
+// ---------------------------------------------------------------------------
+// Today's status (Session.dayStatus / notes)
+//
+// Deliberately not part of starting or ending a workout — either would add
+// a mandatory step to this app's two most frequent actions. Available as an
+// optional button any time a workout is active instead.
+// ---------------------------------------------------------------------------
+
+const DAY_STATUS_LABELS = {
+  normal: "Normal",
+  poorSleep: "Poor sleep",
+  ill: "Ill",
+  stressed: "Stressed"
+};
+
+const dayStatusPanel = document.getElementById("dayStatusPanel");
+const dayStatusOptionsElement = document.getElementById("dayStatusOptions");
+const dayStatusNotesInput = document.getElementById("dayStatusNotesInput");
+
+// Built once from DAY_STATUSES (schema.js) rather than hardcoded in HTML,
+// so this can't quietly drift out of sync with the schema's contract.
+for (const status of DAY_STATUSES) {
+  const optionButton = document.createElement("button");
+  optionButton.type = "button";
+  optionButton.className = "day-status-option";
+  optionButton.textContent = DAY_STATUS_LABELS[status];
+  optionButton.dataset.dayStatus = status;
+  optionButton.addEventListener("click", () => {
+    appState.dayStatusDraft.dayStatus = status;
+    renderDayStatusPanel();
+  });
+  dayStatusOptionsElement.appendChild(optionButton);
+}
+
+function renderDayStatusPanel() {
+  dayStatusNotesInput.value = appState.dayStatusDraft.notes;
+  for (const optionButton of dayStatusOptionsElement.children) {
+    const isSelected = optionButton.dataset.dayStatus === appState.dayStatusDraft.dayStatus;
+    optionButton.classList.toggle("day-status-option-selected", isSelected);
+  }
+}
+
+function openDayStatusPanel() {
+  const session = getActiveSession();
+  appState.dayStatusDraft = { dayStatus: session.dayStatus, notes: session.notes };
+  renderDayStatusPanel();
+  dayStatusPanel.hidden = false;
+}
+
+function closeDayStatusPanel() {
+  appState.dayStatusDraft = null;
+  dayStatusPanel.hidden = true;
+}
+
+dayStatusButton.addEventListener("click", openDayStatusPanel);
+
+dayStatusNotesInput.addEventListener("input", () => {
+  appState.dayStatusDraft.notes = dayStatusNotesInput.value;
+});
+
+document.getElementById("saveDayStatusButton").addEventListener("click", () => {
+  const session = getActiveSession();
+  session.dayStatus = appState.dayStatusDraft.dayStatus;
+  session.notes = appState.dayStatusDraft.notes;
+  saveDatabase(appState.database);
+  closeDayStatusPanel();
+});
+
+document.getElementById("cancelDayStatusButton").addEventListener("click", () => {
+  closeDayStatusPanel();
+});
 
 
 // ---------------------------------------------------------------------------
@@ -1057,6 +1135,16 @@ function renderHistoryList() {
       `${formatSessionDate(session.startedAt)} · ${template ? template.name : "Free-form"}${gym ? ` · ${gym.name}` : ""}`;
     cardElement.appendChild(headerElement);
 
+    // "Normal" and empty notes are the defaults every session starts with,
+    // so only shown when there's actually something to say.
+    if (session.dayStatus !== "normal" || session.notes !== "") {
+      const statusLine = document.createElement("div");
+      statusLine.className = "history-card-line";
+      const statusText = session.dayStatus !== "normal" ? DAY_STATUS_LABELS[session.dayStatus] : null;
+      statusLine.textContent = [statusText, session.notes].filter(Boolean).join(" — ");
+      cardElement.appendChild(statusLine);
+    }
+
     // Group this session's sets by exercise, in the order each exercise was
     // first worked, so the summary reads like the workout actually went.
     const setsByExercise = [];
@@ -1434,6 +1522,7 @@ importFileInput.addEventListener("change", () => {
       closeSetEntryPanel();
       closeFreeformReview();
       hidePersonalBestBanner();
+      closeDayStatusPanel();
 
       appState.database = importDatabase(fileText);
       // An import can bring in a database with no session in progress, so

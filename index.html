@@ -41,6 +41,27 @@
            set for that exercise on weight or on load×reps ("volume"). -->
       <p id="prBanner" hidden></p>
 
+      <!-- Optional at any point during an active workout — deliberately not
+           part of ending the workout, so the common "just finish and go"
+           path stays a single tap. Sets Session.dayStatus/notes, which the
+           schema already collects for the future training engine. -->
+      <button id="dayStatusButton" class="card-action-button" hidden>Today's status</button>
+
+      <section id="dayStatusPanel" hidden>
+        <h2>Today's status</h2>
+        <!-- Filled in from DAY_STATUSES in schema.js, so this stays in sync
+             with the schema's contract rather than duplicating the list. -->
+        <div class="button-row" id="dayStatusOptions"></div>
+        <label class="text-field">
+          Notes (optional)
+          <input type="text" id="dayStatusNotesInput" placeholder="e.g. felt strong today">
+        </label>
+        <div class="button-row">
+          <button id="saveDayStatusButton">Save</button>
+          <button id="cancelDayStatusButton">Cancel</button>
+        </div>
+      </section>
+
       <!-- Free-form only: exercises rendered as plain buttons, tapped to log
            a set directly. Only enabled once a workout has been started. Each
            row also gets a small "review" button once at least one set has

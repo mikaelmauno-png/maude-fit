@@ -251,6 +251,19 @@ button:active {
   background-color: #333333;
 }
 
+/* One of these four is "selected" at a time (today's dayStatus) — muted
+   grey by default, switching to the app's usual blue when active, rather
+   than a checkbox/radio look that would be fiddly to tap accurately. */
+.day-status-option {
+  background-color: #2a2a2a;
+  color: #c0c0c0;
+}
+
+.day-status-option-selected {
+  background-color: #2a6df4;
+  color: #ffffff;
+}
+
 .stepper-row {
   display: flex;
   align-items: center;
