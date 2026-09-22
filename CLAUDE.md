@@ -11,9 +11,12 @@ it. Write for a reader who is learning, and explain rather than assume.
 
 ## Working style
 
-- Explain the plan before writing code. Wait for approval on anything that
-  touches more than one file.
-- Make one change at a time. Small, reviewable diffs.
+- Until a rough alpha is working end-to-end, build ahead without pausing for
+  approval on each file — commit as you go so there's always a working state
+  to return to, and ask only when something is genuinely ambiguous. Once the
+  alpha exists, go back to explaining a plan and waiting for approval before
+  changes that touch more than one file.
+- Make one change at a time where reasonable. Small, reviewable diffs.
 - Commit to Git before starting each feature, so there is always a working
   state to return to.
 - After a change, say plainly what was changed and why, in a couple of
