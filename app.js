@@ -969,6 +969,55 @@ function adjustDraftField(draftObject, field, step, minimum, render) {
   render();
 }
 
+// Wires up "tap the number to type it" for one stepper: tapping the value
+// button swaps the +/- buttons and the value for a real number input, for
+// setting a large change directly instead of tapping +/- dozens of times
+// (jumping 20kg to 100kg at 2.5kg a tap is 32 taps). Confirms on blur or
+// Enter; Escape discards the typed text and confirms the unchanged value
+// instead, so there's only one code path that actually commits anything.
+//
+// `getDraftObject` is a function, not the draft object itself, because the
+// object it points to (appState.setDraft, appState.plannedExerciseDraft, or
+// appState itself for bodyweight) doesn't exist yet when this runs at
+// startup — it's only read once the value is actually tapped.
+function makeStepperValueEditable(
+  valueButton, valueInput, decrementButton, incrementButton, getDraftObject, field, minimum, isInteger, render
+) {
+  function endEdit() {
+    const draftObject = getDraftObject();
+    const parsed = parseFloat(valueInput.value);
+    if (!Number.isNaN(parsed)) {
+      const value = isInteger ? Math.round(parsed) : parsed;
+      draftObject[field] = Math.max(value, minimum);
+    }
+    valueInput.hidden = true;
+    decrementButton.hidden = false;
+    valueButton.hidden = false;
+    incrementButton.hidden = false;
+    render();
+  }
+
+  valueButton.addEventListener("click", () => {
+    decrementButton.hidden = true;
+    valueButton.hidden = true;
+    incrementButton.hidden = true;
+    valueInput.hidden = false;
+    valueInput.value = getDraftObject()[field];
+    valueInput.focus();
+    valueInput.select();
+  });
+
+  valueInput.addEventListener("blur", endEdit);
+  valueInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      valueInput.blur();
+    } else if (event.key === "Escape") {
+      valueInput.value = getDraftObject()[field];
+      valueInput.blur();
+    }
+  });
+}
+
 document.getElementById("loadDecrement").addEventListener("click", () =>
   adjustDraftField(appState.setDraft, "load", -2.5, 0, renderSetDraft));
 document.getElementById("loadIncrement").addEventListener("click", () =>
@@ -981,6 +1030,22 @@ document.getElementById("rirDecrement").addEventListener("click", () =>
   adjustDraftField(appState.setDraft, "rir", -1, 0, renderSetDraft));
 document.getElementById("rirIncrement").addEventListener("click", () =>
   adjustDraftField(appState.setDraft, "rir", 1, 0, renderSetDraft));
+
+makeStepperValueEditable(
+  document.getElementById("loadValue"), document.getElementById("loadValueInput"),
+  document.getElementById("loadDecrement"), document.getElementById("loadIncrement"),
+  () => appState.setDraft, "load", 0, false, renderSetDraft
+);
+makeStepperValueEditable(
+  document.getElementById("repsValue"), document.getElementById("repsValueInput"),
+  document.getElementById("repsDecrement"), document.getElementById("repsIncrement"),
+  () => appState.setDraft, "reps", 1, true, renderSetDraft
+);
+makeStepperValueEditable(
+  document.getElementById("rirValue"), document.getElementById("rirValueInput"),
+  document.getElementById("rirDecrement"), document.getElementById("rirIncrement"),
+  () => appState.setDraft, "rir", 0, true, renderSetDraft
+);
 
 warmupCheckbox.addEventListener("change", () => {
   appState.setDraft.isWarmup = warmupCheckbox.checked;
@@ -1845,6 +1910,12 @@ document.getElementById("bodyweightDecrement").addEventListener("click", () =>
   adjustDraftField(appState, "bodyweightDraftWeightKg", -0.5, 0, renderBodyweightDraft));
 document.getElementById("bodyweightIncrement").addEventListener("click", () =>
   adjustDraftField(appState, "bodyweightDraftWeightKg", 0.5, 0, renderBodyweightDraft));
+
+makeStepperValueEditable(
+  document.getElementById("bodyweightValue"), document.getElementById("bodyweightValueInput"),
+  document.getElementById("bodyweightDecrement"), document.getElementById("bodyweightIncrement"),
+  () => appState, "bodyweightDraftWeightKg", 0, false, renderBodyweightDraft
+);
 
 saveBodyweightButton.addEventListener("click", () => {
   if (appState.editingBodyweightEntryId) {
@@ -3053,6 +3124,27 @@ document.getElementById("targetLoadDecrement").addEventListener("click", () =>
   adjustDraftField(appState.plannedExerciseDraft, "targetLoad", -2.5, 0, renderPlannedExerciseDraft));
 document.getElementById("targetLoadIncrement").addEventListener("click", () =>
   adjustDraftField(appState.plannedExerciseDraft, "targetLoad", 2.5, 0, renderPlannedExerciseDraft));
+
+makeStepperValueEditable(
+  document.getElementById("targetSetsValue"), document.getElementById("targetSetsValueInput"),
+  document.getElementById("targetSetsDecrement"), document.getElementById("targetSetsIncrement"),
+  () => appState.plannedExerciseDraft, "targetSets", 1, true, renderPlannedExerciseDraft
+);
+makeStepperValueEditable(
+  document.getElementById("targetRepsMinValue"), document.getElementById("targetRepsMinValueInput"),
+  document.getElementById("targetRepsMinDecrement"), document.getElementById("targetRepsMinIncrement"),
+  () => appState.plannedExerciseDraft, "targetRepsMin", 1, true, renderPlannedExerciseDraft
+);
+makeStepperValueEditable(
+  document.getElementById("targetRepsMaxValue"), document.getElementById("targetRepsMaxValueInput"),
+  document.getElementById("targetRepsMaxDecrement"), document.getElementById("targetRepsMaxIncrement"),
+  () => appState.plannedExerciseDraft, "targetRepsMax", 1, true, renderPlannedExerciseDraft
+);
+makeStepperValueEditable(
+  document.getElementById("targetLoadValue"), document.getElementById("targetLoadValueInput"),
+  document.getElementById("targetLoadDecrement"), document.getElementById("targetLoadIncrement"),
+  () => appState.plannedExerciseDraft, "targetLoad", 0, false, renderPlannedExerciseDraft
+);
 
 // Resets the panel back to its "add a new exercise to the scheme being
 // edited" defaults, so the next time it's opened for that purpose it

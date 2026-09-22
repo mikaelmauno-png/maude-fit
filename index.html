@@ -177,7 +177,11 @@
         <span class="stepper-label">Load (kg)</span>
         <div class="stepper">
           <button type="button" id="loadDecrement">&minus;</button>
-          <span id="loadValue"></span>
+          <!-- Tapping the number itself swaps it for a real number input,
+               for typing a large change directly instead of tapping +/-
+               dozens of times — see makeStepperValueEditable in app.js. -->
+          <button type="button" id="loadValue" class="stepper-value"></button>
+          <input type="number" inputmode="decimal" id="loadValueInput" class="stepper-value-input" hidden>
           <button type="button" id="loadIncrement">+</button>
         </div>
       </div>
@@ -186,7 +190,8 @@
         <span class="stepper-label">Reps</span>
         <div class="stepper">
           <button type="button" id="repsDecrement">&minus;</button>
-          <span id="repsValue"></span>
+          <button type="button" id="repsValue" class="stepper-value"></button>
+          <input type="number" inputmode="numeric" id="repsValueInput" class="stepper-value-input" hidden>
           <button type="button" id="repsIncrement">+</button>
         </div>
       </div>
@@ -198,7 +203,8 @@
         <span class="stepper-label">RIR</span>
         <div class="stepper">
           <button type="button" id="rirDecrement">&minus;</button>
-          <span id="rirValue"></span>
+          <button type="button" id="rirValue" class="stepper-value"></button>
+          <input type="number" inputmode="numeric" id="rirValueInput" class="stepper-value-input" hidden>
           <button type="button" id="rirIncrement">+</button>
         </div>
       </div>
@@ -367,7 +373,8 @@
         <span class="stepper-label">Weight (kg)</span>
         <div class="stepper">
           <button type="button" id="bodyweightDecrement">&minus;</button>
-          <span id="bodyweightValue"></span>
+          <button type="button" id="bodyweightValue" class="stepper-value"></button>
+          <input type="number" inputmode="decimal" id="bodyweightValueInput" class="stepper-value-input" hidden>
           <button type="button" id="bodyweightIncrement">+</button>
         </div>
       </div>
@@ -563,7 +570,8 @@
         <span class="stepper-label">Sets</span>
         <div class="stepper">
           <button type="button" id="targetSetsDecrement">&minus;</button>
-          <span id="targetSetsValue"></span>
+          <button type="button" id="targetSetsValue" class="stepper-value"></button>
+          <input type="number" inputmode="numeric" id="targetSetsValueInput" class="stepper-value-input" hidden>
           <button type="button" id="targetSetsIncrement">+</button>
         </div>
       </div>
@@ -572,7 +580,8 @@
         <span class="stepper-label">Reps min</span>
         <div class="stepper">
           <button type="button" id="targetRepsMinDecrement">&minus;</button>
-          <span id="targetRepsMinValue"></span>
+          <button type="button" id="targetRepsMinValue" class="stepper-value"></button>
+          <input type="number" inputmode="numeric" id="targetRepsMinValueInput" class="stepper-value-input" hidden>
           <button type="button" id="targetRepsMinIncrement">+</button>
         </div>
       </div>
@@ -581,7 +590,8 @@
         <span class="stepper-label">Reps max</span>
         <div class="stepper">
           <button type="button" id="targetRepsMaxDecrement">&minus;</button>
-          <span id="targetRepsMaxValue"></span>
+          <button type="button" id="targetRepsMaxValue" class="stepper-value"></button>
+          <input type="number" inputmode="numeric" id="targetRepsMaxValueInput" class="stepper-value-input" hidden>
           <button type="button" id="targetRepsMaxIncrement">+</button>
         </div>
       </div>
@@ -590,7 +600,8 @@
         <span class="stepper-label">Load (kg)</span>
         <div class="stepper">
           <button type="button" id="targetLoadDecrement">&minus;</button>
-          <span id="targetLoadValue"></span>
+          <button type="button" id="targetLoadValue" class="stepper-value"></button>
+          <input type="number" inputmode="decimal" id="targetLoadValueInput" class="stepper-value-input" hidden>
           <button type="button" id="targetLoadIncrement">+</button>
         </div>
       </div>
