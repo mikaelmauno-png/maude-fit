@@ -37,7 +37,9 @@ const appState = {
   dayStatusEditingSessionId: null, // which session the open day-status panel is editing (active or a past one); null when the panel is closed
   muscleEditorExerciseId: null,   // which exercise's muscle editor is open; null otherwise
   muscleDraft: null,              // { mainMuscle, secondaryMuscles } while the muscle editor is open; null otherwise
-  exerciseStatsSelectedGymId: null // which gym's data the stats charts are scoped to, when the exercise is gym-specific and used at more than one gym
+  exerciseStatsSelectedGymId: null, // which gym's data the stats charts are scoped to, when the exercise is gym-specific and used at more than one gym
+  bodyweightDraftWeightKg: null,    // value shown on the bodyweight stepper; null only before the Bodyweight screen has been opened once
+  editingBodyweightEntryId: null    // id of a past entry being corrected, or null while logging today's weight
 };
 
 // On a brand-new install the exercise library is empty. Fill it with the
@@ -73,6 +75,7 @@ const muscleEditorPanel = document.getElementById("muscleEditorPanel");
 const personalBestsScreen = document.getElementById("personalBestsScreen");
 const muscleStatsListScreen = document.getElementById("muscleStatsListScreen");
 const muscleStatsDetailScreen = document.getElementById("muscleStatsDetailScreen");
+const bodyweightScreen = document.getElementById("bodyweightScreen");
 // A top-level section (not nested in mainScreen) so it can be shown over
 // either mainScreen or historyScreen — see the comment above it in
 // index.html for why. Declared here, with the other screens, rather than
@@ -90,7 +93,8 @@ const allScreens = [
   mainScreen, settingsScreen, schemesScreen, schemeEditorScreen, exercisePickerScreen,
   plannedExerciseEntryPanel, exercisesScreen, historyScreen, gymsScreen, gymPickerScreen,
   setEntryPanel, exerciseStatsListScreen, exerciseStatsDetailScreen, muscleEditorPanel,
-  personalBestsScreen, muscleStatsListScreen, muscleStatsDetailScreen, dayStatusPanel
+  personalBestsScreen, muscleStatsListScreen, muscleStatsDetailScreen, dayStatusPanel,
+  bodyweightScreen
 ];
 
 function hideAllScreens() {
@@ -182,6 +186,13 @@ function showMuscleStatsDetailScreen(muscle) {
   renderMuscleStatsDetail(muscle);
 }
 
+function showBodyweightScreen() {
+  hideAllScreens();
+  bodyweightScreen.hidden = false;
+  resetBodyweightEntryToToday();
+  renderBodyweightScreen();
+}
+
 document.getElementById("viewSettingsButton").addEventListener("click", showSettingsScreen);
 document.getElementById("backFromSettingsButton").addEventListener("click", showMainScreen);
 document.getElementById("manageSchemesButton").addEventListener("click", showSchemesScreen);
@@ -192,6 +203,8 @@ document.getElementById("manageExercisesButton").addEventListener("click", showE
 document.getElementById("backFromExercisesButton").addEventListener("click", showSettingsScreen);
 document.getElementById("viewHistoryButton").addEventListener("click", showHistoryScreen);
 document.getElementById("backFromHistoryButton").addEventListener("click", showMainScreen);
+document.getElementById("viewBodyweightButton").addEventListener("click", showBodyweightScreen);
+document.getElementById("backFromBodyweightButton").addEventListener("click", showMainScreen);
 document.getElementById("manageGymsButton").addEventListener("click", showGymsScreen);
 document.getElementById("backFromGymsButton").addEventListener("click", showSettingsScreen);
 
@@ -1663,6 +1676,181 @@ function renderHistoryList() {
     listElement.appendChild(cardElement);
   }
 }
+
+
+// ---------------------------------------------------------------------------
+// Bodyweight — separate from workout sessions entirely (a weigh-in isn't
+// tied to a gym visit), at most one entry per calendar day. See
+// BodyweightEntry in schema.js for why a full timestamp is stored instead of
+// a plain date.
+// ---------------------------------------------------------------------------
+
+const bodyweightEntryHeading = document.getElementById("bodyweightEntryHeading");
+const bodyweightValueElement = document.getElementById("bodyweightValue");
+const saveBodyweightButton = document.getElementById("saveBodyweightButton");
+const cancelBodyweightEditButton = document.getElementById("cancelBodyweightEditButton");
+const deleteBodyweightButton = document.getElementById("deleteBodyweightButton");
+
+// Local calendar day as "YYYY-MM-DD", from the Date object's local getters —
+// not toISOString(), which is UTC and so can land on the wrong day near
+// midnight depending on the browser's timezone.
+function getLocalDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function findTodaysBodyweightEntry() {
+  const todayKey = getLocalDateKey(new Date());
+  return appState.database.bodyweightEntries.find(
+    (entry) => getLocalDateKey(new Date(entry.loggedAt)) === todayKey
+  );
+}
+
+// Puts the stepper into "logging today" mode: today's entry if one already
+// exists (so re-opening the screen shows what's already logged, not a reset
+// value), otherwise the most recent entry as a starting point for a small
+// adjustment, otherwise a plain default.
+function resetBodyweightEntryToToday() {
+  appState.editingBodyweightEntryId = null;
+
+  const todaysEntry = findTodaysBodyweightEntry();
+  if (todaysEntry) {
+    appState.bodyweightDraftWeightKg = todaysEntry.weightKg;
+    return;
+  }
+
+  const mostRecentEntry = appState.database.bodyweightEntries
+    .slice()
+    .sort((a, b) => b.loggedAt.localeCompare(a.loggedAt))[0];
+  appState.bodyweightDraftWeightKg = mostRecentEntry ? mostRecentEntry.weightKg : 70;
+}
+
+function renderBodyweightDraft() {
+  bodyweightValueElement.textContent = `${appState.bodyweightDraftWeightKg.toFixed(1)} kg`;
+  bodyweightEntryHeading.textContent = appState.editingBodyweightEntryId
+    ? "Editing a past entry"
+    : "Log today's weight";
+  cancelBodyweightEditButton.hidden = appState.editingBodyweightEntryId === null;
+  deleteBodyweightButton.hidden = appState.editingBodyweightEntryId === null;
+  saveBodyweightButton.textContent = appState.editingBodyweightEntryId ? "Save changes" : "Save";
+}
+
+function renderBodyweightChart() {
+  const chartAreaElement = document.getElementById("bodyweightChartArea");
+  const emptyMessageElement = document.getElementById("bodyweightEmptyMessage");
+
+  if (appState.database.bodyweightEntries.length === 0) {
+    chartAreaElement.hidden = true;
+    emptyMessageElement.hidden = false;
+    return;
+  }
+  chartAreaElement.hidden = false;
+  emptyMessageElement.hidden = true;
+
+  // Capped to the most recent 30 entries so the chart stays readable years
+  // into logging — same reasoning the exercise stats charts cap to 8 weeks.
+  const recentEntries = appState.database.bodyweightEntries
+    .slice()
+    .sort((a, b) => a.loggedAt.localeCompare(b.loggedAt))
+    .slice(-30);
+
+  const dataPoints = recentEntries.map((entry) => ({
+    label: formatSessionDate(entry.loggedAt),
+    value: entry.weightKg
+  }));
+
+  document.getElementById("bodyweightChart").innerHTML =
+    buildLineChartSVG(dataPoints, (value) => `${value} kg`);
+}
+
+function renderBodyweightList() {
+  const listElement = document.getElementById("bodyweightList");
+  listElement.innerHTML = "";
+
+  const entriesNewestFirst = appState.database.bodyweightEntries
+    .slice()
+    .sort((a, b) => b.loggedAt.localeCompare(a.loggedAt));
+
+  for (const entry of entriesNewestFirst) {
+    const itemElement = document.createElement("li");
+    itemElement.className = "history-card";
+
+    const headerElement = document.createElement("div");
+    headerElement.className = "history-card-header";
+    headerElement.textContent = `${formatSessionDate(entry.loggedAt)} — ${entry.weightKg.toFixed(1)} kg`;
+    itemElement.appendChild(headerElement);
+
+    const editButton = document.createElement("button");
+    editButton.type = "button";
+    editButton.className = "small-button";
+    editButton.textContent = "Edit";
+    editButton.addEventListener("click", () => {
+      appState.editingBodyweightEntryId = entry.id;
+      appState.bodyweightDraftWeightKg = entry.weightKg;
+      renderBodyweightDraft();
+    });
+    itemElement.appendChild(editButton);
+
+    listElement.appendChild(itemElement);
+  }
+}
+
+function renderBodyweightScreen() {
+  renderBodyweightDraft();
+  renderBodyweightChart();
+  renderBodyweightList();
+}
+
+// 0.5 kg steps, not 0.1 — 0.5 is exactly representable in binary
+// floating-point (unlike 0.1), so repeated taps never drift into something
+// like 70.30000000000000004. Plenty precise for tracking a trend.
+document.getElementById("bodyweightDecrement").addEventListener("click", () =>
+  adjustDraftField(appState, "bodyweightDraftWeightKg", -0.5, 0, renderBodyweightDraft));
+document.getElementById("bodyweightIncrement").addEventListener("click", () =>
+  adjustDraftField(appState, "bodyweightDraftWeightKg", 0.5, 0, renderBodyweightDraft));
+
+saveBodyweightButton.addEventListener("click", () => {
+  if (appState.editingBodyweightEntryId) {
+    // Editing a past entry corrects its weight only — the date it happened
+    // on doesn't change.
+    const entry = appState.database.bodyweightEntries.find(
+      (candidate) => candidate.id === appState.editingBodyweightEntryId
+    );
+    entry.weightKg = appState.bodyweightDraftWeightKg;
+  } else {
+    const existingTodaysEntry = findTodaysBodyweightEntry();
+    if (existingTodaysEntry) {
+      existingTodaysEntry.weightKg = appState.bodyweightDraftWeightKg;
+    } else {
+      appState.database.bodyweightEntries.push({
+        id: crypto.randomUUID(),
+        loggedAt: new Date().toISOString(),
+        weightKg: appState.bodyweightDraftWeightKg
+      });
+    }
+  }
+  saveDatabase(appState.database);
+  resetBodyweightEntryToToday();
+  renderBodyweightScreen();
+});
+
+cancelBodyweightEditButton.addEventListener("click", () => {
+  resetBodyweightEntryToToday();
+  renderBodyweightScreen();
+});
+
+deleteBodyweightButton.addEventListener("click", () => {
+  const confirmed = confirm("Delete this bodyweight entry? This can't be undone.");
+  if (!confirmed) return;
+  appState.database.bodyweightEntries = appState.database.bodyweightEntries.filter(
+    (candidate) => candidate.id !== appState.editingBodyweightEntryId
+  );
+  saveDatabase(appState.database);
+  resetBodyweightEntryToToday();
+  renderBodyweightScreen();
+});
 
 
 // ---------------------------------------------------------------------------

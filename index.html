@@ -22,6 +22,7 @@
       <div class="button-row">
         <button id="viewSettingsButton">Settings</button>
         <button id="viewHistoryButton">History</button>
+        <button id="viewBodyweightButton">Bodyweight</button>
       </div>
 
       <!-- Only shown when idle (no active workout) and at least one active
@@ -302,6 +303,48 @@
         <button id="viewMuscleStatsButton">Muscle stats</button>
       </div>
       <ul id="historyList"></ul>
+    </section>
+
+
+    <!-- ===================================================================
+         BODYWEIGHT SCREEN: log today's weigh-in (or correct a past one) and
+         see the trend. At most one entry per calendar day — see
+         BodyweightEntry in schema.js for why.
+         =================================================================== -->
+    <section id="bodyweightScreen" hidden>
+      <h1>Bodyweight</h1>
+      <div class="button-row">
+        <button id="backFromBodyweightButton">Back</button>
+      </div>
+
+      <!-- Set to "Editing <date>" while a past entry (tapped from the list
+           below) is being corrected, instead of "Log today's weight". -->
+      <h2 id="bodyweightEntryHeading">Log today's weight</h2>
+      <div class="stepper-row">
+        <span class="stepper-label">Weight (kg)</span>
+        <div class="stepper">
+          <button type="button" id="bodyweightDecrement">&minus;</button>
+          <span id="bodyweightValue"></span>
+          <button type="button" id="bodyweightIncrement">+</button>
+        </div>
+      </div>
+      <div class="button-row">
+        <button id="saveBodyweightButton">Save</button>
+        <!-- Only shown while editing a past entry, to back out without
+             saving over it. -->
+        <button id="cancelBodyweightEditButton" hidden>Cancel</button>
+        <!-- Only shown while editing a past entry — today's entry is edited
+             by just logging again, not deleted. -->
+        <button id="deleteBodyweightButton" class="destructive-button" hidden>Delete</button>
+      </div>
+
+      <div id="bodyweightChartArea">
+        <h3>Trend</h3>
+        <div id="bodyweightChart" class="stats-chart"></div>
+      </div>
+      <p id="bodyweightEmptyMessage" hidden>No weigh-ins logged yet.</p>
+
+      <ul id="bodyweightList"></ul>
     </section>
 
 

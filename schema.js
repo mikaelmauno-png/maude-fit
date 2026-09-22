@@ -17,7 +17,9 @@
 //
 // Bumped to 3 for the addition of Gym, Session.gymId, and
 // Exercise.isGymSpecific below.
-const SCHEMA_VERSION = 3;
+//
+// Bumped to 4 for the addition of BodyweightEntry below.
+const SCHEMA_VERSION = 4;
 
 // Every piece of app data lives under this one localStorage key, as a single
 // JSON string. One key is simpler to export, import, and reason about than
@@ -130,6 +132,23 @@ const DAY_STATUSES = ["normal", "poorSleep", "ill", "stressed"];
 //   isArchived: false
 // }
 
+// BodyweightEntry — one weigh-in. At most one per calendar day: logging
+// again on the same day replaces this entry's weightKg rather than adding a
+// second one, which keeps the trend graph readable and matches how most
+// people actually track bodyweight.
+//
+// {
+//   id:        "9f8c...",                     // crypto.randomUUID()
+//   loggedAt:  "2026-08-31T07:15:00.000Z",     // full timestamp, not just a
+//                                              // date — a date-only string
+//                                              // like "2026-08-31" parses as
+//                                              // UTC midnight, which can
+//                                              // display as the *previous*
+//                                              // local day depending on the
+//                                              // browser's timezone
+//   weightKg:  78.4
+// }
+
 
 // The complete saved payload. This is the object that gets serialised into
 // localStorage and written out by the export button.
@@ -143,7 +162,8 @@ function createEmptyDatabase() {
                             // filter when asking questions like "every bench
                             // press I have done"
     workoutTemplates: [],  // WorkoutTemplate objects
-    gyms: []                // Gym objects
+    gyms: [],                // Gym objects
+    bodyweightEntries: []      // BodyweightEntry objects
   };
 }
 
@@ -250,7 +270,8 @@ function importDatabase(jsonText) {
       !Array.isArray(parsed.sessions) ||
       !Array.isArray(parsed.sets) ||
       !Array.isArray(parsed.workoutTemplates) ||
-      !Array.isArray(parsed.gyms)) {
+      !Array.isArray(parsed.gyms) ||
+      !Array.isArray(parsed.bodyweightEntries)) {
     throw new Error("That file is not a workout log export.");
   }
 
