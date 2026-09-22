@@ -34,6 +34,7 @@ const appState = {
   nextGoalTarget: null,        // { templateId, exerciseId } while adjusting an existing planned exercise's target from a workout card; null otherwise
   freeformReviewExerciseId: null, // which exercise's logged-sets review card is open, in a free-form workout; null otherwise
   dayStatusDraft: null,           // { dayStatus, notes } while the today's-status panel is open; null otherwise
+  dayStatusEditingSessionId: null, // which session the open day-status panel is editing (active or a past one); null when the panel is closed
   muscleEditorExerciseId: null,   // which exercise's muscle editor is open; null otherwise
   muscleDraft: null,              // { mainMuscle, secondaryMuscles } while the muscle editor is open; null otherwise
   exerciseStatsSelectedGymId: null // which gym's data the stats charts are scoped to, when the exercise is gym-specific and used at more than one gym
@@ -78,6 +79,10 @@ const muscleStatsDetailScreen = document.getElementById("muscleStatsDetailScreen
 // down in the "Logging a set" section where it's used, so it can join
 // allScreens below.
 const setEntryPanel = document.getElementById("setEntryPanel");
+// Same reasoning as setEntryPanel above — top-level so it can layer over
+// either mainScreen (the active workout's "Today's status" button) or
+// historyScreen (a past session's "Edit status" button).
+const dayStatusPanel = document.getElementById("dayStatusPanel");
 
 // Every top-level screen, so each show*Screen() function below can hide all
 // of them and then reveal just its own, without repeating this list six times.
@@ -85,7 +90,7 @@ const allScreens = [
   mainScreen, settingsScreen, schemesScreen, schemeEditorScreen, exercisePickerScreen,
   plannedExerciseEntryPanel, exercisesScreen, historyScreen, gymsScreen, gymPickerScreen,
   setEntryPanel, exerciseStatsListScreen, exerciseStatsDetailScreen, muscleEditorPanel,
-  personalBestsScreen, muscleStatsListScreen, muscleStatsDetailScreen
+  personalBestsScreen, muscleStatsListScreen, muscleStatsDetailScreen, dayStatusPanel
 ];
 
 function hideAllScreens() {
@@ -680,7 +685,7 @@ const DAY_STATUS_LABELS = {
   stressed: "Stressed"
 };
 
-const dayStatusPanel = document.getElementById("dayStatusPanel");
+const dayStatusHeading = document.getElementById("dayStatusHeading");
 const dayStatusOptionsElement = document.getElementById("dayStatusOptions");
 const dayStatusNotesInput = document.getElementById("dayStatusNotesInput");
 
@@ -707,26 +712,40 @@ function renderDayStatusPanel() {
   }
 }
 
-function openDayStatusPanel() {
-  const session = getActiveSession();
+// sessionId lets this same panel edit either the in-progress session (from
+// the "Today's status" button) or a finished one (from a History card's
+// "Edit status" button) — the panel itself doesn't care which.
+function openDayStatusPanel(sessionId) {
+  const session = appState.database.sessions.find((candidate) => candidate.id === sessionId);
+  appState.dayStatusEditingSessionId = sessionId;
   appState.dayStatusDraft = { dayStatus: session.dayStatus, notes: session.notes };
+  dayStatusHeading.textContent = session.endedAt === null ? "Today's status" : "Edit status";
   renderDayStatusPanel();
   dayStatusPanel.hidden = false;
 }
 
 function closeDayStatusPanel() {
   appState.dayStatusDraft = null;
+  appState.dayStatusEditingSessionId = null;
   dayStatusPanel.hidden = true;
+  // Safe to call even when History isn't the visible screen — it just
+  // redraws the (currently hidden) history list. Same pattern as
+  // closeSetEntryPanel() below.
+  if (!historyScreen.hidden) {
+    renderHistoryList();
+  }
 }
 
-dayStatusButton.addEventListener("click", openDayStatusPanel);
+dayStatusButton.addEventListener("click", () => openDayStatusPanel(getActiveSession().id));
 
 dayStatusNotesInput.addEventListener("input", () => {
   appState.dayStatusDraft.notes = dayStatusNotesInput.value;
 });
 
 document.getElementById("saveDayStatusButton").addEventListener("click", () => {
-  const session = getActiveSession();
+  const session = appState.database.sessions.find(
+    (candidate) => candidate.id === appState.dayStatusEditingSessionId
+  );
   session.dayStatus = appState.dayStatusDraft.dayStatus;
   session.notes = appState.dayStatusDraft.notes;
   saveDatabase(appState.database);
@@ -1110,6 +1129,16 @@ function renderExercisesManageList() {
 // Collapsed by default (see the toggle button below) — archiving something
 // with no way back through the UI would defeat the reason it's archived
 // instead of deleted in the first place.
+// True (not just archived) deletion is only safe when nothing in the data
+// would be orphaned by it — no logged set, and no scheme still planning it.
+function isExerciseUnused(exerciseId) {
+  const usedInSets = appState.database.sets.some((set) => set.exerciseId === exerciseId);
+  const usedInSchemes = appState.database.workoutTemplates.some((template) =>
+    template.plannedExercises.some((planned) => planned.exerciseId === exerciseId)
+  );
+  return !usedInSets && !usedInSchemes;
+}
+
 function renderArchivedExercisesList() {
   const listElement = document.getElementById("archivedExercisesList");
   listElement.innerHTML = "";
@@ -1133,6 +1162,29 @@ function renderArchivedExercisesList() {
     });
 
     rowElement.append(nameSpan, unarchiveButton);
+
+    // Only offered when nothing references this exercise — otherwise
+    // Archive (already reversible via Unarchive) is the only removal path,
+    // per the "do not delete data" data rule.
+    if (isExerciseUnused(exercise.id)) {
+      const deleteButton = document.createElement("button");
+      deleteButton.type = "button";
+      deleteButton.className = "small-button destructive-button";
+      deleteButton.textContent = "Delete";
+      deleteButton.addEventListener("click", () => {
+        const confirmed = confirm(`Delete "${exercise.name}"? This can't be undone.`);
+        if (!confirmed) {
+          return;
+        }
+        appState.database.exercises = appState.database.exercises.filter(
+          (candidate) => candidate.id !== exercise.id
+        );
+        saveDatabase(appState.database);
+        renderArchivedExercisesList();
+      });
+      rowElement.appendChild(deleteButton);
+    }
+
     listElement.appendChild(rowElement);
   }
 }
@@ -1383,6 +1435,10 @@ function renderGymsManageList() {
   }
 }
 
+function isGymUnused(gymId) {
+  return !appState.database.sessions.some((session) => session.gymId === gymId);
+}
+
 function renderArchivedGymsList() {
   const listElement = document.getElementById("archivedGymsList");
   listElement.innerHTML = "";
@@ -1406,6 +1462,24 @@ function renderArchivedGymsList() {
     });
 
     rowElement.append(nameSpan, unarchiveButton);
+
+    if (isGymUnused(gym.id)) {
+      const deleteButton = document.createElement("button");
+      deleteButton.type = "button";
+      deleteButton.className = "small-button destructive-button";
+      deleteButton.textContent = "Delete";
+      deleteButton.addEventListener("click", () => {
+        const confirmed = confirm(`Delete "${gym.name}"? This can't be undone.`);
+        if (!confirmed) {
+          return;
+        }
+        appState.database.gyms = appState.database.gyms.filter((candidate) => candidate.id !== gym.id);
+        saveDatabase(appState.database);
+        renderArchivedGymsList();
+      });
+      rowElement.appendChild(deleteButton);
+    }
+
     listElement.appendChild(rowElement);
   }
 }
@@ -1516,6 +1590,16 @@ function renderHistoryList() {
       statusLine.textContent = [statusText, session.notes].filter(Boolean).join(" — ");
       cardElement.appendChild(statusLine);
     }
+
+    // Lets a mislogged or forgotten status/note be corrected after the fact —
+    // the dayStatusPanel doesn't care whether the session it's editing is
+    // still active or long finished.
+    const editStatusButton = document.createElement("button");
+    editStatusButton.type = "button";
+    editStatusButton.className = "small-button";
+    editStatusButton.textContent = "Edit status";
+    editStatusButton.addEventListener("click", () => openDayStatusPanel(session.id));
+    cardElement.appendChild(editStatusButton);
 
     // Group this session's sets by exercise, in the order each exercise was
     // first worked, so the summary reads like the workout actually went.
@@ -2290,6 +2374,10 @@ function renderSchemesList() {
   }
 }
 
+function isSchemeUnused(templateId) {
+  return !appState.database.sessions.some((session) => session.templateId === templateId);
+}
+
 function renderArchivedSchemesList() {
   const listElement = document.getElementById("archivedSchemesList");
   listElement.innerHTML = "";
@@ -2315,6 +2403,26 @@ function renderArchivedSchemesList() {
     });
 
     rowElement.append(nameSpan, unarchiveButton);
+
+    if (isSchemeUnused(template.id)) {
+      const deleteButton = document.createElement("button");
+      deleteButton.type = "button";
+      deleteButton.className = "small-button destructive-button";
+      deleteButton.textContent = "Delete";
+      deleteButton.addEventListener("click", () => {
+        const confirmed = confirm(`Delete "${template.name}"? This can't be undone.`);
+        if (!confirmed) {
+          return;
+        }
+        appState.database.workoutTemplates = appState.database.workoutTemplates.filter(
+          (candidate) => candidate.id !== template.id
+        );
+        saveDatabase(appState.database);
+        renderArchivedSchemesList();
+      });
+      rowElement.appendChild(deleteButton);
+    }
+
     listElement.appendChild(rowElement);
   }
 }

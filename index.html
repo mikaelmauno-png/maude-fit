@@ -68,21 +68,6 @@
            schema already collects for the future training engine. -->
       <button id="dayStatusButton" class="card-action-button" hidden>Today's status</button>
 
-      <section id="dayStatusPanel" hidden>
-        <h2>Today's status</h2>
-        <!-- Filled in from DAY_STATUSES in schema.js, so this stays in sync
-             with the schema's contract rather than duplicating the list. -->
-        <div class="button-row" id="dayStatusOptions"></div>
-        <label class="text-field">
-          Notes (optional)
-          <input type="text" id="dayStatusNotesInput" placeholder="e.g. felt strong today">
-        </label>
-        <div class="button-row">
-          <button id="saveDayStatusButton">Save</button>
-          <button id="cancelDayStatusButton">Cancel</button>
-        </div>
-      </section>
-
       <!-- Free-form only: exercises rendered as plain buttons, tapped to log
            a set directly. Only enabled once a workout has been started. Each
            row also gets a small "review" button once at least one set has
@@ -187,6 +172,29 @@
            a "done" pill), not when logging a new one. -->
       <div class="button-row">
         <button id="deleteSetButton" class="destructive-button" hidden>Delete set</button>
+      </div>
+    </section>
+
+
+    <!-- ===================================================================
+         DAY STATUS PANEL: a top-level section, not nested in mainScreen, same
+         reasoning as setEntryPanel above — it now also opens from a past
+         session's History card ("Edit status"), not just the active
+         workout's "Today's status" button, so it needs to layer over
+         historyScreen too.
+         =================================================================== -->
+    <section id="dayStatusPanel" hidden>
+      <h2 id="dayStatusHeading">Today's status</h2>
+      <!-- Filled in from DAY_STATUSES in schema.js, so this stays in sync
+           with the schema's contract rather than duplicating the list. -->
+      <div class="button-row" id="dayStatusOptions"></div>
+      <label class="text-field">
+        Notes (optional)
+        <input type="text" id="dayStatusNotesInput" placeholder="e.g. felt strong today">
+      </label>
+      <div class="button-row">
+        <button id="saveDayStatusButton">Save</button>
+        <button id="cancelDayStatusButton">Cancel</button>
       </div>
     </section>
 
