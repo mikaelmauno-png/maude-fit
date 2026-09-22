@@ -93,6 +93,7 @@ function showMainScreen() {
   hideAllScreens();
   mainScreen.hidden = false;
   renderWeeklySchemeSummary();
+  renderMuscleCounters();
 }
 
 function showSchemesScreen() {
@@ -454,6 +455,7 @@ function updateWorkoutControls() {
   renderStartWorkoutChoices();
   updateRestTimer();
   renderWeeklySchemeSummary();
+  renderMuscleCounters();
 }
 
 // Called when a scheme (or free-form) is picked to start. If any gyms have
@@ -1644,6 +1646,126 @@ function renderWeeklySchemeSummary() {
 
   document.getElementById("weeklySchemeSummaryHeading").textContent =
     `This week's workouts — ${completedCount}/${activeTemplates.length} done`;
+}
+
+
+// ---------------------------------------------------------------------------
+// Sets-per-muscle counter (main screen, only when idle)
+//
+// "Completed" sums each working set's muscle weight (1.0 for its main
+// muscle, 0.5 for each secondary) across this week's logged sets, whatever
+// exercise or session they came from. "Projected" sums targetSets x muscle
+// weight across every active scheme — the same "each scheme once this
+// week" assumption the weekly scheme summary above already makes.
+// ---------------------------------------------------------------------------
+
+function computeMuscleCounters() {
+  const { start, end } = getCurrentWeekRange();
+
+  const projected = {};
+  for (const template of appState.database.workoutTemplates) {
+    if (template.isArchived) {
+      continue;
+    }
+    for (const planned of template.plannedExercises) {
+      const exercise = appState.database.exercises.find((candidate) => candidate.id === planned.exerciseId);
+      if (!exercise) {
+        continue;
+      }
+      for (const [muscle, weight] of Object.entries(exercise.muscles)) {
+        projected[muscle] = (projected[muscle] || 0) + planned.targetSets * weight;
+      }
+    }
+  }
+
+  const completed = {};
+  const thisWeekWorkingSets = appState.database.sets.filter((set) => {
+    if (set.isWarmup) {
+      return false;
+    }
+    const performedAt = new Date(set.performedAt);
+    return performedAt >= start && performedAt < end;
+  });
+  for (const set of thisWeekWorkingSets) {
+    const exercise = appState.database.exercises.find((candidate) => candidate.id === set.exerciseId);
+    if (!exercise) {
+      continue;
+    }
+    for (const [muscle, weight] of Object.entries(exercise.muscles)) {
+      completed[muscle] = (completed[muscle] || 0) + weight;
+    }
+  }
+
+  const allMuscles = new Set([...Object.keys(projected), ...Object.keys(completed)]);
+  const rows = Array.from(allMuscles).map((muscle) => ({
+    muscle,
+    completed: completed[muscle] || 0,
+    projected: projected[muscle] || 0
+  }));
+
+  // Most-planned muscles first, so the muscles this week's schemes actually
+  // emphasize are what's visible without scrolling.
+  rows.sort((a, b) => (b.projected - a.projected) || (b.completed - a.completed));
+  return rows;
+}
+
+// Weighted counts are often fractional (secondary muscles count as 0.5),
+// but a whole number shouldn't show a pointless ".0".
+function formatSetCount(value) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+const muscleCountersElement = document.getElementById("muscleCounters");
+const muscleCounterRowsElement = document.getElementById("muscleCounterRows");
+
+function renderMuscleCounters() {
+  if (appState.activeSessionId !== null) {
+    muscleCountersElement.hidden = true;
+    return;
+  }
+
+  const rows = computeMuscleCounters();
+  if (rows.length === 0) {
+    // Either no exercise has muscles set yet, or nothing planned/logged
+    // this week — nothing meaningful to show either way.
+    muscleCountersElement.hidden = true;
+    return;
+  }
+  muscleCountersElement.hidden = false;
+
+  muscleCounterRowsElement.innerHTML = "";
+  for (const row of rows) {
+    const rowElement = document.createElement("div");
+    rowElement.className = "muscle-counter-row";
+
+    const labelElement = document.createElement("div");
+    labelElement.className = "muscle-counter-label";
+
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = MUSCLE_GROUP_LABELS[row.muscle] || row.muscle;
+
+    const countSpan = document.createElement("span");
+    countSpan.className = "muscle-counter-count";
+    countSpan.textContent = `${formatSetCount(row.completed)} / ${formatSetCount(row.projected)}`;
+
+    labelElement.append(nameSpan, countSpan);
+    rowElement.appendChild(labelElement);
+
+    const trackElement = document.createElement("div");
+    trackElement.className = "muscle-counter-track";
+    const fillElement = document.createElement("div");
+    fillElement.className = "muscle-counter-fill";
+    // With nothing projected but something completed (e.g. purely
+    // free-form work), a full bar reads better than a division by zero.
+    const ratio = row.projected > 0
+      ? Math.min(100, (row.completed / row.projected) * 100)
+      : (row.completed > 0 ? 100 : 0);
+    fillElement.style.width = `${ratio}%`;
+    trackElement.appendChild(fillElement);
+    rowElement.appendChild(trackElement);
+
+    muscleCounterRowsElement.appendChild(rowElement);
+  }
 }
 
 

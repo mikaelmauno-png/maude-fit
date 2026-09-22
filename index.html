@@ -36,6 +36,19 @@
         <div class="weekly-bars" id="weeklyBars"></div>
       </section>
 
+      <!-- Only shown when idle and at least one muscle has completed or
+           projected sets this week (i.e. once exercises actually have
+           muscles set via "Set muscles" in Manage Exercises). "Completed"
+           sums each logged working set's muscle weight (1.0 main, 0.5
+           secondary) across this week's sessions; "projected" sums
+           targetSets x muscle weight across every active scheme, on the
+           same "each scheme once this week" assumption the scheme summary
+           above already uses. -->
+      <section id="muscleCounters" hidden>
+        <h2>Sets per muscle this week</h2>
+        <div id="muscleCounterRows"></div>
+      </section>
+
       <!-- Filled with one "Start: <scheme name>" button per active scheme,
            plus a "Start free-form workout" button. Hidden once a workout is
            in progress. -->

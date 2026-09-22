@@ -469,6 +469,49 @@ h1 {
   color: #777777;
 }
 
+#muscleCounters {
+  background-color: #1e1e1e;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+#muscleCounters h2 {
+  margin: 0 0 16px;
+  font-size: 1.1rem;
+}
+
+.muscle-counter-row {
+  margin-bottom: 12px;
+}
+
+.muscle-counter-row:last-child {
+  margin-bottom: 0;
+}
+
+.muscle-counter-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.95rem;
+  margin-bottom: 4px;
+}
+
+.muscle-counter-count {
+  color: #9a9a9a;
+}
+
+.muscle-counter-track {
+  height: 8px;
+  background-color: #2a2a2a;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.muscle-counter-fill {
+  height: 100%;
+  background-color: #3a8a45;
+}
+
 /* Holds one hand-drawn inline SVG chart (see buildLineChartSVG in app.js). */
 .stats-chart {
   background-color: #1e1e1e;
