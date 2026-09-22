@@ -345,6 +345,19 @@ h1 {
   font-size: 0.95rem;
 }
 
+/* The up/down reorder arrows next to Remove — narrower since they're a
+   single character, so three buttons still fit comfortably in one row. */
+.tiny-button {
+  padding: 10px 14px;
+}
+
+.small-button:disabled {
+  /* Disabled means "already at the top/bottom", not broken. */
+  background-color: #2a2a2a;
+  color: #666666;
+  cursor: not-allowed;
+}
+
 .text-field {
   display: block;
   margin-bottom: 16px;

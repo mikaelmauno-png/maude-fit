@@ -81,61 +81,6 @@
            entry panel below, either to log it or to correct it. -->
       <div id="schemeWorkoutCards" hidden></div>
 
-      <!-- Hidden until an exercise (or a set pill) is tapped. One shared
-           panel is reused for whichever set is currently being logged,
-           rather than building a separate form each time. -->
-      <section id="setEntryPanel" hidden>
-        <h2 id="setEntryExerciseName"></h2>
-        <!-- Only shown when this set came from a scheme's plan. -->
-        <p id="plannedTarget" hidden></p>
-        <p id="previousPerformance"></p>
-
-        <div class="stepper-row">
-          <span class="stepper-label">Load (kg)</span>
-          <div class="stepper">
-            <button type="button" id="loadDecrement">&minus;</button>
-            <span id="loadValue"></span>
-            <button type="button" id="loadIncrement">+</button>
-          </div>
-        </div>
-
-        <div class="stepper-row">
-          <span class="stepper-label">Reps</span>
-          <div class="stepper">
-            <button type="button" id="repsDecrement">&minus;</button>
-            <span id="repsValue"></span>
-            <button type="button" id="repsIncrement">+</button>
-          </div>
-        </div>
-
-        <!-- Hidden instead of removed when a set is marked warmup, so RIR
-             isn't lost if the warmup checkbox gets toggled back off before
-             saving. -->
-        <div class="stepper-row" id="rirRow">
-          <span class="stepper-label">RIR</span>
-          <div class="stepper">
-            <button type="button" id="rirDecrement">&minus;</button>
-            <span id="rirValue"></span>
-            <button type="button" id="rirIncrement">+</button>
-          </div>
-        </div>
-
-        <label class="warmup-toggle">
-          <input type="checkbox" id="warmupCheckbox">
-          Warmup set
-        </label>
-
-        <div class="button-row">
-          <button id="saveSetButton">Save set</button>
-          <button id="cancelSetButton">Cancel</button>
-        </div>
-        <!-- Only shown when editing a set that's already logged (tapped from
-             a "done" pill), not when logging a new one. -->
-        <div class="button-row">
-          <button id="deleteSetButton" class="destructive-button" hidden>Delete set</button>
-        </div>
-      </section>
-
       <div class="button-row">
         <button id="exportButton">Export</button>
         <button id="importButton">Import</button>
@@ -144,6 +89,67 @@
       <!-- A real file picker can't be styled to match the other buttons, so
            it stays hidden and the Import button above triggers it instead. -->
       <input type="file" id="importFileInput" accept="application/json" hidden>
+    </section>
+
+
+    <!-- ===================================================================
+         SET ENTRY PANEL: a top-level section, not nested in mainScreen, so
+         it can be shown over mainScreen (scheme cards / free-form list) or
+         over historyScreen (editing a past set) without needing either
+         screen hidden underneath it. Whichever screen opened it stays
+         visible; this one is layered in below via its own "hidden" toggle,
+         same pattern as plannedExerciseEntryPanel further down.
+         =================================================================== -->
+    <section id="setEntryPanel" hidden>
+      <h2 id="setEntryExerciseName"></h2>
+      <!-- Only shown when this set came from a scheme's plan. -->
+      <p id="plannedTarget" hidden></p>
+      <p id="previousPerformance"></p>
+
+      <div class="stepper-row">
+        <span class="stepper-label">Load (kg)</span>
+        <div class="stepper">
+          <button type="button" id="loadDecrement">&minus;</button>
+          <span id="loadValue"></span>
+          <button type="button" id="loadIncrement">+</button>
+        </div>
+      </div>
+
+      <div class="stepper-row">
+        <span class="stepper-label">Reps</span>
+        <div class="stepper">
+          <button type="button" id="repsDecrement">&minus;</button>
+          <span id="repsValue"></span>
+          <button type="button" id="repsIncrement">+</button>
+        </div>
+      </div>
+
+      <!-- Hidden instead of removed when a set is marked warmup, so RIR
+           isn't lost if the warmup checkbox gets toggled back off before
+           saving. -->
+      <div class="stepper-row" id="rirRow">
+        <span class="stepper-label">RIR</span>
+        <div class="stepper">
+          <button type="button" id="rirDecrement">&minus;</button>
+          <span id="rirValue"></span>
+          <button type="button" id="rirIncrement">+</button>
+        </div>
+      </div>
+
+      <label class="warmup-toggle">
+        <input type="checkbox" id="warmupCheckbox">
+        Warmup set
+      </label>
+
+      <div class="button-row">
+        <button id="saveSetButton">Save set</button>
+        <button id="cancelSetButton">Cancel</button>
+      </div>
+      <!-- Only shown when editing a set that's already logged (tapped from
+           a "done" pill), not when logging a new one. -->
+      <div class="button-row">
+        <button id="deleteSetButton" class="destructive-button" hidden>Delete set</button>
+      </div>
     </section>
 
 

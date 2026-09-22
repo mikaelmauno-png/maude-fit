@@ -62,12 +62,19 @@ const exercisesScreen = document.getElementById("exercisesScreen");
 const historyScreen = document.getElementById("historyScreen");
 const gymsScreen = document.getElementById("gymsScreen");
 const gymPickerScreen = document.getElementById("gymPickerScreen");
+// A top-level section (not nested in mainScreen) so it can be shown over
+// either mainScreen or historyScreen — see the comment above it in
+// index.html for why. Declared here, with the other screens, rather than
+// down in the "Logging a set" section where it's used, so it can join
+// allScreens below.
+const setEntryPanel = document.getElementById("setEntryPanel");
 
 // Every top-level screen, so each show*Screen() function below can hide all
 // of them and then reveal just its own, without repeating this list six times.
 const allScreens = [
   mainScreen, schemesScreen, schemeEditorScreen, exercisePickerScreen,
-  plannedExerciseEntryPanel, exercisesScreen, historyScreen, gymsScreen, gymPickerScreen
+  plannedExerciseEntryPanel, exercisesScreen, historyScreen, gymsScreen, gymPickerScreen,
+  setEntryPanel
 ];
 
 function hideAllScreens() {
@@ -676,7 +683,6 @@ document.getElementById("cancelDayStatusButton").addEventListener("click", () =>
 // Logging a set
 // ---------------------------------------------------------------------------
 
-const setEntryPanel = document.getElementById("setEntryPanel");
 const setEntryExerciseName = document.getElementById("setEntryExerciseName");
 const plannedTarget = document.getElementById("plannedTarget");
 const previousPerformance = document.getElementById("previousPerformance");
@@ -814,10 +820,15 @@ function closeSetEntryPanel() {
   appState.setDraft = null;
   appState.editingSetId = null;
   setEntryPanel.hidden = true;
-  // The cards' pills depend on which sets exist, so refresh them too.
+  // The cards' pills depend on which sets exist, so refresh them too. Safe
+  // to call even while browsing History with no active workout — it just
+  // redraws the (currently hidden) main-screen exercise area.
   renderExerciseArea();
   if (!freeformReviewCardElement.hidden) {
     renderFreeformReview();
+  }
+  if (!historyScreen.hidden) {
+    renderHistoryList();
   }
   updateRestTimer();
 }
@@ -1170,16 +1181,38 @@ function renderHistoryList() {
 
     for (const group of setsByExercise) {
       const exercise = appState.database.exercises.find((candidate) => candidate.id === group.exerciseId);
-      const setsText = group.sets
-        .map((set) => `${set.load} kg × ${set.reps}${set.isWarmup ? " (warmup)" : ` (RIR ${set.rir})`}`)
-        .join(", ");
 
-      const lineElement = document.createElement("div");
-      lineElement.className = "history-card-line";
+      const nameLine = document.createElement("div");
+      nameLine.className = "history-card-line";
       // Exercise names are never deleted (only archived), so this lookup
       // always resolves even for a long-retired exercise.
-      lineElement.textContent = `${exercise.name}: ${setsText}`;
-      cardElement.appendChild(lineElement);
+      nameLine.textContent = exercise.name;
+      cardElement.appendChild(nameLine);
+
+      // Pills rather than plain comma-joined text, same component the
+      // active-workout cards use, so each set is its own tap target for
+      // correcting a past session — text alone isn't tappable in any
+      // reasonably-sized way.
+      const pillRowElement = document.createElement("div");
+      pillRowElement.className = "set-pills";
+      for (const set of group.sets) {
+        const pill = document.createElement("button");
+        pill.type = "button";
+        pill.className = "set-pill set-pill-done";
+
+        const weightSpan = document.createElement("span");
+        weightSpan.className = "set-pill-weight";
+        weightSpan.textContent = `${set.load} kg`;
+
+        const repsSpan = document.createElement("span");
+        repsSpan.className = "set-pill-reps";
+        repsSpan.textContent = set.isWarmup ? `${set.reps} (warmup)` : `${set.reps} reps`;
+
+        pill.append(weightSpan, repsSpan);
+        pill.addEventListener("click", () => openSetEntryPanelForEdit(set.id));
+        pillRowElement.appendChild(pill);
+      }
+      cardElement.appendChild(pillRowElement);
     }
 
     listElement.appendChild(cardElement);
@@ -1271,6 +1304,30 @@ function renderSchemeEditor() {
     detailSpan.textContent =
       `${exercise.name}: ${planned.targetSets} × ${planned.targetRepsMin}-${planned.targetRepsMax} @ ${planned.targetLoad} kg`;
 
+    // Swaps this entry with its neighbor in the array — order in
+    // plannedExercises is display order, nothing more, so a swap is enough.
+    const moveUpButton = document.createElement("button");
+    moveUpButton.type = "button";
+    moveUpButton.className = "small-button tiny-button";
+    moveUpButton.textContent = "↑";
+    moveUpButton.disabled = index === 0;
+    moveUpButton.addEventListener("click", () => {
+      const plannedExercises = appState.schemeDraft.plannedExercises;
+      [plannedExercises[index - 1], plannedExercises[index]] = [plannedExercises[index], plannedExercises[index - 1]];
+      renderSchemeEditor();
+    });
+
+    const moveDownButton = document.createElement("button");
+    moveDownButton.type = "button";
+    moveDownButton.className = "small-button tiny-button";
+    moveDownButton.textContent = "↓";
+    moveDownButton.disabled = index === appState.schemeDraft.plannedExercises.length - 1;
+    moveDownButton.addEventListener("click", () => {
+      const plannedExercises = appState.schemeDraft.plannedExercises;
+      [plannedExercises[index], plannedExercises[index + 1]] = [plannedExercises[index + 1], plannedExercises[index]];
+      renderSchemeEditor();
+    });
+
     const removeButton = document.createElement("button");
     removeButton.type = "button";
     removeButton.className = "small-button";
@@ -1280,7 +1337,7 @@ function renderSchemeEditor() {
       renderSchemeEditor();
     });
 
-    rowElement.append(detailSpan, removeButton);
+    rowElement.append(detailSpan, moveUpButton, moveDownButton, removeButton);
     listElement.appendChild(rowElement);
   });
 }
