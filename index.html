@@ -8,6 +8,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Workout log</title>
   <link rel="stylesheet" href="style.css">
+
+  <!-- Lets a phone browser offer "Add to Home Screen" as a standalone app
+       instead of just a bookmark — see manifest.json for name/icons/colors. -->
+  <link rel="manifest" href="manifest.json">
+  <!-- iOS ignores the manifest's icons for its own home screen icon; this is
+       the one it actually uses. -->
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <!-- Tints the browser's own UI (address bar / status bar) to match the
+       app's dark background instead of a jarring default white. -->
+  <meta name="theme-color" content="#121212">
 </head>
 <body>
 

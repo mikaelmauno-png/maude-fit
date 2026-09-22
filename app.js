@@ -7,6 +7,14 @@
 // the user taps something.
 // ---------------------------------------------------------------------------
 
+// Registers service-worker.js, which caches the app's own files so it still
+// loads with no signal — this app is meant to be used mid-workout at a gym.
+// Guarded because older browsers don't support service workers at all; the
+// app still works without one, just without offline caching.
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("service-worker.js");
+}
+
 // Loading can fail if localStorage holds data saved under an older
 // SCHEMA_VERSION (see schema.js) — there's no migration written yet, so
 // rather than leaving the app permanently broken, this starts fresh and says

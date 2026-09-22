@@ -1,0 +1,10 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Fills the whole canvas with the app's background color, and keeps the
+       dumbbell shape inside the center ~80% safe zone — required so Android
+       doesn't crop it oddly when it masks this icon into a circle/squircle
+       for the home screen. -->
+  <rect width="512" height="512" fill="#121212"/>
+  <rect x="196" y="226" width="120" height="60" rx="12" fill="#2a6df4"/>
+  <rect x="106" y="166" width="70" height="180" rx="16" fill="#2a6df4"/>
+  <rect x="336" y="166" width="70" height="180" rx="16" fill="#2a6df4"/>
+</svg>
