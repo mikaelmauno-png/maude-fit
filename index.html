@@ -26,6 +26,16 @@
         <button id="viewHistoryButton">History</button>
       </div>
 
+      <!-- Only shown when idle (no active workout) and at least one active
+           scheme exists — a bar per scheme, grey if not done this week,
+           green with a completion % and date if it has been. Completion %
+           is total reps actually logged vs. total reps planned (using the
+           midpoint of each exercise's rep range), capped at 100. -->
+      <section id="weeklySchemeSummary" hidden>
+        <h2 id="weeklySchemeSummaryHeading"></h2>
+        <div class="weekly-bars" id="weeklyBars"></div>
+      </section>
+
       <!-- Filled with one "Start: <scheme name>" button per active scheme,
            plus a "Start free-form workout" button. Hidden once a workout is
            in progress. -->
@@ -220,8 +230,45 @@
       <h1>History</h1>
       <div class="button-row">
         <button id="backFromHistoryButton">Back</button>
+        <button id="viewExerciseStatsButton">Exercise stats</button>
       </div>
       <ul id="historyList"></ul>
+    </section>
+
+
+    <!-- ===================================================================
+         EXERCISE STATS LIST: flat list of exercises with any logged
+         history. Deliberately not grouped by muscle group — schema.js says
+         the muscle-weight fields aren't read by anything yet and to leave
+         them alone.
+         =================================================================== -->
+    <section id="exerciseStatsListScreen" hidden>
+      <h1>Exercise stats</h1>
+      <div class="button-row">
+        <button id="backFromExerciseStatsListButton">Back</button>
+      </div>
+      <ul id="exerciseStatsList"></ul>
+    </section>
+
+
+    <!-- ===================================================================
+         EXERCISE STATS DETAIL: two hand-drawn SVG charts for one exercise,
+         both built from the same representative set per week (that week's
+         heaviest working set) — weight in one, that set's reps in the
+         other, so the two charts describe the same set each week.
+         =================================================================== -->
+    <section id="exerciseStatsDetailScreen" hidden>
+      <div class="button-row">
+        <button id="backFromExerciseStatsDetailButton">Back</button>
+      </div>
+      <h1 id="exerciseStatsDetailName"></h1>
+      <p id="exerciseStatsEmptyMessage" hidden>No working sets logged for this exercise yet.</p>
+      <div id="exerciseStatsCharts" hidden>
+        <h3>Weight (heaviest set per week, kg)</h3>
+        <div id="exerciseStatsWeightChart"></div>
+        <h3>Reps (at that heaviest set)</h3>
+        <div id="exerciseStatsRepsChart"></div>
+      </div>
     </section>
 
 

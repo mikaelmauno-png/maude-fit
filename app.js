@@ -62,6 +62,8 @@ const exercisesScreen = document.getElementById("exercisesScreen");
 const historyScreen = document.getElementById("historyScreen");
 const gymsScreen = document.getElementById("gymsScreen");
 const gymPickerScreen = document.getElementById("gymPickerScreen");
+const exerciseStatsListScreen = document.getElementById("exerciseStatsListScreen");
+const exerciseStatsDetailScreen = document.getElementById("exerciseStatsDetailScreen");
 // A top-level section (not nested in mainScreen) so it can be shown over
 // either mainScreen or historyScreen — see the comment above it in
 // index.html for why. Declared here, with the other screens, rather than
@@ -74,7 +76,7 @@ const setEntryPanel = document.getElementById("setEntryPanel");
 const allScreens = [
   mainScreen, schemesScreen, schemeEditorScreen, exercisePickerScreen,
   plannedExerciseEntryPanel, exercisesScreen, historyScreen, gymsScreen, gymPickerScreen,
-  setEntryPanel
+  setEntryPanel, exerciseStatsListScreen, exerciseStatsDetailScreen
 ];
 
 function hideAllScreens() {
@@ -86,6 +88,7 @@ function hideAllScreens() {
 function showMainScreen() {
   hideAllScreens();
   mainScreen.hidden = false;
+  renderWeeklySchemeSummary();
 }
 
 function showSchemesScreen() {
@@ -122,6 +125,18 @@ function showGymPickerScreen() {
   hideAllScreens();
   gymPickerScreen.hidden = false;
   renderGymPicker();
+}
+
+function showExerciseStatsListScreen() {
+  hideAllScreens();
+  exerciseStatsListScreen.hidden = false;
+  renderExerciseStatsList();
+}
+
+function showExerciseStatsDetailScreen(exerciseId) {
+  hideAllScreens();
+  exerciseStatsDetailScreen.hidden = false;
+  renderExerciseStatsDetail(exerciseId);
 }
 
 document.getElementById("manageSchemesButton").addEventListener("click", showSchemesScreen);
@@ -429,6 +444,7 @@ function updateWorkoutControls() {
   workoutStatus.textContent = isActive ? "Workout in progress" : "";
   renderStartWorkoutChoices();
   updateRestTimer();
+  renderWeeklySchemeSummary();
 }
 
 // Called when a scheme (or free-form) is picked to start. If any gyms have
@@ -1218,6 +1234,297 @@ function renderHistoryList() {
     listElement.appendChild(cardElement);
   }
 }
+
+
+// ---------------------------------------------------------------------------
+// Week boundaries — shared by the weekly scheme summary and the per-exercise
+// stats charts below, so "which week is this in" is computed one way.
+// ---------------------------------------------------------------------------
+
+// The Monday-to-Monday week containing `date`. `end` is exclusive (the
+// following Monday), so a comparison is just `start <= x && x < end`.
+function getWeekRangeContaining(date) {
+  const dayOfWeek = date.getDay(); // 0 = Sunday
+  const daysSinceMonday = (dayOfWeek + 6) % 7;
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - daysSinceMonday);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 7);
+  return { start, end };
+}
+
+function getCurrentWeekRange() {
+  return getWeekRangeContaining(new Date());
+}
+
+// A stable, sortable string identifying a week — the ISO date of its
+// Monday, e.g. "2026-09-21".
+function getWeekKey(date) {
+  return getWeekRangeContaining(date).start.toISOString().slice(0, 10);
+}
+
+
+// ---------------------------------------------------------------------------
+// Weekly scheme completion summary (main screen, only when idle)
+//
+// Completion % for a scheme this week = total reps actually logged across
+// its exercises this week, divided by total reps planned (using the
+// midpoint of each exercise's rep range, since a plan is a range not a
+// single number), capped at 100.
+// ---------------------------------------------------------------------------
+
+function computeSchemeCompletionPercent(template, session) {
+  const sessionWorkingSets = appState.database.sets.filter(
+    (set) => set.sessionId === session.id && !set.isWarmup
+  );
+
+  let plannedReps = 0;
+  let actualReps = 0;
+
+  for (const planned of template.plannedExercises) {
+    plannedReps += ((planned.targetRepsMin + planned.targetRepsMax) / 2) * planned.targetSets;
+    for (const set of sessionWorkingSets) {
+      if (set.exerciseId === planned.exerciseId) {
+        actualReps += set.reps;
+      }
+    }
+  }
+
+  if (plannedReps === 0) {
+    return 0;
+  }
+  return Math.min(100, Math.round((actualReps / plannedReps) * 100));
+}
+
+const weeklySchemeSummaryElement = document.getElementById("weeklySchemeSummary");
+const weeklyBarsElement = document.getElementById("weeklyBars");
+
+function renderWeeklySchemeSummary() {
+  // Only meaningful as a "what's left this week" dashboard when there's
+  // nothing currently being logged — during a workout, the exercise cards
+  // themselves are that context.
+  if (appState.activeSessionId !== null) {
+    weeklySchemeSummaryElement.hidden = true;
+    return;
+  }
+
+  const activeTemplates = appState.database.workoutTemplates.filter((template) => !template.isArchived);
+  if (activeTemplates.length === 0) {
+    weeklySchemeSummaryElement.hidden = true;
+    return;
+  }
+  weeklySchemeSummaryElement.hidden = false;
+
+  const { start, end } = getCurrentWeekRange();
+  weeklyBarsElement.innerHTML = "";
+  let completedCount = 0;
+
+  for (const template of activeTemplates) {
+    // The most recent session this week following this scheme, if any —
+    // picks one representative session when a scheme was somehow done
+    // more than once in a week, rather than trying to combine them.
+    const sessionsThisWeek = appState.database.sessions
+      .filter((session) => {
+        if (session.templateId !== template.id || session.endedAt === null) {
+          return false;
+        }
+        const startedAt = new Date(session.startedAt);
+        return startedAt >= start && startedAt < end;
+      })
+      .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+    const mostRecentSession = sessionsThisWeek[0] || null;
+    if (mostRecentSession) {
+      completedCount++;
+    }
+
+    const barContainer = document.createElement("div");
+    barContainer.className = "weekly-bar-container";
+
+    const track = document.createElement("div");
+    track.className = "weekly-bar-track";
+
+    if (mostRecentSession) {
+      const percent = computeSchemeCompletionPercent(template, mostRecentSession);
+      const fill = document.createElement("div");
+      fill.className = "weekly-bar-fill";
+      // A floor so even a low percentage still shows a visible sliver
+      // instead of looking identical to "not done".
+      fill.style.height = `${Math.max(percent, 8)}%`;
+      const percentLabel = document.createElement("span");
+      percentLabel.className = "weekly-bar-percent";
+      percentLabel.textContent = `${percent}%`;
+      fill.appendChild(percentLabel);
+      track.appendChild(fill);
+    }
+    barContainer.appendChild(track);
+
+    const label = document.createElement("div");
+    label.className = "weekly-bar-label";
+    label.textContent = template.name;
+    barContainer.appendChild(label);
+
+    if (mostRecentSession) {
+      const dateLabel = document.createElement("div");
+      dateLabel.className = "weekly-bar-date";
+      dateLabel.textContent = formatSessionDate(mostRecentSession.startedAt);
+      barContainer.appendChild(dateLabel);
+    }
+
+    weeklyBarsElement.appendChild(barContainer);
+  }
+
+  document.getElementById("weeklySchemeSummaryHeading").textContent =
+    `This week's workouts — ${completedCount}/${activeTemplates.length} done`;
+}
+
+
+// ---------------------------------------------------------------------------
+// Exercise stats (weight and reps over time, per exercise)
+//
+// Both charts describe the same representative set for each week — that
+// week's heaviest working set for the exercise — so "80 kg" in the weight
+// chart and "6 reps" in the reps chart at the same week are the same set.
+// ---------------------------------------------------------------------------
+
+// One point per week that has data (most recent `weekCount` such weeks),
+// each the heaviest non-warmup set logged that week for this exercise.
+function getWeeklyBestSets(exerciseId, weekCount) {
+  const workingSets = appState.database.sets.filter(
+    (set) => set.exerciseId === exerciseId && !set.isWarmup
+  );
+
+  const bestByWeekKey = new Map();
+  for (const set of workingSets) {
+    const weekKey = getWeekKey(new Date(set.performedAt));
+    const existingBest = bestByWeekKey.get(weekKey);
+    if (!existingBest || set.load > existingBest.load) {
+      bestByWeekKey.set(weekKey, set);
+    }
+  }
+
+  // Week keys are ISO dates (Monday of that week), so sorting the strings
+  // sorts them chronologically too.
+  const sortedWeekKeys = Array.from(bestByWeekKey.keys()).sort();
+  return sortedWeekKeys.slice(-weekCount).map((weekKey) => bestByWeekKey.get(weekKey));
+}
+
+// Builds a small hand-drawn line chart as an SVG string (no charting
+// library — nothing can load from a CDN, per CLAUDE.md). `dataPoints` is
+// `[{ label, value }]` in left-to-right order.
+function buildLineChartSVG(dataPoints, valueFormatter) {
+  const width = 320;
+  const height = 160;
+  const padding = { top: 20, right: 20, bottom: 24, left: 20 };
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+
+  const values = dataPoints.map((point) => point.value);
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  // Flat data (every point the same) would otherwise divide by zero.
+  const valueRange = maxValue - minValue || 1;
+
+  const xStep = dataPoints.length > 1 ? plotWidth / (dataPoints.length - 1) : 0;
+  const points = dataPoints.map((point, index) => {
+    const x = padding.left + index * xStep;
+    const y = padding.top + plotHeight - ((point.value - minValue) / valueRange) * plotHeight;
+    return { x, y, point };
+  });
+
+  const pathData = points
+    .map((p, index) => `${index === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
+    .join(" ");
+
+  const circlesSVG = points
+    .map((p) => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.5" fill="#2a6df4" />`)
+    .join("");
+
+  // A label centered ("middle") on the first or last point would extend
+  // past the chart's left/right edge and get clipped by the viewBox — so
+  // edge points anchor to their own side instead, and only interior points
+  // stay centered on their dot.
+  function anchorFor(index) {
+    if (index === 0) return "start";
+    if (index === points.length - 1) return "end";
+    return "middle";
+  }
+
+  const valueLabelsSVG = points
+    .map((p, index) => {
+      // Clamps the label near the top of the chart instead of letting it
+      // run off the edge when the point itself is close to the top.
+      const labelY = Math.max(p.y - 8, 12);
+      return `<text x="${p.x.toFixed(1)}" y="${labelY.toFixed(1)}" font-size="11" fill="#f0f0f0" text-anchor="${anchorFor(index)}">${valueFormatter(p.point.value)}</text>`;
+    })
+    .join("");
+
+  const axisLabelsSVG = points
+    .map((p, index) => `<text x="${p.x.toFixed(1)}" y="${height - 6}" font-size="10" fill="#9a9a9a" text-anchor="${anchorFor(index)}">${p.point.label}</text>`)
+    .join("");
+
+  return `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">` +
+    `<path d="${pathData}" fill="none" stroke="#2a6df4" stroke-width="2" />` +
+    circlesSVG + valueLabelsSVG + axisLabelsSVG +
+    `</svg>`;
+}
+
+function renderExerciseStatsList() {
+  const listElement = document.getElementById("exerciseStatsList");
+  listElement.innerHTML = "";
+
+  // Only exercises with at least one working set ever logged — an empty
+  // chart isn't useful, so there's nothing to tap into for those.
+  const exercisesWithHistory = appState.database.exercises.filter((exercise) =>
+    appState.database.sets.some((set) => set.exerciseId === exercise.id && !set.isWarmup)
+  );
+
+  for (const exercise of exercisesWithHistory) {
+    const itemElement = document.createElement("li");
+    const buttonElement = document.createElement("button");
+    buttonElement.type = "button";
+    buttonElement.className = "exercise-item";
+    buttonElement.textContent = exercise.name;
+    buttonElement.addEventListener("click", () => showExerciseStatsDetailScreen(exercise.id));
+    itemElement.appendChild(buttonElement);
+    listElement.appendChild(itemElement);
+  }
+}
+
+function renderExerciseStatsDetail(exerciseId) {
+  const exercise = appState.database.exercises.find((candidate) => candidate.id === exerciseId);
+  document.getElementById("exerciseStatsDetailName").textContent = exercise.name;
+
+  const weeklyBestSets = getWeeklyBestSets(exerciseId, 8);
+  const emptyMessage = document.getElementById("exerciseStatsEmptyMessage");
+  const chartsContainer = document.getElementById("exerciseStatsCharts");
+
+  if (weeklyBestSets.length === 0) {
+    emptyMessage.hidden = false;
+    chartsContainer.hidden = true;
+    return;
+  }
+  emptyMessage.hidden = true;
+  chartsContainer.hidden = false;
+
+  const weightPoints = weeklyBestSets.map((set) => ({
+    label: formatSessionDate(set.performedAt),
+    value: set.load
+  }));
+  const repsPoints = weeklyBestSets.map((set) => ({
+    label: formatSessionDate(set.performedAt),
+    value: set.reps
+  }));
+
+  document.getElementById("exerciseStatsWeightChart").innerHTML =
+    buildLineChartSVG(weightPoints, (value) => `${value} kg`);
+  document.getElementById("exerciseStatsRepsChart").innerHTML =
+    buildLineChartSVG(repsPoints, (value) => `${value}`);
+}
+
+document.getElementById("viewExerciseStatsButton").addEventListener("click", showExerciseStatsListScreen);
+document.getElementById("backFromExerciseStatsListButton").addEventListener("click", showHistoryScreen);
+document.getElementById("backFromExerciseStatsDetailButton").addEventListener("click", showExerciseStatsListScreen);
 
 
 // ---------------------------------------------------------------------------

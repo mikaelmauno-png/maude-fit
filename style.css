@@ -385,6 +385,89 @@ h1 {
   margin-bottom: 4px;
 }
 
+#weeklySchemeSummary {
+  background-color: #1e1e1e;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+#weeklySchemeSummaryHeading {
+  margin: 0 0 16px;
+  font-size: 1.1rem;
+}
+
+.weekly-bars {
+  display: flex;
+  gap: 12px;
+}
+
+.weekly-bar-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+}
+
+/* Fixed-height track (always the grey "not done" color); a coloured fill
+   grows up from the bottom inside it to the completion percentage, rather
+   than the whole track changing color, so partial completion reads as a
+   proportion at a glance. */
+.weekly-bar-track {
+  width: 100%;
+  max-width: 56px;
+  height: 120px;
+  background-color: #2a2a2a;
+  border-radius: 6px;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+}
+
+.weekly-bar-fill {
+  width: 100%;
+  background-color: #3a8a45;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 4px;
+  box-sizing: border-box;
+}
+
+.weekly-bar-percent {
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: bold;
+}
+
+.weekly-bar-label {
+  margin-top: 8px;
+  font-size: 0.85rem;
+  text-align: center;
+  color: #c0c0c0;
+  word-break: break-word;
+}
+
+.weekly-bar-date {
+  font-size: 0.75rem;
+  color: #777777;
+}
+
+/* Holds one hand-drawn inline SVG chart (see buildLineChartSVG in app.js). */
+.stats-chart {
+  background-color: #1e1e1e;
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 24px;
+}
+
+.stats-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
 .text-field input {
   display: block;
   width: 100%;
