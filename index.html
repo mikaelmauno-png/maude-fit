@@ -294,6 +294,14 @@
       </div>
       <h1 id="exerciseStatsDetailName"></h1>
       <p id="exerciseStatsEmptyMessage" hidden>No working sets logged for this exercise yet.</p>
+
+      <!-- Only shown for a gym-specific exercise that's been logged at more
+           than one gym — machine/cable numbers aren't comparable across
+           gyms, so mixing them into one chart would be misleading. Hidden
+           entirely (not just empty) for a non-gym-specific exercise or one
+           only ever done at a single gym, since there's nothing to choose. -->
+      <div id="exerciseStatsGymPicker" class="button-row" hidden></div>
+
       <div id="exerciseStatsCharts" hidden>
         <h3>Weight (heaviest set per week, kg)</h3>
         <div id="exerciseStatsWeightChart"></div>

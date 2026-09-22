@@ -35,7 +35,8 @@ const appState = {
   freeformReviewExerciseId: null, // which exercise's logged-sets review card is open, in a free-form workout; null otherwise
   dayStatusDraft: null,           // { dayStatus, notes } while the today's-status panel is open; null otherwise
   muscleEditorExerciseId: null,   // which exercise's muscle editor is open; null otherwise
-  muscleDraft: null               // { mainMuscle, secondaryMuscles } while the muscle editor is open; null otherwise
+  muscleDraft: null,              // { mainMuscle, secondaryMuscles } while the muscle editor is open; null otherwise
+  exerciseStatsSelectedGymId: null // which gym's data the stats charts are scoped to, when the exercise is gym-specific and used at more than one gym
 };
 
 // On a brand-new install the exercise library is empty. Fill it with the
@@ -139,6 +140,11 @@ function showExerciseStatsListScreen() {
 function showExerciseStatsDetailScreen(exerciseId) {
   hideAllScreens();
   exerciseStatsDetailScreen.hidden = false;
+  // Reset here, not inside renderExerciseStatsDetail() itself — that
+  // function is also called by the gym picker's own click handler to
+  // re-render with the newly picked gym, and resetting there would
+  // immediately undo that pick.
+  appState.exerciseStatsSelectedGymId = null;
   renderExerciseStatsDetail(exerciseId);
 }
 
@@ -1649,12 +1655,41 @@ function renderWeeklySchemeSummary() {
 // chart and "6 reps" in the reps chart at the same week are the same set.
 // ---------------------------------------------------------------------------
 
+// Every gym a (non-warmup) set for this exercise has been logged at,
+// derived from those sets' sessions — used to decide whether the stats
+// charts need a gym picker at all (a gym-specific exercise done at only
+// one gym doesn't need one; its chart is already unambiguous).
+function getGymsUsedForExercise(exerciseId) {
+  const sessionIds = new Set(
+    appState.database.sets
+      .filter((set) => set.exerciseId === exerciseId && !set.isWarmup)
+      .map((set) => set.sessionId)
+  );
+  const gymIds = new Set();
+  for (const session of appState.database.sessions) {
+    if (session.gymId && sessionIds.has(session.id)) {
+      gymIds.add(session.gymId);
+    }
+  }
+  return appState.database.gyms.filter((gym) => gymIds.has(gym.id));
+}
+
 // One point per week that has data (most recent `weekCount` such weeks),
 // each the heaviest non-warmup set logged that week for this exercise.
-function getWeeklyBestSets(exerciseId, weekCount) {
-  const workingSets = appState.database.sets.filter(
+// `gymId` (optional) restricts this to sets from sessions at that gym —
+// used for a gym-specific exercise, so the chart doesn't mix load numbers
+// that aren't comparable between locations.
+function getWeeklyBestSets(exerciseId, weekCount, gymId = null) {
+  let workingSets = appState.database.sets.filter(
     (set) => set.exerciseId === exerciseId && !set.isWarmup
   );
+
+  if (gymId !== null) {
+    const sessionIdsAtGym = new Set(
+      appState.database.sessions.filter((session) => session.gymId === gymId).map((session) => session.id)
+    );
+    workingSets = workingSets.filter((set) => sessionIdsAtGym.has(set.sessionId));
+  }
 
   const bestByWeekKey = new Map();
   for (const set of workingSets) {
@@ -1757,7 +1792,39 @@ function renderExerciseStatsDetail(exerciseId) {
   const exercise = appState.database.exercises.find((candidate) => candidate.id === exerciseId);
   document.getElementById("exerciseStatsDetailName").textContent = exercise.name;
 
-  const weeklyBestSets = getWeeklyBestSets(exerciseId, 8);
+  const gymPickerElement = document.getElementById("exerciseStatsGymPicker");
+  const gymsUsed = exercise.isGymSpecific ? getGymsUsedForExercise(exerciseId) : [];
+
+  if (gymsUsed.length > 1) {
+    // Defaults to the first render's selection staying sticky across
+    // re-renders, but falls back to the most recently used gym the first
+    // time this exercise's stats are opened.
+    if (!gymsUsed.some((gym) => gym.id === appState.exerciseStatsSelectedGymId)) {
+      appState.exerciseStatsSelectedGymId = gymsUsed[0].id;
+    }
+
+    gymPickerElement.innerHTML = "";
+    gymPickerElement.hidden = false;
+    for (const gym of gymsUsed) {
+      const gymButton = document.createElement("button");
+      gymButton.type = "button";
+      gymButton.className = "day-status-option";
+      gymButton.textContent = gym.name;
+      gymButton.classList.toggle("day-status-option-selected", gym.id === appState.exerciseStatsSelectedGymId);
+      gymButton.addEventListener("click", () => {
+        appState.exerciseStatsSelectedGymId = gym.id;
+        renderExerciseStatsDetail(exerciseId);
+      });
+      gymPickerElement.appendChild(gymButton);
+    }
+  } else {
+    gymPickerElement.hidden = true;
+    // Only one gym (or none) has ever been used, so there's nothing to
+    // scope by — that single gym's data is already all of it.
+    appState.exerciseStatsSelectedGymId = gymsUsed[0] ? gymsUsed[0].id : null;
+  }
+
+  const weeklyBestSets = getWeeklyBestSets(exerciseId, 8, appState.exerciseStatsSelectedGymId);
   const emptyMessage = document.getElementById("exerciseStatsEmptyMessage");
   const chartsContainer = document.getElementById("exerciseStatsCharts");
 
