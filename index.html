@@ -24,10 +24,13 @@
   <main>
 
     <!-- ===================================================================
-         MAIN SCREEN: start/end a workout, log sets, export/import.
+         HOME SCREEN: the hub — navigation, this week's progress, and
+         starting (or resuming) a workout. Deliberately holds nothing about
+         an in-progress workout itself; see ACTIVE WORKOUT SCREEN below for
+         why that's a separate screen instead of living here too.
          =================================================================== -->
     <section id="mainScreen">
-      <h1>Exercises</h1>
+      <h1>Treeniappi</h1>
 
       <div class="button-row">
         <button id="viewSettingsButton">Settings</button>
@@ -58,12 +61,28 @@
         <div id="muscleCounterRows"></div>
       </section>
 
-      <!-- Filled with one "Start: <scheme name>" button per active scheme,
-           plus a "Start free-form workout" button. Hidden once a workout is
-           in progress. -->
+      <!-- Idle: one "Start: <scheme name>" button per active scheme, plus a
+           "Start free-form workout" button. Once a workout is in progress,
+           this holds a single "Resume workout" button instead, back to the
+           active workout screen — see renderStartWorkoutChoices() in
+           app.js. -->
       <div id="startWorkoutChoices" class="button-stack"></div>
+    </section>
 
-      <button id="endWorkoutButton" hidden>End workout</button>
+
+    <!-- ===================================================================
+         ACTIVE WORKOUT SCREEN: everything for logging the workout in
+         progress. Kept off the home screen so nothing unrelated to logging
+         (settings, history, bodyweight, export/import) is sitting there
+         mid-set — "Home" below is the deliberate way out, rather than that
+         navigation just being everywhere all the time. The workout itself
+         keeps running in the background; leaving this screen doesn't end it.
+         =================================================================== -->
+    <section id="activeWorkoutScreen" hidden>
+      <div class="button-row">
+        <button id="homeFromWorkoutButton">Home</button>
+        <button id="endWorkoutButton" hidden>End workout</button>
+      </div>
       <p id="workoutStatus"></p>
       <!-- Counts up from whenever the most recently logged set (in the
            current workout) was saved, so rest time is visible at a glance. -->
@@ -80,9 +99,9 @@
       <button id="dayStatusButton" class="card-action-button" hidden>Today's status</button>
 
       <!-- Free-form only: exercises rendered as plain buttons, tapped to log
-           a set directly. Only enabled once a workout has been started. Each
-           row also gets a small "review" button once at least one set has
-           been logged for it this session, opening freeformReviewCard below. -->
+           a set directly. Each row also gets a small "review" button once at
+           least one set has been logged for it this session, opening
+           freeformReviewCard below. -->
       <ul id="exerciseList"></ul>
 
       <!-- Free-form only: the sets already logged this session for whichever
@@ -97,21 +116,13 @@
            pill for a set beyond the plan. Tapping any pill opens the set
            entry panel below, either to log it or to correct it. -->
       <div id="schemeWorkoutCards" hidden></div>
-
-      <div class="button-row">
-        <button id="exportButton">Export</button>
-        <button id="importButton">Import</button>
-      </div>
-
-      <!-- A real file picker can't be styled to match the other buttons, so
-           it stays hidden and the Import button above triggers it instead. -->
-      <input type="file" id="importFileInput" accept="application/json" hidden>
     </section>
 
 
     <!-- ===================================================================
-         SETTINGS SCREEN: entry point for the three "manage a list" screens,
-         kept off the main screen so its own button row stays short.
+         SETTINGS SCREEN: entry point for the three "manage a list" screens
+         plus export/import, kept off the home screen so its own button row
+         stays short.
          =================================================================== -->
     <section id="settingsScreen" hidden>
       <h1>Settings</h1>
@@ -122,17 +133,39 @@
         <button id="manageSchemesButton">Manage schemes</button>
         <button id="manageExercisesButton">Manage exercises</button>
         <button id="manageGymsButton">Manage gyms</button>
+        <button id="viewDataButton">Export / Import data</button>
       </div>
     </section>
 
 
     <!-- ===================================================================
-         SET ENTRY PANEL: a top-level section, not nested in mainScreen, so
-         it can be shown over mainScreen (scheme cards / free-form list) or
-         over historyScreen (editing a past set) without needing either
-         screen hidden underneath it. Whichever screen opened it stays
-         visible; this one is layered in below via its own "hidden" toggle,
-         same pattern as plannedExerciseEntryPanel further down.
+         DATA SCREEN: export/import the whole saved database as a JSON
+         file — an occasional backup action, not something needed during
+         ordinary logging, so it's tucked behind Settings rather than on the
+         home screen.
+         =================================================================== -->
+    <section id="dataScreen" hidden>
+      <h1>Export / Import</h1>
+      <div class="button-row">
+        <button id="backFromDataButton">Back</button>
+      </div>
+      <div class="button-row">
+        <button id="exportButton">Export</button>
+        <button id="importButton">Import</button>
+      </div>
+      <!-- A real file picker can't be styled to match the other buttons, so
+           it stays hidden and the Import button above triggers it instead. -->
+      <input type="file" id="importFileInput" accept="application/json" hidden>
+    </section>
+
+
+    <!-- ===================================================================
+         SET ENTRY PANEL: a top-level section, not nested in another screen,
+         so it can be shown over activeWorkoutScreen (scheme cards /
+         free-form list) or over historyScreen (editing a past set) without
+         needing either screen hidden underneath it. Whichever screen opened
+         it stays visible; this one is layered in below via its own "hidden"
+         toggle, same pattern as plannedExerciseEntryPanel further down.
          =================================================================== -->
     <section id="setEntryPanel" hidden>
       <h2 id="setEntryExerciseName"></h2>
@@ -188,11 +221,11 @@
 
 
     <!-- ===================================================================
-         DAY STATUS PANEL: a top-level section, not nested in mainScreen, same
-         reasoning as setEntryPanel above — it now also opens from a past
-         session's History card ("Edit status"), not just the active
-         workout's "Today's status" button, so it needs to layer over
-         historyScreen too.
+         DAY STATUS PANEL: a top-level section, not nested in another
+         screen, same reasoning as setEntryPanel above — it opens from
+         activeWorkoutScreen's "Today's status" button or from a past
+         session's History card ("Edit status"), so it needs to layer over
+         either screen.
          =================================================================== -->
     <section id="dayStatusPanel" hidden>
       <h2 id="dayStatusHeading">Today's status</h2>

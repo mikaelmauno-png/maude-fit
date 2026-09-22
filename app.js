@@ -69,7 +69,9 @@ if (appState.database.exercises.length === 0) {
 // ---------------------------------------------------------------------------
 
 const mainScreen = document.getElementById("mainScreen");
+const activeWorkoutScreen = document.getElementById("activeWorkoutScreen");
 const settingsScreen = document.getElementById("settingsScreen");
+const dataScreen = document.getElementById("dataScreen");
 const schemesScreen = document.getElementById("schemesScreen");
 const schemeEditorScreen = document.getElementById("schemeEditorScreen");
 const exercisePickerScreen = document.getElementById("exercisePickerScreen");
@@ -85,23 +87,23 @@ const personalBestsScreen = document.getElementById("personalBestsScreen");
 const muscleStatsListScreen = document.getElementById("muscleStatsListScreen");
 const muscleStatsDetailScreen = document.getElementById("muscleStatsDetailScreen");
 const bodyweightScreen = document.getElementById("bodyweightScreen");
-// A top-level section (not nested in mainScreen) so it can be shown over
-// either mainScreen or historyScreen — see the comment above it in
-// index.html for why. Declared here, with the other screens, rather than
-// down in the "Logging a set" section where it's used, so it can join
+// A top-level section (not nested in another screen) so it can be shown
+// over either activeWorkoutScreen or historyScreen — see the comment above
+// it in index.html for why. Declared here, with the other screens, rather
+// than down in the "Logging a set" section where it's used, so it can join
 // allScreens below.
 const setEntryPanel = document.getElementById("setEntryPanel");
 // Same reasoning as setEntryPanel above — top-level so it can layer over
-// either mainScreen (the active workout's "Today's status" button) or
-// historyScreen (a past session's "Edit status" button).
+// either activeWorkoutScreen (the "Today's status" button) or historyScreen
+// (a past session's "Edit status" button).
 const dayStatusPanel = document.getElementById("dayStatusPanel");
 
 // Every top-level screen, so each show*Screen() function below can hide all
 // of them and then reveal just its own, without repeating this list six times.
 const allScreens = [
-  mainScreen, settingsScreen, schemesScreen, schemeEditorScreen, exercisePickerScreen,
-  plannedExerciseEntryPanel, exercisesScreen, historyScreen, gymsScreen, gymPickerScreen,
-  setEntryPanel, exerciseStatsListScreen, exerciseStatsDetailScreen, muscleEditorPanel,
+  mainScreen, activeWorkoutScreen, settingsScreen, dataScreen, schemesScreen, schemeEditorScreen,
+  exercisePickerScreen, plannedExerciseEntryPanel, exercisesScreen, historyScreen, gymsScreen,
+  gymPickerScreen, setEntryPanel, exerciseStatsListScreen, exerciseStatsDetailScreen, muscleEditorPanel,
   personalBestsScreen, muscleStatsListScreen, muscleStatsDetailScreen, dayStatusPanel,
   bodyweightScreen
 ];
@@ -119,9 +121,22 @@ function showMainScreen() {
   renderMuscleCounters();
 }
 
+// Doesn't touch appState.activeSessionId or end the workout — this just
+// changes which screen is visible. The session (if any) keeps running
+// whether this screen or the home screen is what's on top.
+function showActiveWorkoutScreen() {
+  hideAllScreens();
+  activeWorkoutScreen.hidden = false;
+}
+
 function showSettingsScreen() {
   hideAllScreens();
   settingsScreen.hidden = false;
+}
+
+function showDataScreen() {
+  hideAllScreens();
+  dataScreen.hidden = false;
 }
 
 function showSchemesScreen() {
@@ -217,6 +232,9 @@ document.getElementById("viewBodyweightButton").addEventListener("click", showBo
 document.getElementById("backFromBodyweightButton").addEventListener("click", showMainScreen);
 document.getElementById("manageGymsButton").addEventListener("click", showGymsScreen);
 document.getElementById("backFromGymsButton").addEventListener("click", showSettingsScreen);
+document.getElementById("viewDataButton").addEventListener("click", showDataScreen);
+document.getElementById("backFromDataButton").addEventListener("click", showSettingsScreen);
+document.getElementById("homeFromWorkoutButton").addEventListener("click", showMainScreen);
 
 
 // ---------------------------------------------------------------------------
@@ -480,16 +498,22 @@ const endWorkoutButton = document.getElementById("endWorkoutButton");
 const workoutStatus = document.getElementById("workoutStatus");
 const dayStatusButton = document.getElementById("dayStatusButton");
 
-// Rebuilds the "Start: <scheme>" / "Start free-form workout" buttons, and
-// hides the whole group once a workout is already in progress.
+// Rebuilds the "Start: <scheme>" / "Start free-form workout" buttons. Once a
+// workout is already in progress, those don't make sense any more — this
+// shows a single "Resume workout" button back to the active workout screen
+// instead, so there's always exactly one obvious thing to tap here.
 function renderStartWorkoutChoices() {
   startWorkoutChoices.innerHTML = "";
+  startWorkoutChoices.hidden = false;
 
   if (appState.activeSessionId !== null) {
-    startWorkoutChoices.hidden = true;
+    const resumeButton = document.createElement("button");
+    resumeButton.type = "button";
+    resumeButton.textContent = "Resume workout";
+    resumeButton.addEventListener("click", showActiveWorkoutScreen);
+    startWorkoutChoices.appendChild(resumeButton);
     return;
   }
-  startWorkoutChoices.hidden = false;
 
   const activeTemplates = appState.database.workoutTemplates.filter((template) => !template.isArchived);
   for (const template of activeTemplates) {
@@ -548,7 +572,7 @@ function startWorkout(templateId, gymId) {
   closeFreeformReview();
   hidePersonalBestBanner();
   closeDayStatusPanel();
-  showMainScreen();
+  showActiveWorkoutScreen();
   updateWorkoutControls();
   renderExerciseArea();
 }
@@ -562,6 +586,7 @@ endWorkoutButton.addEventListener("click", () => {
   hidePersonalBestBanner();
   closeDayStatusPanel();
   appState.activeSessionId = null;
+  showMainScreen();
   updateWorkoutControls();
   renderExerciseArea();
 });
@@ -2999,8 +3024,8 @@ function openNextGoalEditor(templateId, exerciseId) {
   document.getElementById("savePlannedExerciseButton").textContent = "Save goal";
 
   renderPlannedExerciseDraft();
-  // Deliberately not hideAllScreens(): mainScreen (with the workout cards)
-  // stays visible underneath, same as how the set entry panel works.
+  // Deliberately not hideAllScreens(): activeWorkoutScreen (with the workout
+  // cards) stays visible underneath, same as how the set entry panel works.
   plannedExerciseEntryPanel.hidden = false;
 }
 
