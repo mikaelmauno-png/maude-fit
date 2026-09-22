@@ -86,5 +86,8 @@ Charts are allowed now (weekly scheme-completion summary, per-exercise
 weight/rep-range history), but stay hand-drawn inline SVG — no charting
 library, since nothing can be loaded from a CDN per the Code rules above.
 
-The muscle-weight fields in the exercise library exist in the schema on
-purpose, but nothing reads them yet. Leave them alone.
+The muscle-weight fields in the exercise library may now be set and shown in
+the UI — a main muscle (weight 1.0) and secondary muscles (weight 0.5), per
+the existing `Exercise.muscles` shape. Still nothing should *use* these
+values to drive volume/landmark logic — that's still the autoregulation
+engine, still out of scope above.
