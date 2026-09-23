@@ -171,6 +171,8 @@
       <h2 id="setEntryExerciseName"></h2>
       <!-- Only shown when this set came from a scheme's plan. -->
       <p id="plannedTarget" hidden></p>
+      <!-- Only shown when progression.js has a suggestion for this set. -->
+      <p id="progressionSuggestion" class="progression-suggestion" hidden></p>
       <p id="previousPerformance"></p>
 
       <div class="stepper-row">
@@ -626,6 +628,7 @@
        every element above (the lists, the buttons) already exists in the
        page by the time these run. -->
   <script src="schema.js"></script>
+  <script src="progression.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

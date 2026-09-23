@@ -9,13 +9,14 @@
 // without bumping it, "install" below sees the old cache already exists and
 // never re-fetches anything, so a code change would never actually reach a
 // phone that already has the app installed.
-const CACHE_NAME = "treeniappi-v3";
+const CACHE_NAME = "treeniappi-v4";
 
 const APP_SHELL_FILES = [
   "./",
   "./index.html",
   "./style.css",
   "./schema.js",
+  "./progression.js",
   "./app.js",
   "./manifest.json",
   "./icon.svg",

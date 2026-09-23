@@ -158,6 +158,15 @@ button:active {
   font-size: 0.95rem;
 }
 
+/* A training suggestion from progression.js, on a workout card and in the
+   set panel. Green so it reads as "do this" at a glance, distinct from the
+   blue plan line and the grey last-time line. */
+.progression-suggestion {
+  color: #7ddc8a;
+  font-size: 0.95rem;
+  margin: -4px 0 12px;
+}
+
 #schemeWorkoutCards {
   margin-bottom: 24px;
 }

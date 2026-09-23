@@ -392,14 +392,18 @@ function renderFreeformReview() {
 // Builds one "pill" button for a single set: weight on top, reps below (the
 // done vs. pending look and the reps text are the only real difference
 // between an already-logged set and one still waiting to be done).
-function buildSetPill(loggedSet, planned) {
+// `suggestion` is today's progression suggestion for this exercise (see
+// progression.js), or null. When there is one, a not-yet-logged pill shows
+// the suggested load instead of the scheme's fixed target load.
+function buildSetPill(loggedSet, planned, suggestion) {
   const pill = document.createElement("button");
   pill.type = "button";
   pill.className = loggedSet ? "set-pill set-pill-done" : "set-pill set-pill-pending";
 
   const weightSpan = document.createElement("span");
   weightSpan.className = "set-pill-weight";
-  weightSpan.textContent = `${loggedSet ? loggedSet.load : planned.targetLoad} kg`;
+  const pendingLoad = suggestion ? suggestion.load : planned.targetLoad;
+  weightSpan.textContent = `${loggedSet ? loggedSet.load : pendingLoad} kg`;
 
   const repsSpan = document.createElement("span");
   repsSpan.className = "set-pill-reps";
@@ -416,12 +420,22 @@ function buildSetPill(loggedSet, planned) {
       openSetEntryPanel(planned.exerciseId, {
         load: planned.targetLoad,
         repsMin: planned.targetRepsMin,
-        repsMax: planned.targetRepsMax
+        repsMax: planned.targetRepsMax,
+        suggestion
       });
     }
   });
 
   return pill;
+}
+
+// The green "Suggested: 82.5 kg × 8" line on a workout card, with the
+// reason underneath so the suggestion never looks like a mystery number.
+function buildSuggestionLine(suggestion) {
+  const lineElement = document.createElement("p");
+  lineElement.className = "progression-suggestion";
+  lineElement.textContent = `Suggested: ${suggestion.load} kg × ${suggestion.reps}. ${suggestion.reason}`;
+  return lineElement;
 }
 
 // One card per planned exercise, shown all at once — order doesn't matter,
@@ -447,19 +461,26 @@ function renderSchemeWorkoutCards(template) {
     headingElement.textContent = exercise.name;
     cardElement.appendChild(headingElement);
 
+    const suggestion = suggestNextTarget(
+      appState.database, planned.exerciseId, planned.targetRepsMin, planned.targetRepsMax, getActiveSession()
+    );
+    if (suggestion) {
+      cardElement.appendChild(buildSuggestionLine(suggestion));
+    }
+
     const pillRowElement = document.createElement("div");
     pillRowElement.className = "set-pills";
 
     // One pill per planned set, filled in from whatever's actually been
     // logged so far for it.
     for (let setIndex = 0; setIndex < planned.targetSets; setIndex++) {
-      pillRowElement.appendChild(buildSetPill(loggedSets[setIndex], planned));
+      pillRowElement.appendChild(buildSetPill(loggedSets[setIndex], planned, suggestion));
     }
 
     // Any sets logged beyond the planned count (via the "+" pill below) get
     // their own pills too, rather than being invisible here.
     for (let setIndex = planned.targetSets; setIndex < loggedSets.length; setIndex++) {
-      pillRowElement.appendChild(buildSetPill(loggedSets[setIndex], planned));
+      pillRowElement.appendChild(buildSetPill(loggedSets[setIndex], planned, suggestion));
     }
 
     const addPill = document.createElement("button");
@@ -812,6 +833,7 @@ document.getElementById("cancelDayStatusButton").addEventListener("click", () =>
 const setEntryExerciseName = document.getElementById("setEntryExerciseName");
 const plannedTarget = document.getElementById("plannedTarget");
 const previousPerformance = document.getElementById("previousPerformance");
+const progressionSuggestion = document.getElementById("progressionSuggestion");
 const rirRow = document.getElementById("rirRow");
 const warmupCheckbox = document.getElementById("warmupCheckbox");
 
@@ -867,20 +889,24 @@ function renderSetDraft() {
   warmupCheckbox.checked = appState.setDraft.isWarmup;
 }
 
-// `planTarget` (optional) is `{ load, repsMin, repsMax }` from a scheme's
-// plan, passed in when opened from a pending set pill. When present,
-// load/reps default to the plan rather than to past performance, since the
-// plan is what today is supposed to follow.
+// `planTarget` (optional) is `{ load, repsMin, repsMax, suggestion }` from
+// a scheme's plan, passed in when opened from a pending set pill. When
+// present, load/reps default to the plan rather than to past performance,
+// since the plan is what today is supposed to follow. If progression.js
+// produced a suggestion, that takes priority over the plan's fixed load,
+// because it's the plan's rep range applied to what actually happened last
+// time.
 function openSetEntryPanel(exerciseId, planTarget = null) {
   const exercise = appState.database.exercises.find((candidate) => candidate.id === exerciseId);
   const previous = findPreviousWorkingSet(exerciseId);
 
   hidePersonalBestBanner();
   appState.editingSetId = null;
+  const suggestion = planTarget ? planTarget.suggestion : null;
   appState.setDraft = {
     exerciseId,
-    load: planTarget ? planTarget.load : (previous ? previous.load : 20),
-    reps: planTarget ? planTarget.repsMin : (previous ? previous.reps : 8),
+    load: chooseStartingLoad(planTarget, suggestion, previous),
+    reps: chooseStartingReps(planTarget, suggestion, previous),
     rir: previous ? previous.rir : 2,
     isWarmup: false
   };
@@ -894,6 +920,13 @@ function openSetEntryPanel(exerciseId, planTarget = null) {
     plannedTarget.hidden = false;
   } else {
     plannedTarget.hidden = true;
+  }
+
+  if (suggestion) {
+    progressionSuggestion.textContent = `Suggested: ${suggestion.load} kg × ${suggestion.reps}. ${suggestion.reason}`;
+    progressionSuggestion.hidden = false;
+  } else {
+    progressionSuggestion.hidden = true;
   }
 
   if (previous) {
@@ -911,6 +944,30 @@ function openSetEntryPanel(exerciseId, planTarget = null) {
 
   renderSetDraft();
   setEntryPanel.hidden = false;
+}
+
+// Where the load stepper starts: the progression suggestion if there is
+// one, else the scheme's planned load, else last time's load, else an empty
+// Olympic bar (20 kg) for an exercise that's never been done.
+function chooseStartingLoad(planTarget, suggestion, previous) {
+  if (suggestion) {
+    return suggestion.load;
+  }
+  if (planTarget) {
+    return planTarget.load;
+  }
+  return previous ? previous.load : 20;
+}
+
+// Same order of preference as chooseStartingLoad, for reps.
+function chooseStartingReps(planTarget, suggestion, previous) {
+  if (suggestion) {
+    return suggestion.reps;
+  }
+  if (planTarget) {
+    return planTarget.repsMin;
+  }
+  return previous ? previous.reps : 8;
 }
 
 // Opens the same panel, but pre-filled from an already-logged set so it can
@@ -934,6 +991,7 @@ function openSetEntryPanelForEdit(setId) {
 
   setEntryExerciseName.textContent = exercise.name;
   plannedTarget.hidden = true;
+  progressionSuggestion.hidden = true;
   previousPerformance.textContent = "Editing a previously logged set.";
   saveSetButton.textContent = "Save changes";
   deleteSetButton.hidden = false;
