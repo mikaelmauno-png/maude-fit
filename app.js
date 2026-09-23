@@ -3828,8 +3828,9 @@ importFileInput.addEventListener("change", () => {
 // new version would only show up the *next* time the app is opened.
 //
 // The reload only ever happens on the home screen with no workout in
-// progress. A workout in progress isn't restored after a reload, and an
-// open set-entry panel would lose what was being typed.
+// progress. A workout in progress does come back after a reload (see
+// "Unfinished workouts" below), but whatever was on the set-entry panel's
+// steppers and not yet saved would be lost — not worth risking mid-set.
 // ---------------------------------------------------------------------------
 
 function watchForAppUpdates() {
@@ -3881,12 +3882,83 @@ function reloadForUpdateIfSafe() {
 
 
 // ---------------------------------------------------------------------------
-// Startup
+// Unfinished workouts
 //
-// Draws the home screen once, at the very end of the file. It can't happen
-// any earlier: the home screen's sections look up page elements stored in
-// `const`s declared all through this file, and JavaScript refuses to read a
-// `const` before the line that declares it has run.
+// Which workout is in progress lives only in memory (appState), but phones
+// close background web apps whenever they like — e.g. while the screen is
+// locked between sets. The workout itself is safely stored, just with no
+// endedAt, so on startup it can be picked back up. Without this it would
+// stay unfinished forever: missing from History, yet its sets would still
+// feed progression suggestions, personal bests and stats.
 // ---------------------------------------------------------------------------
 
+// Long enough to cover a long rest between sets or exercises, short enough
+// that yesterday's forgotten workout isn't reopened the next morning.
+const HOURS_WITHIN_WHICH_A_WORKOUT_RESUMES = 3;
+
+// The newest unfinished workout is resumed if it saw activity recently.
+// Every other unfinished workout is finished as of its last set, so it
+// shows up in History like any other.
+function recoverUnfinishedSessions() {
+  const unfinishedSessions = appState.database.sessions
+    .filter((session) => session.endedAt === null)
+    .sort((a, b) => findLastActivityTime(b).localeCompare(findLastActivityTime(a)));
+  if (unfinishedSessions.length === 0) {
+    return;
+  }
+
+  const newestSession = unfinishedSessions[0];
+  if (isRecentEnoughToResume(newestSession)) {
+    appState.activeSessionId = newestSession.id;
+  } else {
+    finishSessionAtLastActivity(newestSession);
+  }
+  for (const olderSession of unfinishedSessions.slice(1)) {
+    finishSessionAtLastActivity(olderSession);
+  }
+  saveDatabase(appState.database);
+}
+
+// When the last set was logged, or when the workout started if no set was.
+// Either way an ISO string, so two of them compare correctly as text.
+function findLastActivityTime(session) {
+  let lastActivityTime = session.startedAt;
+  for (const set of appState.database.sets) {
+    if (set.sessionId === session.id && set.performedAt > lastActivityTime) {
+      lastActivityTime = set.performedAt;
+    }
+  }
+  return lastActivityTime;
+}
+
+function isRecentEnoughToResume(session) {
+  const millisecondsSinceActivity = Date.now() - new Date(findLastActivityTime(session)).getTime();
+  const hoursSinceActivity = millisecondsSinceActivity / (60 * 60 * 1000);
+  return hoursSinceActivity <= HOURS_WITHIN_WHICH_A_WORKOUT_RESUMES;
+}
+
+// The real end time is unknown, so the last logged set stands in for it —
+// the closest thing to "when training actually stopped" there is.
+function finishSessionAtLastActivity(session) {
+  session.endedAt = findLastActivityTime(session);
+}
+
+
+// ---------------------------------------------------------------------------
+// Startup
+//
+// Runs once, at the very end of the file. It can't happen any earlier: the
+// screens look up page elements stored in `const`s declared all through
+// this file, and JavaScript refuses to read a `const` before the line that
+// declares it has run.
+// ---------------------------------------------------------------------------
+
+recoverUnfinishedSessions();
 showMainScreen();
+// Same steps startWorkout() takes, so a resumed workout looks exactly like
+// one that was never interrupted.
+if (appState.activeSessionId !== null) {
+  showActiveWorkoutScreen();
+  updateWorkoutControls();
+  renderExerciseArea();
+}
