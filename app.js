@@ -1455,6 +1455,37 @@ document.getElementById("addExerciseButton").addEventListener("click", () => {
 });
 
 
+// An exercise counts as "already there" if either its id or its name
+// matches. The name check matters for exercises typed in by hand before
+// this list existed: those got an id made from the typed name, which may
+// differ slightly from the built-in id, but the same name still means the
+// same exercise — adding it twice would split its history in two.
+function isExerciseAlreadyInLibrary(builtInExercise) {
+  const builtInName = builtInExercise.name.toLowerCase();
+  return appState.database.exercises.some(
+    (existing) => existing.id === builtInExercise.id || existing.name.toLowerCase() === builtInName
+  );
+}
+
+document.getElementById("addBuiltInExercisesButton").addEventListener("click", () => {
+  const missingExercises = STARTER_EXERCISES.filter((exercise) => !isExerciseAlreadyInLibrary(exercise));
+
+  for (const exercise of missingExercises) {
+    // Copy rather than push the built-in object itself, so editing an
+    // exercise's muscles later can't quietly change the STARTER_EXERCISES
+    // constant too.
+    appState.database.exercises.push({ ...exercise, muscles: { ...exercise.muscles } });
+  }
+  saveDatabase(appState.database);
+  renderExercisesManageList();
+
+  if (missingExercises.length === 0) {
+    alert("You already have all the built-in exercises.");
+  } else {
+    alert(`Added ${missingExercises.length} exercises.`);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Muscle editor — one main muscle (weight 1.0) and any number of secondary
 // muscles (weight 0.5) for one exercise, per schema.js's Exercise.muscles

@@ -340,9 +340,16 @@ function importDatabase(jsonText) {
 // ---------------------------------------------------------------------------
 // Starter exercise library
 //
-// Replace these with the exercises actually trained. Keep the ids stable once
-// sets have been logged against them — changing an id orphans history.
-// The muscle weights are placeholders and nothing reads them yet.
+// A new install starts with all of these. An existing install can pull in
+// any it's missing with the "Add built-in exercises" button in the exercise
+// library, so adding an entry here reaches both.
+//
+// Keep the ids stable once sets have been logged against them — changing an
+// id orphans history. Muscle weights and minimum raises are sensible
+// defaults, meant to be adjusted in the exercise library.
+//
+// Minimum raise conventions: 2.5 kg for barbells and loaded bodyweight
+// moves, 2 kg for dumbbells, 5 kg for machine and cable stacks.
 // ---------------------------------------------------------------------------
 
 const STARTER_EXERCISES = [
@@ -385,5 +392,141 @@ const STARTER_EXERCISES = [
     isArchived: false,
     isGymSpecific: false,
     minimumLoadIncrement: 2.5
+  },
+  {
+    id: "machine-lateral-raise",
+    name: "Machine lateral raise",
+    muscles: { sideDelt: 1.0 },
+    isArchived: false,
+    isGymSpecific: true,
+    minimumLoadIncrement: 5
+  },
+  {
+    id: "neutral-grip-pull-up",
+    name: "Neutral-grip pull-up",
+    muscles: { lats: 1.0, biceps: 0.5, upperBack: 0.5 },
+    isArchived: false,
+    isGymSpecific: false,
+    minimumLoadIncrement: 2.5
+  },
+  {
+    id: "seated-cable-row-wide-grip",
+    name: "Seated cable row (wide overhand grip)",
+    muscles: { upperBack: 1.0, lats: 0.5, rearDelt: 0.5, biceps: 0.5 },
+    isArchived: false,
+    isGymSpecific: true,
+    minimumLoadIncrement: 5
+  },
+  {
+    id: "seated-cable-row-close-neutral-grip",
+    name: "Seated cable row (close neutral grip)",
+    muscles: { lats: 1.0, upperBack: 0.5, biceps: 0.5 },
+    isArchived: false,
+    isGymSpecific: true,
+    minimumLoadIncrement: 5
+  },
+  {
+    id: "seated-cable-row-underhand-grip",
+    name: "Seated cable row (underhand grip)",
+    muscles: { lats: 1.0, upperBack: 0.5, biceps: 0.5 },
+    isArchived: false,
+    isGymSpecific: true,
+    minimumLoadIncrement: 5
+  },
+  {
+    id: "seated-dumbbell-curl",
+    name: "Seated dumbbell curl",
+    muscles: { biceps: 1.0, forearms: 0.5 },
+    isArchived: false,
+    isGymSpecific: false,
+    minimumLoadIncrement: 2
+  },
+  {
+    id: "incline-dumbbell-curl",
+    name: "Incline dumbbell curl",
+    muscles: { biceps: 1.0, forearms: 0.5 },
+    isArchived: false,
+    isGymSpecific: false,
+    minimumLoadIncrement: 2
+  },
+  {
+    id: "triceps-pushdown-rope",
+    name: "Triceps pushdown (rope)",
+    muscles: { triceps: 1.0 },
+    isArchived: false,
+    isGymSpecific: true,
+    minimumLoadIncrement: 5
+  },
+  {
+    id: "triceps-pushdown-straight-bar",
+    name: "Triceps pushdown (straight bar)",
+    muscles: { triceps: 1.0 },
+    isArchived: false,
+    isGymSpecific: true,
+    minimumLoadIncrement: 5
+  },
+  {
+    id: "triceps-pushdown-v-bar",
+    name: "Triceps pushdown (V-bar)",
+    muscles: { triceps: 1.0 },
+    isArchived: false,
+    isGymSpecific: true,
+    minimumLoadIncrement: 5
+  },
+  {
+    id: "overhead-triceps-extension-rope",
+    name: "Overhead triceps extension (cable, rope)",
+    muscles: { triceps: 1.0 },
+    isArchived: false,
+    isGymSpecific: true,
+    minimumLoadIncrement: 5
+  },
+  {
+    id: "overhead-triceps-extension-bar",
+    name: "Overhead triceps extension (cable, straight bar)",
+    muscles: { triceps: 1.0 },
+    isArchived: false,
+    isGymSpecific: true,
+    minimumLoadIncrement: 5
+  },
+  {
+    id: "overhead-triceps-extension-dumbbell",
+    name: "Overhead triceps extension (dumbbell)",
+    muscles: { triceps: 1.0 },
+    isArchived: false,
+    isGymSpecific: false,
+    minimumLoadIncrement: 2
+  },
+  {
+    id: "hip-abductor-machine",
+    name: "Hip abductor machine",
+    muscles: { glutes: 1.0 },
+    isArchived: false,
+    isGymSpecific: true,
+    minimumLoadIncrement: 5
+  },
+  {
+    id: "leg-press-calf-raise",
+    name: "Calf raise in leg press",
+    muscles: { calves: 1.0 },
+    isArchived: false,
+    isGymSpecific: true,
+    minimumLoadIncrement: 5
+  },
+  {
+    id: "machine-oblique-rotation",
+    name: "Oblique rotation machine",
+    muscles: { obliques: 1.0, abs: 0.5 },
+    isArchived: false,
+    isGymSpecific: true,
+    minimumLoadIncrement: 5
+  },
+  {
+    id: "machine-crunch",
+    name: "Machine crunch",
+    muscles: { abs: 1.0 },
+    isArchived: false,
+    isGymSpecific: true,
+    minimumLoadIncrement: 5
   }
 ];
