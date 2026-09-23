@@ -262,6 +262,12 @@ document.getElementById("backFromExercisesButton").addEventListener("click", sho
 document.getElementById("viewHistoryButton").addEventListener("click", showHistoryScreen);
 document.getElementById("backFromHistoryButton").addEventListener("click", showMainScreen);
 document.getElementById("viewBodyweightButton").addEventListener("click", showBodyweightScreen);
+// The bottom bar only exists on the home screen, so "Home" is always where
+// you already are — it scrolls back up to the workouts instead, which is
+// what tapping the current tab does in most phone apps.
+document.getElementById("navHomeButton").addEventListener("click", () => {
+  window.scrollTo({ top: 0, behavior: "smooth" });
+});
 document.getElementById("backFromBodyweightButton").addEventListener("click", showMainScreen);
 document.getElementById("manageGymsButton").addEventListener("click", showGymsScreen);
 document.getElementById("backFromGymsButton").addEventListener("click", showSettingsScreen);
