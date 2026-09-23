@@ -443,6 +443,11 @@ h1 {
   margin-bottom: 4px;
 }
 
+/* Space above so it reads as separate from the set pills it sits under. */
+.history-delete-button {
+  margin-top: 16px;
+}
+
 #weeklyWorkoutTemplateSummary {
   background-color: #1e1e1e;
   border-radius: 8px;

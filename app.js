@@ -2250,8 +2250,41 @@ function renderHistoryList() {
       cardElement.appendChild(pillRowElement);
     }
 
+    // At the very bottom of the card, well away from "Edit status" and the
+    // set pills, so an inaccurate thumb reaching for those can't land on it.
+    const deleteSessionButton = document.createElement("button");
+    deleteSessionButton.type = "button";
+    deleteSessionButton.className = "small-button destructive-button history-delete-button";
+    deleteSessionButton.textContent = "Delete workout";
+    deleteSessionButton.addEventListener("click", () => confirmAndDeleteSession(session, sessionSets.length));
+    cardElement.appendChild(deleteSessionButton);
+
     listElement.appendChild(cardElement);
   }
+}
+
+// The confirmation spells out how many sets go with it, since that's the
+// part that's easy to forget: the sets are the actual training record.
+function confirmAndDeleteSession(session, setCount) {
+  const setsText = setCount === 1 ? "1 logged set" : `${setCount} logged sets`;
+  const confirmed = confirm(
+    `Delete the workout from ${formatSessionDate(session.startedAt)} and its ${setsText}? This can't be undone.`
+  );
+  if (!confirmed) {
+    return;
+  }
+  deleteSessionAndItsSets(session.id);
+  saveDatabase(appState.database);
+  renderHistoryList();
+}
+
+// Removes the sets too, not just the session. Sets left pointing at a
+// session that no longer exists would still count towards progression
+// suggestions, personal bests and stats — training nobody can see or
+// correct any more.
+function deleteSessionAndItsSets(sessionId) {
+  appState.database.sets = appState.database.sets.filter((set) => set.sessionId !== sessionId);
+  appState.database.sessions = appState.database.sessions.filter((session) => session.id !== sessionId);
 }
 
 
