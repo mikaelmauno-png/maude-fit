@@ -1116,7 +1116,9 @@ function closeSetEntryPanel() {
 // to use are supplied by each button's own listener below, rather than
 // writing a near-identical function per field.
 function adjustDraftField(draftObject, field, step, minimum, render) {
-  const nextValue = draftObject[field] + step;
+  // Rounded because adding decimal steps like 1.25 can leave tiny
+  // floating-point errors (see roundLoad in progression.js).
+  const nextValue = roundLoad(draftObject[field] + step);
   draftObject[field] = Math.max(nextValue, minimum);
   render();
 }
@@ -1170,10 +1172,19 @@ function makeStepperValueEditable(
   });
 }
 
+// The load stepper moves by the exercise's own minimum raise (schema.js),
+// so a 5 kg machine stack steps 45 → 50 → 55 rather than landing on
+// weights the machine can't actually be set to. Looked up on every tap,
+// because the same stepper serves whichever exercise the panel is open for.
+function getLoadStep(exerciseId) {
+  const exercise = appState.database.exercises.find((candidate) => candidate.id === exerciseId);
+  return exercise.minimumLoadIncrement;
+}
+
 document.getElementById("loadDecrement").addEventListener("click", () =>
-  adjustDraftField(appState.setDraft, "load", -2.5, 0, renderSetDraft));
+  adjustDraftField(appState.setDraft, "load", -getLoadStep(appState.setDraft.exerciseId), 0, renderSetDraft));
 document.getElementById("loadIncrement").addEventListener("click", () =>
-  adjustDraftField(appState.setDraft, "load", 2.5, 0, renderSetDraft));
+  adjustDraftField(appState.setDraft, "load", getLoadStep(appState.setDraft.exerciseId), 0, renderSetDraft));
 document.getElementById("repsDecrement").addEventListener("click", () =>
   adjustDraftField(appState.setDraft, "reps", -1, 1, renderSetDraft));
 document.getElementById("repsIncrement").addEventListener("click", () =>
@@ -3309,6 +3320,10 @@ function openNextGoalEditor(templateId, exerciseId) {
 
   appState.nextGoalTarget = { templateId, exerciseId };
   appState.plannedExerciseDraft = {
+    // Only here so the target-load stepper can look up this exercise's
+    // minimum raise; the save handler copies the target fields one by one
+    // and ignores this.
+    exerciseId,
     targetSets: planned.targetSets,
     targetRepsMin: planned.targetRepsMin,
     targetRepsMax: planned.targetRepsMax,
@@ -3348,9 +3363,13 @@ document.getElementById("targetRepsMaxDecrement").addEventListener("click", () =
 document.getElementById("targetRepsMaxIncrement").addEventListener("click", () =>
   adjustDraftField(appState.plannedExerciseDraft, "targetRepsMax", 1, 1, renderPlannedExerciseDraft));
 document.getElementById("targetLoadDecrement").addEventListener("click", () =>
-  adjustDraftField(appState.plannedExerciseDraft, "targetLoad", -2.5, 0, renderPlannedExerciseDraft));
+  adjustDraftField(
+    appState.plannedExerciseDraft, "targetLoad", -getLoadStep(appState.plannedExerciseDraft.exerciseId), 0, renderPlannedExerciseDraft
+  ));
 document.getElementById("targetLoadIncrement").addEventListener("click", () =>
-  adjustDraftField(appState.plannedExerciseDraft, "targetLoad", 2.5, 0, renderPlannedExerciseDraft));
+  adjustDraftField(
+    appState.plannedExerciseDraft, "targetLoad", getLoadStep(appState.plannedExerciseDraft.exerciseId), 0, renderPlannedExerciseDraft
+  ));
 
 makeStepperValueEditable(
   document.getElementById("targetSetsValue"), document.getElementById("targetSetsValueInput"),
