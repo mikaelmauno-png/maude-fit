@@ -640,3 +640,132 @@ h1 {
   background-color: #2a2a2a;
   color: #ffffff;
 }
+
+/* ---------------------------------------------------------------------------
+   Workout tiles (home screen)
+   --------------------------------------------------------------------------- */
+
+/* Two equal columns. The details panel and an odd last tile span both
+   columns via grid-column below. */
+.workout-tile-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+/* Grey = not done yet this week, the "still to do" state. Tall enough to
+   hit without looking: the whole tile is the tap target. */
+.workout-tile {
+  min-height: 88px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background-color: #2a2a2a;
+  color: #f0f0f0;
+  border: 3px solid transparent;
+  border-radius: 14px;
+}
+
+.workout-tile:active {
+  background-color: #353535;
+}
+
+/* Same green as the weekly bars' fill, so "done" means one colour
+   everywhere on the page. */
+.workout-tile-done,
+.workout-tile-done:active {
+  background-color: #3a8a45;
+}
+
+/* An outline rather than a whole new fill colour, so the open tile still
+   shows whether it's done. */
+.workout-tile-selected {
+  border-color: #2a6df4;
+}
+
+.workout-tile-full-width {
+  grid-column: 1 / -1;
+}
+
+.workout-tile-status {
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+.workout-tile-name {
+  font-size: 1.25rem;
+  font-weight: bold;
+}
+
+.workout-tile-panel {
+  grid-column: 1 / -1;
+  background-color: #1e1e1e;
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.workout-tile-panel h2 {
+  margin: 0 0 4px 0;
+  font-size: 1.2rem;
+}
+
+.workout-tile-panel-status {
+  margin: 0 0 16px 0;
+  color: #9a9a9a;
+  font-size: 0.9rem;
+}
+
+.workout-tile-exercise-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16px 0;
+}
+
+.workout-tile-exercise-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+/* Amber, like the reference design: stands out as "order to do these in"
+   without being mistaken for a done/not-done colour. */
+.workout-tile-exercise-number {
+  flex: 0 0 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background-color: #e0a800;
+  color: #121212;
+  font-weight: bold;
+  font-size: 1.1rem;
+}
+
+.workout-tile-exercise-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.workout-tile-exercise-text span {
+  color: #c0c0c0;
+  font-size: 0.95rem;
+}
+
+/* White on the dark panel: the one thing on it that's meant to be tapped. */
+.workout-tile-start-button {
+  width: 100%;
+  background-color: #f0f0f0;
+  color: #121212;
+  font-weight: bold;
+  letter-spacing: 0.03em;
+}
+
+.workout-tile-start-button:active {
+  background-color: #cfcfcf;
+}

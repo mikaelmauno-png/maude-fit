@@ -32,6 +32,18 @@
     <section id="mainScreen">
       <h1>Treeniappi</h1>
 
+      <!-- Idle only: one tile per active workout template, green if done
+           this week, grey if not. Tapping a tile opens a panel directly
+           under its row with the planned exercises and a Start button —
+           see renderWorkoutTiles() in app.js. Hidden during a workout. -->
+      <div id="workoutTiles" class="workout-tile-grid" hidden></div>
+
+      <!-- Idle: a "Start free-form workout" button. Once a workout is in
+           progress, a single "Resume workout" button instead, back to the
+           active workout screen — see renderStartWorkoutChoices() in
+           app.js. -->
+      <div id="startWorkoutChoices" class="button-stack"></div>
+
       <!-- Only shown when idle (no active workout) and at least one active
            workout template exists — a bar per workout template, grey if not done this week,
            green with a completion % and date if it has been. Completion %
@@ -54,13 +66,6 @@
         <h2>Sets per muscle this week</h2>
         <div id="muscleCounterRows"></div>
       </section>
-
-      <!-- Idle: one "Start: <workout template name>" button per active workout template, plus a
-           "Start free-form workout" button. Once a workout is in progress,
-           this holds a single "Resume workout" button instead, back to the
-           active workout screen — see renderStartWorkoutChoices() in
-           app.js. -->
-      <div id="startWorkoutChoices" class="button-stack"></div>
 
       <!-- Bottom icon bar: the ways off the home screen, pinned to the
            bottom edge where a thumb reaches without shifting grip. It lives

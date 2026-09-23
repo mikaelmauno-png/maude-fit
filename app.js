@@ -69,6 +69,7 @@ const appState = {
   activeSessionId: null,       // null unless a workout is in progress
   setDraft: null,               // in-progress values for the set being logged
   editingSetId: null,           // id of an existing set being corrected, or null when logging a new one
+  selectedWorkoutTileTemplateId: null, // which home-screen workout tile's details panel is open; null when none
   workoutTemplateDraft: null,  // in-progress copy of the workout template being edited
   plannedExerciseDraft: null,  // in-progress values for a planned exercise
   pendingTemplateId: null,     // workout template chosen at Start Workout, held while the gym picker is open
@@ -150,6 +151,7 @@ function hideAllScreens() {
 function showMainScreen() {
   hideAllScreens();
   mainScreen.hidden = false;
+  renderStartWorkoutChoices();
   renderWeeklyWorkoutTemplateSummary();
   renderMuscleCounters();
 }
@@ -657,11 +659,12 @@ const endWorkoutButton = document.getElementById("endWorkoutButton");
 const workoutStatus = document.getElementById("workoutStatus");
 const dayStatusButton = document.getElementById("dayStatusButton");
 
-// Rebuilds the "Start: <workout template>" / "Start free-form workout" buttons. Once a
-// workout is already in progress, those don't make sense any more — this
+// Rebuilds the workout tiles and the "Start free-form workout" button. Once
+// a workout is already in progress, those don't make sense any more — this
 // shows a single "Resume workout" button back to the active workout screen
 // instead, so there's always exactly one obvious thing to tap here.
 function renderStartWorkoutChoices() {
+  renderWorkoutTiles();
   startWorkoutChoices.innerHTML = "";
   startWorkoutChoices.hidden = false;
 
@@ -674,20 +677,175 @@ function renderStartWorkoutChoices() {
     return;
   }
 
-  const activeTemplates = appState.database.workoutTemplates.filter((template) => !template.isArchived);
-  for (const template of activeTemplates) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = `Start: ${template.name}`;
-    button.addEventListener("click", () => beginStartWorkout(template.id));
-    startWorkoutChoices.appendChild(button);
-  }
-
   const freeformButton = document.createElement("button");
   freeformButton.type = "button";
   freeformButton.textContent = "Start free-form workout";
   freeformButton.addEventListener("click", () => beginStartWorkout(null));
   startWorkoutChoices.appendChild(freeformButton);
+}
+
+// ---------------------------------------------------------------------------
+// Workout tiles (home screen)
+//
+// A two-column grid with one tile per active workout template. Tapping a
+// tile opens a panel spanning both columns directly under that tile's row,
+// so the details appear right where the thumb just was instead of at the
+// bottom of the page.
+// ---------------------------------------------------------------------------
+
+const workoutTilesElement = document.getElementById("workoutTiles");
+
+function renderWorkoutTiles() {
+  workoutTilesElement.innerHTML = "";
+  const activeTemplates = appState.database.workoutTemplates.filter((template) => !template.isArchived);
+
+  // During a workout the Resume button is the only thing that makes sense
+  // here, so the tiles step aside rather than invite starting a second one.
+  if (appState.activeSessionId !== null || activeTemplates.length === 0) {
+    workoutTilesElement.hidden = true;
+    return;
+  }
+  workoutTilesElement.hidden = false;
+
+  for (let index = 0; index < activeTemplates.length; index++) {
+    const template = activeTemplates[index];
+    const sessionThisWeek = findMostRecentFinishedSessionThisWeek(template.id);
+    const isLastTile = index === activeTemplates.length - 1;
+    // With an odd number of workouts the last tile would sit alone in half
+    // a row; stretching it across both columns looks deliberate instead.
+    const isAloneInItsRow = isLastTile && index % 2 === 0;
+    workoutTilesElement.appendChild(buildWorkoutTile(template, sessionThisWeek, isAloneInItsRow));
+
+    // The details panel has to come after the *whole row* in the page, not
+    // right after the tapped tile — otherwise it would push the tile's
+    // right-hand neighbour down onto the next line.
+    const isEndOfRow = index % 2 === 1 || isLastTile;
+    const rowStartIndex = index - (index % 2);
+    const rowTemplates = activeTemplates.slice(rowStartIndex, index + 1);
+    const selectedTemplate = rowTemplates.find(
+      (rowTemplate) => rowTemplate.id === appState.selectedWorkoutTileTemplateId
+    );
+    if (isEndOfRow && selectedTemplate) {
+      const selectedSession = findMostRecentFinishedSessionThisWeek(selectedTemplate.id);
+      workoutTilesElement.appendChild(buildWorkoutTilePanel(selectedTemplate, selectedSession));
+    }
+  }
+}
+
+function buildWorkoutTile(template, sessionThisWeek, isAloneInItsRow) {
+  const tile = document.createElement("button");
+  tile.type = "button";
+  tile.className = "workout-tile";
+  if (sessionThisWeek) {
+    tile.classList.add("workout-tile-done");
+  }
+  if (template.id === appState.selectedWorkoutTileTemplateId) {
+    tile.classList.add("workout-tile-selected");
+  }
+  if (isAloneInItsRow) {
+    tile.classList.add("workout-tile-full-width");
+  }
+
+  const statusLine = document.createElement("span");
+  statusLine.className = "workout-tile-status";
+  statusLine.textContent = sessionThisWeek
+    ? `Done ${formatShortDate(sessionThisWeek.startedAt)}`
+    : "Not done yet";
+  tile.appendChild(statusLine);
+
+  const nameLine = document.createElement("span");
+  nameLine.className = "workout-tile-name";
+  nameLine.textContent = template.name;
+  tile.appendChild(nameLine);
+
+  tile.addEventListener("click", () => toggleWorkoutTile(template.id));
+  return tile;
+}
+
+// Tapping the open tile again closes it; tapping another one switches to it.
+function toggleWorkoutTile(templateId) {
+  const isAlreadyOpen = appState.selectedWorkoutTileTemplateId === templateId;
+  appState.selectedWorkoutTileTemplateId = isAlreadyOpen ? null : templateId;
+  renderWorkoutTiles();
+}
+
+function buildWorkoutTilePanel(template, sessionThisWeek) {
+  const panel = document.createElement("div");
+  panel.className = "workout-tile-panel";
+
+  const heading = document.createElement("h2");
+  heading.textContent = template.name;
+  panel.appendChild(heading);
+
+  const statusLine = document.createElement("p");
+  statusLine.className = "workout-tile-panel-status";
+  if (sessionThisWeek) {
+    const percent = computeWorkoutTemplateCompletionPercent(template, sessionThisWeek);
+    statusLine.textContent = `Done ${formatShortDate(sessionThisWeek.startedAt)} — ${percent}%`;
+  } else {
+    statusLine.textContent = "Not done this week";
+  }
+  panel.appendChild(statusLine);
+
+  const exerciseList = document.createElement("ol");
+  exerciseList.className = "workout-tile-exercise-list";
+  template.plannedExercises.forEach((planned, index) => {
+    exerciseList.appendChild(buildPlannedExerciseRow(planned, index + 1));
+  });
+  panel.appendChild(exerciseList);
+
+  const startButton = document.createElement("button");
+  startButton.type = "button";
+  startButton.className = "workout-tile-start-button";
+  // Offered even when the workout is already done this week — repeating
+  // one is unusual but legitimate, and hiding the button would make it
+  // impossible from here.
+  startButton.textContent = "Start workout →";
+  startButton.addEventListener("click", () => beginStartWorkout(template.id));
+  panel.appendChild(startButton);
+
+  return panel;
+}
+
+// One numbered row: "Back squat" over "3 × 6-8 (100 kg)". The load shown
+// is the workout's planned target, not the progression suggestion — the
+// suggestion is still what pre-fills the steppers once the workout starts.
+function buildPlannedExerciseRow(planned, position) {
+  const row = document.createElement("li");
+
+  const numberBadge = document.createElement("span");
+  numberBadge.className = "workout-tile-exercise-number";
+  numberBadge.textContent = String(position);
+  row.appendChild(numberBadge);
+
+  const exercise = appState.database.exercises.find((candidate) => candidate.id === planned.exerciseId);
+  const textBlock = document.createElement("span");
+  textBlock.className = "workout-tile-exercise-text";
+
+  const nameLine = document.createElement("strong");
+  nameLine.textContent = exercise ? exercise.name : "Unknown exercise";
+  textBlock.appendChild(nameLine);
+
+  const targetLine = document.createElement("span");
+  targetLine.textContent = formatPlannedTarget(planned);
+  textBlock.appendChild(targetLine);
+
+  row.appendChild(textBlock);
+  return row;
+}
+
+function formatPlannedTarget(planned) {
+  const repRange = planned.targetRepsMin === planned.targetRepsMax
+    ? `${planned.targetRepsMin}`
+    : `${planned.targetRepsMin}-${planned.targetRepsMax}`;
+  const loadText = typeof planned.targetLoad === "number" ? ` (${planned.targetLoad} kg)` : "";
+  return `${planned.targetSets} × ${repRange}${loadText}`;
+}
+
+// "22 Sep" — a tile is too narrow for the year, and within the current
+// week the year is never in doubt anyway.
+function formatShortDate(isoString) {
+  return new Date(isoString).toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
 function updateWorkoutControls() {
@@ -755,8 +913,6 @@ endWorkoutButton.addEventListener("click", () => {
   updateWorkoutControls();
   renderExerciseArea();
 });
-
-renderStartWorkoutChoices();
 
 
 // ---------------------------------------------------------------------------
@@ -2341,6 +2497,26 @@ function computeWorkoutTemplateCompletionPercent(template, session) {
   return Math.min(100, Math.round((actualReps / plannedReps) * 100));
 }
 
+// The most recent finished session this week that followed this workout
+// template, or null if it hasn't been done yet this week. Picks one
+// representative session when a template was somehow done more than once
+// in a week, rather than trying to combine them. Shared by the weekly bars
+// below and the workout tiles at the top of the home screen, so both always
+// agree on what "done this week" means.
+function findMostRecentFinishedSessionThisWeek(templateId) {
+  const { start, end } = getCurrentWeekRange();
+  const sessionsThisWeek = appState.database.sessions
+    .filter((session) => {
+      if (session.templateId !== templateId || session.endedAt === null) {
+        return false;
+      }
+      const startedAt = new Date(session.startedAt);
+      return startedAt >= start && startedAt < end;
+    })
+    .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+  return sessionsThisWeek[0] || null;
+}
+
 const weeklyWorkoutTemplateSummaryElement = document.getElementById("weeklyWorkoutTemplateSummary");
 const weeklyBarsElement = document.getElementById("weeklyBars");
 
@@ -2360,24 +2536,11 @@ function renderWeeklyWorkoutTemplateSummary() {
   }
   weeklyWorkoutTemplateSummaryElement.hidden = false;
 
-  const { start, end } = getCurrentWeekRange();
   weeklyBarsElement.innerHTML = "";
   let completedCount = 0;
 
   for (const template of activeTemplates) {
-    // The most recent session this week following this workout template, if any —
-    // picks one representative session when a workout template was somehow done
-    // more than once in a week, rather than trying to combine them.
-    const sessionsThisWeek = appState.database.sessions
-      .filter((session) => {
-        if (session.templateId !== template.id || session.endedAt === null) {
-          return false;
-        }
-        const startedAt = new Date(session.startedAt);
-        return startedAt >= start && startedAt < end;
-      })
-      .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
-    const mostRecentSession = sessionsThisWeek[0] || null;
+    const mostRecentSession = findMostRecentFinishedSessionThisWeek(template.id);
     if (mostRecentSession) {
       completedCount++;
     }
@@ -3610,3 +3773,15 @@ importFileInput.addEventListener("change", () => {
   };
   reader.readAsText(chosenFile);
 });
+
+
+// ---------------------------------------------------------------------------
+// Startup
+//
+// Draws the home screen once, at the very end of the file. It can't happen
+// any earlier: the home screen's sections look up page elements stored in
+// `const`s declared all through this file, and JavaScript refuses to read a
+// `const` before the line that declares it has run.
+// ---------------------------------------------------------------------------
+
+showMainScreen();
