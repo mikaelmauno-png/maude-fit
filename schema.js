@@ -372,7 +372,7 @@ const STARTER_EXERCISES = [
   {
     id: "romanian-deadlift",
     name: "Romanian deadlift",
-    muscles: { hamstrings: 1.0, glutes: 1.0, lowerBack: 0.5 },
+    muscles: { hamstrings: 1.0, glutes: 0.5, lowerBack: 0.5 },
     isArchived: false,
     isGymSpecific: false,
     minimumLoadIncrement: 2.5
