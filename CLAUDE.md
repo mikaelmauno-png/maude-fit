@@ -1,8 +1,7 @@
 # Project: workout logger
 
 A personal workout logging web app. Single user, used on a phone in a gym.
-A training autoregulation engine will be added later — the data model must not
-block it.
+A training autoregulation engine is being added incrementally — the data model must keep supporting it
 
 ## Who is working on this
 
@@ -74,11 +73,14 @@ The app is used mid-set, one-handed, with chalky hands, sometimes in poor light.
 - Must work offline once loaded.
 - Dark background. Gyms are bright and phones are held at arm's length.
 
+## Training recommendations (autoregulation)
+Now in scope, built in small steps. First step: per-exercise double
+progression for scheme workouts (not free-form). Suggestions are hints:
+they may pre-fill steppers but never change logged data or schemes.
+Volume landmarks and deload logic come later, each as its own step.
 ## Out of scope for now
 
 Do not build, and do not add hooks or placeholders for:
-
-- The autoregulation engine, volume landmarks, deload logic
 - Social features, sharing, accounts
 - Anything involving a server
 
@@ -88,6 +90,6 @@ library, since nothing can be loaded from a CDN per the Code rules above.
 
 The muscle-weight fields in the exercise library may now be set and shown in
 the UI — a main muscle (weight 1.0) and secondary muscles (weight 0.5), per
-the existing `Exercise.muscles` shape. Still nothing should *use* these
-values to drive volume/landmark logic — that's still the autoregulation
-engine, still out of scope above.
+the existing `Exercise.muscles` shape. Nothing currently uses these values
+to drive volume/landmark logic; the progression engine (progression.js)
+works from RIR and rep-range outcomes, not muscle weights.

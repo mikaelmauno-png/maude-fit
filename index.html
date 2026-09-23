@@ -39,12 +39,12 @@
       </div>
 
       <!-- Only shown when idle (no active workout) and at least one active
-           scheme exists — a bar per scheme, grey if not done this week,
+           workout template exists — a bar per workout template, grey if not done this week,
            green with a completion % and date if it has been. Completion %
            is total reps actually logged vs. total reps planned (using the
            midpoint of each exercise's rep range), capped at 100. -->
-      <section id="weeklySchemeSummary" hidden>
-        <h2 id="weeklySchemeSummaryHeading"></h2>
+      <section id="weeklyWorkoutTemplateSummary" hidden>
+        <h2 id="weeklyWorkoutTemplateSummaryHeading"></h2>
         <div class="weekly-bars" id="weeklyBars"></div>
       </section>
 
@@ -53,15 +53,15 @@
            muscles set via "Set muscles" in Manage Exercises). "Completed"
            sums each logged working set's muscle weight (1.0 main, 0.5
            secondary) across this week's sessions; "projected" sums
-           targetSets x muscle weight across every active scheme, on the
-           same "each scheme once this week" assumption the scheme summary
+           targetSets x muscle weight across every active workout template, on the
+           same "each workout template once this week" assumption the workout template summary
            above already uses. -->
       <section id="muscleCounters" hidden>
         <h2>Sets per muscle this week</h2>
         <div id="muscleCounterRows"></div>
       </section>
 
-      <!-- Idle: one "Start: <scheme name>" button per active scheme, plus a
+      <!-- Idle: one "Start: <workout template name>" button per active workout template, plus a
            "Start free-form workout" button. Once a workout is in progress,
            this holds a single "Resume workout" button instead, back to the
            active workout screen — see renderStartWorkoutChoices() in
@@ -106,16 +106,16 @@
 
       <!-- Free-form only: the sets already logged this session for whichever
            exercise's "review" button was tapped, shown as the same kind of
-           pills as a scheme card, so a mis-logged set can be corrected. -->
+           pills as a workout template card, so a mis-logged set can be corrected. -->
       <div id="freeformReviewCard" hidden></div>
 
-      <!-- Scheme-based only: one card per planned exercise, all shown at
+      <!-- Template-based only: one card per planned exercise, all shown at
            once (order doesn't matter — any set in any exercise can be
            logged first). Each card holds one "pill" button per target set,
            filled in green once logged, grey while still pending, plus a "+"
            pill for a set beyond the plan. Tapping any pill opens the set
            entry panel below, either to log it or to correct it. -->
-      <div id="schemeWorkoutCards" hidden></div>
+      <div id="templateWorkoutCards" hidden></div>
     </section>
 
 
@@ -130,7 +130,7 @@
         <button id="backFromSettingsButton">Back</button>
       </div>
       <div class="button-stack">
-        <button id="manageSchemesButton">Manage schemes</button>
+        <button id="manageWorkoutTemplatesButton">Manage workouts</button>
         <button id="manageExercisesButton">Manage exercises</button>
         <button id="manageGymsButton">Manage gyms</button>
         <button id="viewDataButton">Export / Import data</button>
@@ -161,7 +161,7 @@
 
     <!-- ===================================================================
          SET ENTRY PANEL: a top-level section, not nested in another screen,
-         so it can be shown over activeWorkoutScreen (scheme cards /
+         so it can be shown over activeWorkoutScreen (workout template cards /
          free-form list) or over historyScreen (editing a past set) without
          needing either screen hidden underneath it. Whichever screen opened
          it stays visible; this one is layered in below via its own "hidden"
@@ -169,7 +169,7 @@
          =================================================================== -->
     <section id="setEntryPanel" hidden>
       <h2 id="setEntryExerciseName"></h2>
-      <!-- Only shown when this set came from a scheme's plan. -->
+      <!-- Only shown when this set came from a workout template's plan. -->
       <p id="plannedTarget" hidden></p>
       <!-- Only shown when progression.js has a suggestion for this set. -->
       <p id="progressionSuggestion" class="progression-suggestion" hidden></p>
@@ -344,7 +344,7 @@
 
     <!-- ===================================================================
          GYM PICKER: choose which gym today's workout is at, shown right
-         after picking a scheme (or free-form) to start, only when at least
+         after picking a workout template (or free-form) to start, only when at least
          one gym has been added.
          =================================================================== -->
     <section id="gymPickerScreen" hidden>
@@ -519,30 +519,30 @@
 
 
     <!-- ===================================================================
-         SCHEMES SCREEN: list of saved weekly schemes.
+         WORKOUT TEMPLATES SCREEN: list of saved weekly workout templates.
          =================================================================== -->
-    <section id="schemesScreen" hidden>
-      <h1>Schemes</h1>
+    <section id="workoutTemplatesScreen" hidden>
+      <h1>Workouts</h1>
       <div class="button-row">
-        <button id="backFromSchemesButton">Back</button>
-        <button id="addSchemeButton">Add scheme</button>
+        <button id="backFromWorkoutTemplatesButton">Back</button>
+        <button id="addWorkoutTemplateButton">Add workout</button>
       </div>
-      <ul id="schemesList"></ul>
+      <ul id="workoutTemplatesList"></ul>
 
-      <button id="toggleArchivedSchemesButton" class="card-action-button">Show archived</button>
-      <ul id="archivedSchemesList" hidden></ul>
+      <button id="toggleArchivedWorkoutTemplatesButton" class="card-action-button">Show archived</button>
+      <ul id="archivedWorkoutTemplatesList" hidden></ul>
     </section>
 
 
     <!-- ===================================================================
-         SCHEME EDITOR: create or edit one scheme's name and exercise list.
+         WORKOUT TEMPLATE EDITOR: create or edit one workout template's name and exercise list.
          =================================================================== -->
-    <section id="schemeEditorScreen" hidden>
-      <h1 id="schemeEditorTitle">Edit scheme</h1>
+    <section id="workoutTemplateEditorScreen" hidden>
+      <h1 id="workoutTemplateEditorTitle">Edit workout</h1>
 
       <label class="text-field">
         Name
-        <input type="text" id="schemeNameInput" placeholder="e.g. Weekly workout 1">
+        <input type="text" id="workoutTemplateNameInput" placeholder="e.g. Weekly workout 1">
       </label>
 
       <ul id="plannedExerciseList"></ul>
@@ -552,14 +552,14 @@
       </div>
 
       <div class="button-row">
-        <button id="saveSchemeButton">Save scheme</button>
-        <button id="cancelSchemeEditButton">Cancel</button>
+        <button id="saveWorkoutTemplateButton">Save workout</button>
+        <button id="cancelWorkoutTemplateEditButton">Cancel</button>
       </div>
     </section>
 
 
     <!-- ===================================================================
-         EXERCISE PICKER: choose which exercise to add to the scheme being
+         EXERCISE PICKER: choose which exercise to add to the workout template being
          edited. Reuses the same exercise-item button style as the main list.
          =================================================================== -->
     <section id="exercisePickerScreen" hidden>
@@ -574,8 +574,8 @@
     <!-- ===================================================================
          PLANNED EXERCISE TARGET PANEL: set the target sets/reps/load for a
          planned exercise. Reused for two purposes: adding a new exercise to
-         the scheme being edited (from the picker above), and adjusting an
-         existing exercise's target from an active scheme workout's card
+         the workout template being edited (from the picker above), and adjusting an
+         existing exercise's target from an active template workout's card
          ("Set goal for next time").
          =================================================================== -->
     <section id="plannedExerciseEntryPanel" hidden>
@@ -623,7 +623,7 @@
       </div>
 
       <div class="button-row">
-        <button id="savePlannedExerciseButton">Add to scheme</button>
+        <button id="savePlannedExerciseButton">Add to workout</button>
         <button id="cancelPlannedExerciseButton">Cancel</button>
       </div>
     </section>

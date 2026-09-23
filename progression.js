@@ -2,16 +2,16 @@
 // Training recommendations: double progression.
 //
 // "Double progression" means progressing two things in turn. First the reps
-// go up at a fixed weight, until every set reaches the top of the scheme's
+// go up at a fixed weight, until every set reaches the top of the workout template's
 // rep range. Then the weight goes up by the exercise's minimum raise, which
 // drops the reps back towards the bottom of the range, and the cycle
 // repeats.
 //
 // Everything here only *reads* the database and returns a suggestion. It
-// never changes logged sets or schemes; the app decides what to do with the
+// never changes logged sets or workout templates; the app decides what to do with the
 // suggestion (show it, pre-fill a stepper).
 //
-// Only scheme-based workouts get suggestions, because the rules need a
+// Only template-based workouts get suggestions, because the rules need a
 // target rep range and free-form workouts don't have one.
 // ---------------------------------------------------------------------------
 
@@ -24,9 +24,11 @@ function roundLoad(load) {
 }
 
 
-// Returns the working sets of one exercise from the most recent past
-// sessions, newest session first, as a list of lists (one inner list per
-// session). At most `sessionCount` sessions are returned.
+// Returns the most recent past sessions of one exercise, newest first, as
+// a list of `{ session, workingSets }`. At most `sessionCount` are
+// returned. The session itself comes along (not just its sets) so the app
+// can tell *when* a suggestion's evidence is from; see isGoalOverride in
+// app.js.
 //
 // Today's session is left out: the suggestion is about how to approach
 // today, so it has to be based on what happened *before* today.
@@ -34,7 +36,7 @@ function roundLoad(load) {
 // For a gym-specific exercise (a machine or cable stack), only sessions at
 // the same gym count, for the same reason as findPreviousWorkingSet in
 // app.js: 50 kg on one gym's machine isn't 50 kg on another's.
-function findRecentSessionSets(database, exercise, activeSession, sessionCount) {
+function findRecentSessions(database, exercise, activeSession, sessionCount) {
   const scopeToGymId = exercise.isGymSpecific && activeSession && activeSession.gymId
     ? activeSession.gymId
     : null;
@@ -72,7 +74,7 @@ function findRecentSessionSets(database, exercise, activeSession, sessionCount) 
 
   return eligibleSessions
     .slice(0, sessionCount)
-    .map((session) => workingSetsBySessionId.get(session.id));
+    .map((session) => ({ session, workingSets: workingSetsBySessionId.get(session.id) }));
 }
 
 
@@ -116,12 +118,12 @@ function classifySessionOutcome(topLoadSets, repsMin, repsMax) {
 // True when the session before the last one was *also* a miss at the same
 // weight. One bad day happens (poor sleep, a rushed session); two in a row
 // at the same load suggests the weight really is too heavy for now.
-function missedTwiceAtSameLoad(recentSessionSets, repsMin, repsMax) {
-  if (recentSessionSets.length < 2) {
+function missedTwiceAtSameLoad(recentSessions, repsMin, repsMax) {
+  if (recentSessions.length < 2) {
     return false;
   }
-  const latestTopSets = findTopLoadSets(recentSessionSets[0]);
-  const earlierTopSets = findTopLoadSets(recentSessionSets[1]);
+  const latestTopSets = findTopLoadSets(recentSessions[0].workingSets);
+  const earlierTopSets = findTopLoadSets(recentSessions[1].workingSets);
 
   const sameLoad = latestTopSets[0].load === earlierTopSets[0].load;
   const earlierAlsoMissed = classifySessionOutcome(earlierTopSets, repsMin, repsMax) === "missedRange";
@@ -131,21 +133,31 @@ function missedTwiceAtSameLoad(recentSessionSets, repsMin, repsMax) {
 
 // Works out today's suggested load and reps for one planned exercise.
 //
-// Returns `{ load, reps, reason }`, where `reason` is one short sentence
-// for the screen, or null when there's no past data to base it on.
+// Returns `{ load, reps, reason, basedOnSessionStartedAt }`, where `reason`
+// is one short sentence for the screen and `basedOnSessionStartedAt` is the
+// start time of the session the suggestion was worked out from. Returns
+// null when there's no past data to base it on.
 function suggestNextTarget(database, exerciseId, repsMin, repsMax, activeSession) {
   const exercise = database.exercises.find((candidate) => candidate.id === exerciseId);
 
   // Two sessions are needed at most: the latest, plus the one before it to
   // tell a single bad day apart from a real stall (missedTwiceAtSameLoad).
-  const recentSessionSets = findRecentSessionSets(database, exercise, activeSession, 2);
-  if (recentSessionSets.length === 0) {
+  const recentSessions = findRecentSessions(database, exercise, activeSession, 2);
+  if (recentSessions.length === 0) {
     return null;
   }
 
-  const topLoadSets = findTopLoadSets(recentSessionSets[0]);
+  const suggestion = chooseSuggestion(recentSessions, exercise.minimumLoadIncrement, repsMin, repsMax);
+  suggestion.basedOnSessionStartedAt = recentSessions[0].session.startedAt;
+  return suggestion;
+}
+
+
+// Applies the double-progression rules to the latest session's results.
+// Returns `{ load, reps, reason }`.
+function chooseSuggestion(recentSessions, increment, repsMin, repsMax) {
+  const topLoadSets = findTopLoadSets(recentSessions[0].workingSets);
   const lastLoad = topLoadSets[0].load;
-  const increment = exercise.minimumLoadIncrement;
   const outcome = classifySessionOutcome(topLoadSets, repsMin, repsMax);
 
   if (outcome === "readyToProgress") {
@@ -165,7 +177,7 @@ function suggestNextTarget(database, exerciseId, repsMin, repsMax, activeSession
   }
 
   if (outcome === "missedRange") {
-    if (missedTwiceAtSameLoad(recentSessionSets, repsMin, repsMax)) {
+    if (missedTwiceAtSameLoad(recentSessions, repsMin, repsMax)) {
       return {
         load: Math.max(roundLoad(lastLoad - increment), 0),
         reps: repsMin,
