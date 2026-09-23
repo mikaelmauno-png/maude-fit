@@ -193,7 +193,11 @@ button:active {
 
 /* Weight on top, reps below, stacked inside a rounded tile — a tap target
    in its own right, not just a label, since tapping it opens the entry
-   panel to log or correct that set. */
+   panel to log or correct that set. A logged pill is also a long-press
+   target (see attachPillTapHandlers in app.js), so the native
+   long-press callout/text-selection a phone browser would otherwise show
+   is turned off here — without it, holding a pill down would pop up a
+   copy/share menu instead of opening the editor. */
 .set-pill {
   flex: none;
   display: flex;
@@ -207,6 +211,9 @@ button:active {
   border-radius: 12px;
   border: none;
   cursor: pointer;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .set-pill-weight {

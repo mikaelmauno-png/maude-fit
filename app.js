@@ -413,20 +413,80 @@ function buildSetPill(loggedSet, planned, suggestion) {
 
   pill.append(weightSpan, repsSpan);
 
-  pill.addEventListener("click", () => {
-    if (loggedSet) {
-      openSetEntryPanelForEdit(loggedSet.id);
-    } else {
+  if (loggedSet) {
+    // A plain tap is the fast correction path — knock the reps down by one
+    // in place, no panel — and a long-press is the way to reach everything
+    // else (load, RIR, warmup), so the two don't fight over what a tap
+    // means on an already-logged pill.
+    attachPillTapHandlers(
+      pill,
+      () => decrementLoggedSetReps(loggedSet.id),
+      () => openSetEntryPanelForEdit(loggedSet.id)
+    );
+  } else {
+    pill.addEventListener("click", () => {
       openSetEntryPanel(planned.exerciseId, {
         load: planned.targetLoad,
         repsMin: planned.targetRepsMin,
         repsMax: planned.targetRepsMax,
         suggestion
       });
+    });
+  }
+
+  return pill;
+}
+
+// Calls `onTap` for a plain tap, `onLongPress` once the press has been held
+// for LONG_PRESS_MS. Used instead of two separate buttons so a logged set
+// pill can do double duty: tap to quickly correct reps, long-press to reach
+// the full editor — see buildSetPill above.
+const LONG_PRESS_MS = 500;
+
+function attachPillTapHandlers(pill, onTap, onLongPress) {
+  let pressTimer = null;
+  let longPressFired = false;
+
+  function cancelPress() {
+    clearTimeout(pressTimer);
+  }
+
+  pill.addEventListener("pointerdown", () => {
+    longPressFired = false;
+    pressTimer = setTimeout(() => {
+      longPressFired = true;
+      onLongPress();
+    }, LONG_PRESS_MS);
+  });
+
+  pill.addEventListener("pointerup", () => {
+    cancelPress();
+    if (!longPressFired) {
+      onTap();
     }
   });
 
-  return pill;
+  // A finger sliding off the pill (scrolling, or just an inaccurate thumb)
+  // shouldn't count as either a tap or a long-press.
+  pill.addEventListener("pointerleave", cancelPress);
+  pill.addEventListener("pointercancel", cancelPress);
+}
+
+// A plain tap's fast correction path for an already-logged set: one rep
+// fewer, in place. Tapping past 1 rep removes the set entirely instead of
+// going to 0 or negative — back to a pending pill — so over-tapping is a
+// quick undo rather than a dead end. Never worth checking for a personal
+// best here: removing reps can only make the set less impressive, never
+// more.
+function decrementLoggedSetReps(setId) {
+  const set = appState.database.sets.find((candidate) => candidate.id === setId);
+  if (set.reps <= 1) {
+    appState.database.sets = appState.database.sets.filter((candidate) => candidate.id !== setId);
+  } else {
+    set.reps -= 1;
+  }
+  saveDatabase(appState.database);
+  renderExerciseArea();
 }
 
 // The green "Suggested: 82.5 kg × 8" line on a workout card, with the
@@ -568,8 +628,14 @@ function updateWorkoutControls() {
 // otherwise there's nothing to ask, so it starts right away.
 function beginStartWorkout(templateId) {
   const activeGyms = appState.database.gyms.filter((gym) => !gym.isArchived);
+  // Nothing to ask when there's zero or exactly one choice — a picker
+  // screen for "pick the only gym you have" is a tap for no reason.
   if (activeGyms.length === 0) {
     startWorkout(templateId, null);
+    return;
+  }
+  if (activeGyms.length === 1) {
+    startWorkout(templateId, activeGyms[0].id);
     return;
   }
   appState.pendingTemplateId = templateId;
@@ -896,10 +962,26 @@ function renderSetDraft() {
 // produced a suggestion, that takes priority over the plan's fixed load,
 // because it's the plan's rep range applied to what actually happened last
 // time.
+// Guards against a stepper's typed-number input being stuck open from a
+// previous panel session — it should always lose focus and hide itself
+// before the panel closes, but if that somehow didn't happen (the panel
+// closing without the input ever blurring), this is what stops the field
+// from showing a raw number input instead of its normal button the next
+// time the panel opens.
+function resetSetEntryStepperEditUI() {
+  for (const field of ["load", "reps", "rir"]) {
+    document.getElementById(`${field}ValueInput`).hidden = true;
+    document.getElementById(`${field}Value`).hidden = false;
+    document.getElementById(`${field}Decrement`).hidden = false;
+    document.getElementById(`${field}Increment`).hidden = false;
+  }
+}
+
 function openSetEntryPanel(exerciseId, planTarget = null) {
   const exercise = appState.database.exercises.find((candidate) => candidate.id === exerciseId);
   const previous = findPreviousWorkingSet(exerciseId);
 
+  resetSetEntryStepperEditUI();
   hidePersonalBestBanner();
   appState.editingSetId = null;
   const suggestion = planTarget ? planTarget.suggestion : null;
@@ -950,6 +1032,14 @@ function openSetEntryPanel(exerciseId, planTarget = null) {
 // one, else the scheme's planned load, else last time's load, else an empty
 // Olympic bar (20 kg) for an exercise that's never been done.
 function chooseStartingLoad(planTarget, suggestion, previous) {
+  // Once a set's already been logged for this exercise this session, later
+  // sets default to that actual weight instead of resetting back to the
+  // suggestion or the scheme's static target every time — the target only
+  // matters for deciding where to *start* today, and by the second set
+  // that's already been resolved into a real number.
+  if (previous && previous.sessionId === appState.activeSessionId) {
+    return previous.load;
+  }
   if (suggestion) {
     return suggestion.load;
   }
@@ -959,13 +1049,16 @@ function chooseStartingLoad(planTarget, suggestion, previous) {
   return previous ? previous.load : 20;
 }
 
-// Same order of preference as chooseStartingLoad, for reps.
+// Reps deliberately don't carry forward the same way load does: the target
+// (whatever a set falls short of it) is still what every set of the
+// exercise should keep aiming for today, not just what the first set
+// happened to hit.
 function chooseStartingReps(planTarget, suggestion, previous) {
   if (suggestion) {
     return suggestion.reps;
   }
   if (planTarget) {
-    return planTarget.repsMin;
+    return planTarget.repsMax;
   }
   return previous ? previous.reps : 8;
 }
@@ -977,6 +1070,7 @@ function openSetEntryPanelForEdit(setId) {
   const set = appState.database.sets.find((candidate) => candidate.id === setId);
   const exercise = appState.database.exercises.find((candidate) => candidate.id === set.exerciseId);
 
+  resetSetEntryStepperEditUI();
   hidePersonalBestBanner();
   appState.editingSetId = setId;
   appState.setDraft = {
