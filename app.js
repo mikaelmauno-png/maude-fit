@@ -2768,71 +2768,81 @@ function renderMuscleCounters() {
 // above, drawn onto a stylized body outline instead. Two views (front/back)
 // because no single flat silhouette shows every muscle at once; each of the
 // 18 groups in MUSCLE_GROUPS appears in exactly one view, whichever side
-// it's normally visible from. This is a schematic (simple rounded
-// rectangles and circles placed by eye), not an anatomical illustration —
-// good enough to show "which muscles have I been neglecting", not to teach
-// anatomy.
+// it's normally visible from. This is a schematic (hand-drawn curves placed
+// by eye), not an anatomical illustration — good enough to show "which
+// muscles have I been neglecting", not to teach anatomy.
+//
+// Only the LEFT half of the body (x from 0 to 100, in a 200 x 390 drawing
+// area) is described below. buildBodyDiagramSVG draws that half, then draws
+// it again flipped across the centre line (x = 100) to get the right half.
+// That keeps the body perfectly symmetric and halves the number of shapes
+// to maintain. It also means a bilateral muscle like biceps is listed once
+// but appears on both arms, both colored from its one tracked value.
+//
+// Each `path` is SVG path data: "M x,y" moves the pen, "C" draws a smooth
+// curve (two control points, then the end point), "L" a straight line, and
+// "Z" closes the shape back to where it started.
 // ---------------------------------------------------------------------------
 
-// The plain grey body shape both views are drawn on top of. Shared between
-// front and back since, at this level of simplification, the two look the
-// same — only which regions light up differs.
-const BODY_DIAGRAM_OUTLINE = [
-  { shape: "circle", cx: 100, cy: 22, r: 16 },                        // head
-  { shape: "rect", x: 92, y: 36, width: 16, height: 10 },              // neck
-  { shape: "rect", x: 70, y: 46, width: 60, height: 90, rx: 14 },      // torso
-  { shape: "rect", x: 72, y: 136, width: 56, height: 40, rx: 10 },     // hips
-  { shape: "rect", x: 36, y: 50, width: 22, height: 80, rx: 10 },      // left upper arm
-  { shape: "rect", x: 142, y: 50, width: 22, height: 80, rx: 10 },     // right upper arm
-  { shape: "rect", x: 34, y: 132, width: 20, height: 70, rx: 8 },      // left forearm
-  { shape: "rect", x: 146, y: 132, width: 20, height: 70, rx: 8 },     // right forearm
-  { shape: "rect", x: 74, y: 176, width: 24, height: 90, rx: 10 },     // left thigh
-  { shape: "rect", x: 102, y: 176, width: 24, height: 90, rx: 10 },    // right thigh
-  { shape: "rect", x: 76, y: 268, width: 20, height: 80, rx: 8 },      // left calf
-  { shape: "rect", x: 104, y: 268, width: 20, height: 80, rx: 8 }      // right calf
-];
+// Left half of the whole body outline, head to foot, closed along the
+// centre line. Shared by both views: from this far away the front and back
+// silhouettes look the same — only which muscles are drawn on top differs.
+const BODY_DIAGRAM_SILHOUETTE_PATH =
+  "M100,8 C89,8 82,16 82,29 C82,41 87,50 92,54 L92,62 " +                      // head, neck
+  "C84,66 72,67 62,70 C51,73 45,82 43,95 " +                                  // shoulder
+  "C41,112 39,132 38,150 C36,170 34,190 34,208 " +                            // outer arm
+  "C31,218 30,232 33,240 C36,246 42,246 44,240 " +                            // hand
+  "C45,230 46,220 47,210 C50,192 55,172 57,154 " +                            // inner forearm
+  "C59,138 60,120 62,106 C62,102 63,100 64,100 " +                            // inner upper arm, armpit
+  "C66,120 69,142 72,160 C72,172 68,184 66,196 " +                            // side of torso, hip
+  "C63,214 62,236 66,258 C68,268 70,276 70,284 " +                            // outer thigh, knee
+  "C66,298 63,312 65,326 C69,340 73,352 75,362 " +                            // outer calf, ankle
+  "C72,368 68,374 70,378 C74,382 84,382 88,378 C89,372 89,366 88,360 " +      // foot
+  "C90,346 93,332 94,318 C95,304 92,294 92,284 " +                            // inner calf
+  "C94,266 97,244 98,224 C99,214 99,208 100,206 Z";                           // inner thigh
 
-// A bilateral muscle (e.g. biceps) gets two entries, one per limb, both
-// colored from the same data — there's only one tracked value per muscle,
-// not a separate left and right.
+// Muscle shapes for the left half. Order matters where shapes touch:
+// later ones are drawn on top of earlier ones.
 const BODY_DIAGRAM_REGIONS = {
   front: [
-    { muscle: "chest", shape: "rect", x: 74, y: 54, width: 52, height: 26, rx: 8 },
-    { muscle: "abs", shape: "rect", x: 80, y: 84, width: 40, height: 40, rx: 6 },
-    { muscle: "obliques", shape: "rect", x: 70, y: 84, width: 10, height: 40 },
-    { muscle: "obliques", shape: "rect", x: 120, y: 84, width: 10, height: 40 },
-    // Front delt sits toward the torso side of the shoulder, side delt
-    // toward the outer edge — placed apart rather than stacked, so the one
-    // drawn second doesn't just paint over the other.
-    { muscle: "frontDelt", shape: "circle", cx: 52, cy: 56, r: 9 },
-    { muscle: "frontDelt", shape: "circle", cx: 148, cy: 56, r: 9 },
-    { muscle: "sideDelt", shape: "rect", x: 36, y: 52, width: 8, height: 26 },
-    { muscle: "sideDelt", shape: "rect", x: 156, y: 52, width: 8, height: 26 },
-    { muscle: "biceps", shape: "rect", x: 38, y: 82, width: 18, height: 40, rx: 6 },
-    { muscle: "biceps", shape: "rect", x: 144, y: 82, width: 18, height: 40, rx: 6 },
-    { muscle: "forearms", shape: "rect", x: 36, y: 136, width: 18, height: 60, rx: 6 },
-    { muscle: "forearms", shape: "rect", x: 146, y: 136, width: 18, height: 60, rx: 6 },
-    { muscle: "quads", shape: "rect", x: 76, y: 182, width: 20, height: 76, rx: 8 },
-    { muscle: "quads", shape: "rect", x: 104, y: 182, width: 20, height: 76, rx: 8 },
-    { muscle: "adductors", shape: "rect", x: 96, y: 182, width: 8, height: 76 }
+    { muscle: "chest", path: "M98,76 C86,73 74,73 66,78 C62,86 62,98 66,106 C76,116 90,117 98,113 Z" },
+    // Front delt is the part of the shoulder cap nearer the chest, side
+    // delt the outer rim — drawn as two neighbouring slices so both stay
+    // tappable.
+    { muscle: "frontDelt", path: "M65,77 C58,76 53,80 51,88 C50,96 52,104 57,110 C60,100 62,88 65,77 Z" },
+    { muscle: "sideDelt", path: "M62,71 C52,74 46,82 45,94 C45,102 47,108 50,112 C49,100 50,86 58,76 Z" },
+    { muscle: "biceps", path: "M49,112 C44,122 43,138 45,148 C49,152 54,150 56,142 C58,130 59,118 58,110 C55,108 52,108 49,112 Z" },
+    { muscle: "forearms", path: "M41,156 C38,172 36,190 36,204 C39,207 43,207 46,204 C49,188 53,172 55,158 C50,152 44,152 41,156 Z" },
+    { muscle: "abs", path: "M98,120 C90,119 83,121 79,126 L79,168 C81,182 89,194 98,198 Z" },
+    { muscle: "obliques", path: "M76,120 C71,123 68,130 69,140 C71,152 73,164 71,178 C73,184 75,188 77,190 L77,126 Z" },
+    { muscle: "quads", path: "M68,204 C63,226 63,252 69,274 C75,281 85,281 90,274 C95,254 95,230 91,212 C85,206 76,204 68,204 Z" },
+    { muscle: "adductors", path: "M92,210 C95,212 97,216 98,222 C97,236 95,250 92,262 C93,244 93,226 92,210 Z" }
   ],
   back: [
-    { muscle: "traps", shape: "rect", x: 86, y: 40, width: 28, height: 18, rx: 6 },
-    { muscle: "upperBack", shape: "rect", x: 76, y: 58, width: 48, height: 30, rx: 8 },
-    { muscle: "lats", shape: "rect", x: 68, y: 70, width: 14, height: 40 },
-    { muscle: "lats", shape: "rect", x: 118, y: 70, width: 14, height: 40 },
-    { muscle: "lowerBack", shape: "rect", x: 80, y: 112, width: 40, height: 26, rx: 6 },
-    { muscle: "rearDelt", shape: "circle", cx: 44, cy: 54, r: 10 },
-    { muscle: "rearDelt", shape: "circle", cx: 156, cy: 54, r: 10 },
-    { muscle: "triceps", shape: "rect", x: 38, y: 82, width: 18, height: 40, rx: 6 },
-    { muscle: "triceps", shape: "rect", x: 144, y: 82, width: 18, height: 40, rx: 6 },
-    { muscle: "glutes", shape: "rect", x: 76, y: 138, width: 48, height: 36, rx: 10 },
-    { muscle: "hamstrings", shape: "rect", x: 76, y: 182, width: 20, height: 76, rx: 8 },
-    { muscle: "hamstrings", shape: "rect", x: 104, y: 182, width: 20, height: 76, rx: 8 },
-    { muscle: "calves", shape: "rect", x: 76, y: 268, width: 20, height: 76, rx: 8 },
-    { muscle: "calves", shape: "rect", x: 104, y: 268, width: 20, height: 76, rx: 8 }
+    { muscle: "traps", path: "M100,56 C97,60 94,62 92,63 C84,66 72,68 63,71 C74,76 85,84 91,96 C95,106 98,116 100,124 Z" },
+    { muscle: "rearDelt", path: "M61,72 C51,74 45,83 44,95 C45,103 48,108 53,110 C55,98 59,86 66,78 Z" },
+    { muscle: "upperBack", path: "M68,80 C78,85 86,92 89,102 C90,107 90,110 88,113 C80,113 72,110 66,104 C63,96 64,86 68,80 Z" },
+    { muscle: "lats", path: "M64,104 C72,112 82,116 90,117 C93,130 92,146 88,162 C82,164 76,162 72,158 C70,140 67,122 64,104 Z" },
+    { muscle: "lowerBack", path: "M98,128 C95,132 93,142 92,158 C91,170 91,180 93,188 L98,188 Z" },
+    { muscle: "triceps", path: "M45,110 C42,122 42,138 44,148 C48,152 54,150 56,144 C58,130 59,118 59,108 C54,111 49,111 45,110 Z" },
+    { muscle: "glutes", path: "M99,182 C88,179 75,183 69,193 C65,206 66,221 74,228 C84,233 94,231 99,225 Z" },
+    { muscle: "hamstrings", path: "M70,236 C66,250 68,264 73,276 C79,281 86,281 90,276 C94,262 96,248 95,236 C88,239 78,239 70,236 Z" },
+    { muscle: "calves", path: "M69,292 C63,304 63,318 69,332 C76,337 84,335 88,328 C93,316 93,302 90,292 C84,287 76,287 70,292 Z" }
   ]
 };
+
+// Purely decorative lines drawn over the muscles (the "six-pack" divisions
+// across the abs). Not tappable, and they don't carry any data.
+const BODY_DIAGRAM_DETAIL_PATHS = {
+  front: "M80,138 L98,138 M80,153 L98,153 M80,168 L98,168",
+  back: ""
+};
+
+// Colors for the parts of the drawing that aren't data. The muscle
+// separation lines use the chart's own background color, so they read as
+// thin gaps between muscles rather than as drawn outlines.
+const BODY_DIAGRAM_SILHOUETTE_COLOR = "#242424";
+const BODY_DIAGRAM_GAP_COLOR = "#1e1e1e";
 
 // Linear blend between two "#rrggbb" colors — `ratio` 0 gives `fromColor`,
 // 1 gives `toColor`, anything between is a proportional mix of each
@@ -2866,37 +2876,46 @@ function colorForMuscleCompletion(row) {
   return blendColor("#2a2a2a", "#3a8a45", ratio);
 }
 
+// Builds the SVG for one half of the body — the silhouette, the muscles
+// colored by this week's completion, and the decorative detail lines.
+function buildBodyDiagramHalfSVG(view, rowsByMuscle) {
+  const silhouetteSVG = `<path d="${BODY_DIAGRAM_SILHOUETTE_PATH}" fill="${BODY_DIAGRAM_SILHOUETTE_COLOR}" />`;
+
+  // data-muscle plus a shared class is how the single click listener
+  // below (added once, not per-shape) figures out which muscle a tap
+  // landed on.
+  const musclesSVG = BODY_DIAGRAM_REGIONS[view]
+    .map((region) => {
+      const fill = colorForMuscleCompletion(rowsByMuscle[region.muscle]);
+      return `<path d="${region.path}" fill="${fill}" stroke="${BODY_DIAGRAM_GAP_COLOR}" stroke-width="1.5" stroke-linejoin="round" class="body-diagram-region" data-muscle="${region.muscle}" />`;
+    })
+    .join("");
+
+  const detailPath = BODY_DIAGRAM_DETAIL_PATHS[view];
+  // pointer-events="none" so a tap on a detail line still reaches the
+  // muscle underneath it.
+  const detailSVG = detailPath
+    ? `<path d="${detailPath}" fill="none" stroke="${BODY_DIAGRAM_GAP_COLOR}" stroke-width="1.5" pointer-events="none" />`
+    : "";
+
+  return silhouetteSVG + musclesSVG + detailSVG;
+}
+
 function buildBodyDiagramSVG(view, muscleRows) {
   const rowsByMuscle = {};
   for (const row of muscleRows) {
     rowsByMuscle[row.muscle] = row;
   }
 
-  function regionToSVG(region, fill, isTappable) {
-    const fillAttr = fill
-      ? `fill="${fill}"`
-      : `fill="none" stroke="#555555" stroke-width="2"`;
-    // data-muscle plus a shared class is how the single click listener
-    // below (added once, not per-shape) figures out which muscle a tap
-    // landed on.
-    const tapAttrs = isTappable ? `class="body-diagram-region" data-muscle="${region.muscle}"` : "";
+  const halfSVG = buildBodyDiagramHalfSVG(view, rowsByMuscle);
 
-    if (region.shape === "circle") {
-      return `<circle cx="${region.cx}" cy="${region.cy}" r="${region.r}" ${fillAttr} ${tapAttrs} />`;
-    }
-    const rxAttr = region.rx ? `rx="${region.rx}"` : "";
-    return `<rect x="${region.x}" y="${region.y}" width="${region.width}" height="${region.height}" ${rxAttr} ${fillAttr} ${tapAttrs} />`;
-  }
-
-  const outlineSVG = BODY_DIAGRAM_OUTLINE
-    .map((region) => regionToSVG(region, null, false))
-    .join("");
-
-  const regionsSVG = BODY_DIAGRAM_REGIONS[view]
-    .map((region) => regionToSVG(region, colorForMuscleCompletion(rowsByMuscle[region.muscle]), true))
-    .join("");
-
-  return `<svg viewBox="0 0 200 360" xmlns="http://www.w3.org/2000/svg">${outlineSVG}${regionsSVG}</svg>`;
+  // The second copy is flipped horizontally around x = 100: "scale x by -1"
+  // mirrors it around x = 0, then "shift right by 200" moves it back into
+  // view, landing each point at 200 - x.
+  return `<svg viewBox="0 0 200 390" xmlns="http://www.w3.org/2000/svg">` +
+    `<g>${halfSVG}</g>` +
+    `<g transform="matrix(-1 0 0 1 200 0)">${halfSVG}</g>` +
+    `</svg>`;
 }
 
 const bodyDiagramElement = document.getElementById("bodyDiagram");
