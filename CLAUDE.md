@@ -90,6 +90,7 @@ library, since nothing can be loaded from a CDN per the Code rules above.
 
 The muscle-weight fields in the exercise library may now be set and shown in
 the UI — a main muscle (weight 1.0) and secondary muscles (weight 0.5), per
-the existing `Exercise.muscles` shape. Nothing currently uses these values
-to drive volume/landmark logic; the progression engine (progression.js)
-works from RIR and rep-range outcomes, not muscle weights.
+the existing `Exercise.muscles` shape. The volume-landmarks step of the
+autoregulation work may use these weights to count weekly sets per muscle.
+Double progression (progression.js) does not use them; it works from RIR and
+rep-range outcomes.
