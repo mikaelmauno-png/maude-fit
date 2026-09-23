@@ -75,8 +75,8 @@ The app is used mid-set, one-handed, with chalky hands, sometimes in poor light.
 
 ## Training recommendations (autoregulation)
 Now in scope, built in small steps. First step: per-exercise double
-progression for scheme workouts (not free-form). Suggestions are hints:
-they may pre-fill steppers but never change logged data or schemes.
+progression for template workouts (not free-form). Suggestions are hints:
+they may pre-fill steppers but never change logged data or workout templates.
 Volume landmarks and deload logic come later, each as its own step.
 ## Out of scope for now
 
@@ -84,7 +84,7 @@ Do not build, and do not add hooks or placeholders for:
 - Social features, sharing, accounts
 - Anything involving a server
 
-Charts are allowed now (weekly scheme-completion summary, per-exercise
+Charts are allowed now (weekly workout-template completion summary, per-exercise
 weight/rep-range history), but stay hand-drawn inline SVG — no charting
 library, since nothing can be loaded from a CDN per the Code rules above.
 
