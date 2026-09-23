@@ -23,7 +23,10 @@
 // Bumped to 5 for the addition of Exercise.minimumLoadIncrement below. This
 // is the first bump with a migration (see migrateDatabase), so data saved
 // under version 4 is upgraded in place instead of being refused.
-const SCHEMA_VERSION = 5;
+//
+// Bumped to 6 for the addition of targetLoadSetAt on each planned exercise
+// in a WorkoutTemplate below.
+const SCHEMA_VERSION = 6;
 
 // Every piece of app data lives under this one localStorage key, as a single
 // JSON string. One key is simpler to export, import, and reason about than
@@ -123,7 +126,16 @@ const DAY_STATUSES = ["normal", "poorSleep", "ill", "stressed"];
 //       targetSets:    3,
 //       targetRepsMin: 8,
 //       targetRepsMax: 10,
-//       targetLoad:    60          // kilograms
+//       targetLoad:    60,         // kilograms
+//       targetLoadSetAt: "2026-09-23T18:10:00.000Z"
+//                                   // when targetLoad was last set by hand
+//                                   // via "Set goal for next time", or null
+//                                   // if never. A goal set after the session
+//                                   // a progression suggestion is based on
+//                                   // overrides that suggestion; once a newer
+//                                   // session is logged, suggestions take
+//                                   // over again (see isGoalOverride in
+//                                   // app.js). So a goal lasts one session.
 //     }
 //     // ...one entry per exercise in this scheme, in the order they're done
 //   ]
@@ -197,10 +209,23 @@ function migrateFrom4To5(database) {
   database.schemaVersion = 5;
 }
 
+// Version 5 planned exercises have no targetLoadSetAt. null means "never
+// set by hand", which is true enough: before version 6 there was no way to
+// tell a hand-set goal apart from the scheme's original starting weight.
+function migrateFrom5To6(database) {
+  for (const template of database.workoutTemplates) {
+    for (const planned of template.plannedExercises) {
+      planned.targetLoadSetAt = null;
+    }
+  }
+  database.schemaVersion = 6;
+}
+
 // Keyed by the version each migration upgrades *from*. Versions with no
 // entry here (1-3) are too old to migrate and are still refused.
 const MIGRATIONS = {
-  4: migrateFrom4To5
+  4: migrateFrom4To5,
+  5: migrateFrom5To6
 };
 
 // Applies migrations one step at a time until the data reaches

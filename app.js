@@ -394,7 +394,8 @@ function renderFreeformReview() {
 // between an already-logged set and one still waiting to be done).
 // `suggestion` is today's progression suggestion for this exercise (see
 // progression.js), or null. When there is one, a not-yet-logged pill shows
-// the suggested load instead of the scheme's fixed target load.
+// the suggested load instead of the scheme's fixed target load, unless a
+// goal set by hand overrides it (see isGoalOverride).
 function buildSetPill(loggedSet, planned, suggestion) {
   const pill = document.createElement("button");
   pill.type = "button";
@@ -402,7 +403,8 @@ function buildSetPill(loggedSet, planned, suggestion) {
 
   const weightSpan = document.createElement("span");
   weightSpan.className = "set-pill-weight";
-  const pendingLoad = suggestion ? suggestion.load : planned.targetLoad;
+  const goalOverrides = isGoalOverride(planned, suggestion);
+  const pendingLoad = suggestion && !goalOverrides ? suggestion.load : planned.targetLoad;
   weightSpan.textContent = `${loggedSet ? loggedSet.load : pendingLoad} kg`;
 
   const repsSpan = document.createElement("span");
@@ -429,7 +431,8 @@ function buildSetPill(loggedSet, planned, suggestion) {
         load: planned.targetLoad,
         repsMin: planned.targetRepsMin,
         repsMax: planned.targetRepsMax,
-        suggestion
+        suggestion,
+        isGoalOverride: goalOverrides
       });
     });
   }
@@ -489,12 +492,50 @@ function decrementLoggedSetReps(setId) {
   renderExerciseArea();
 }
 
-// The green "Suggested: 82.5 kg × 8" line on a workout card, with the
-// reason underneath so the suggestion never looks like a mystery number.
-function buildSuggestionLine(suggestion) {
+// Today's progression suggestion for one planned exercise in the active
+// scheme, or null when the exercise has no past sessions to go on.
+function getSuggestionForPlanned(planned) {
+  return suggestNextTarget(
+    appState.database, planned.exerciseId, planned.targetRepsMin, planned.targetRepsMax, getActiveSession()
+  );
+}
+
+// True when a goal set by hand ("Set goal for next time") should be used
+// instead of the progression suggestion.
+//
+// The rule: a goal wins if it was set *after* the session the suggestion
+// is based on, because then it's a deliberate decision made with that
+// session's results already known. Once a newer session is logged, the
+// suggestion is based on fresher evidence than the goal, so it takes over
+// again. That makes every goal last exactly one session without anything
+// having to be switched back off.
+//
+// ISO 8601 timestamps compare correctly as plain text, same as the session
+// sort in progression.js.
+function isGoalOverride(planned, suggestion) {
+  if (suggestion === null || planned.targetLoadSetAt === null) {
+    return false;
+  }
+  return planned.targetLoadSetAt > suggestion.basedOnSessionStartedAt;
+}
+
+// The one-line text for the green suggestion line, shared by the workout
+// card and the set panel. While a goal overrides the suggestion, the
+// suggestion is still mentioned, so it's visible what the rules would
+// have said.
+function describeProgression(suggestion, goalLoad, goalOverrides) {
+  if (goalOverrides) {
+    return `Your goal: ${goalLoad} kg (suggestion was ${suggestion.load} kg × ${suggestion.reps}).`;
+  }
+  return `Suggested: ${suggestion.load} kg × ${suggestion.reps}. ${suggestion.reason}`;
+}
+
+// The green suggestion line on a workout card, with the reason included so
+// the suggestion never looks like a mystery number.
+function buildSuggestionLine(planned, suggestion) {
   const lineElement = document.createElement("p");
   lineElement.className = "progression-suggestion";
-  lineElement.textContent = `Suggested: ${suggestion.load} kg × ${suggestion.reps}. ${suggestion.reason}`;
+  lineElement.textContent = describeProgression(suggestion, planned.targetLoad, isGoalOverride(planned, suggestion));
   return lineElement;
 }
 
@@ -521,11 +562,9 @@ function renderSchemeWorkoutCards(template) {
     headingElement.textContent = exercise.name;
     cardElement.appendChild(headingElement);
 
-    const suggestion = suggestNextTarget(
-      appState.database, planned.exerciseId, planned.targetRepsMin, planned.targetRepsMax, getActiveSession()
-    );
+    const suggestion = getSuggestionForPlanned(planned);
     if (suggestion) {
-      cardElement.appendChild(buildSuggestionLine(suggestion));
+      cardElement.appendChild(buildSuggestionLine(planned, suggestion));
     }
 
     const pillRowElement = document.createElement("div");
@@ -955,13 +994,6 @@ function renderSetDraft() {
   warmupCheckbox.checked = appState.setDraft.isWarmup;
 }
 
-// `planTarget` (optional) is `{ load, repsMin, repsMax, suggestion }` from
-// a scheme's plan, passed in when opened from a pending set pill. When
-// present, load/reps default to the plan rather than to past performance,
-// since the plan is what today is supposed to follow. If progression.js
-// produced a suggestion, that takes priority over the plan's fixed load,
-// because it's the plan's rep range applied to what actually happened last
-// time.
 // Guards against a stepper's typed-number input being stuck open from a
 // previous panel session — it should always lose focus and hide itself
 // before the panel closes, but if that somehow didn't happen (the panel
@@ -977,6 +1009,14 @@ function resetSetEntryStepperEditUI() {
   }
 }
 
+// `planTarget` (optional) is `{ load, repsMin, repsMax, suggestion,
+// isGoalOverride }` from a scheme's plan, passed in when opened from a
+// pending set pill. When present, load/reps default to the plan rather than
+// to past performance, since the plan is what today is supposed to follow.
+// If progression.js produced a suggestion, that takes priority over the
+// plan's fixed load, because it's the plan's rep range applied to what
+// actually happened last time. The exception is a goal set by hand after
+// that suggestion's session (isGoalOverride), which wins over both.
 function openSetEntryPanel(exerciseId, planTarget = null) {
   const exercise = appState.database.exercises.find((candidate) => candidate.id === exerciseId);
   const previous = findPreviousWorkingSet(exerciseId);
@@ -985,10 +1025,14 @@ function openSetEntryPanel(exerciseId, planTarget = null) {
   hidePersonalBestBanner();
   appState.editingSetId = null;
   const suggestion = planTarget ? planTarget.suggestion : null;
+  const goalOverrides = planTarget ? planTarget.isGoalOverride : false;
+  // With a goal overriding it, the suggestion is still shown but not
+  // followed: the steppers start from the plan (the goal) instead.
+  const suggestionToFollow = goalOverrides ? null : suggestion;
   appState.setDraft = {
     exerciseId,
-    load: chooseStartingLoad(planTarget, suggestion, previous),
-    reps: chooseStartingReps(planTarget, suggestion, previous),
+    load: chooseStartingLoad(planTarget, suggestionToFollow, previous),
+    reps: chooseStartingReps(planTarget, suggestionToFollow, previous),
     rir: previous ? previous.rir : 2,
     isWarmup: false
   };
@@ -1005,7 +1049,7 @@ function openSetEntryPanel(exerciseId, planTarget = null) {
   }
 
   if (suggestion) {
-    progressionSuggestion.textContent = `Suggested: ${suggestion.load} kg × ${suggestion.reps}. ${suggestion.reason}`;
+    progressionSuggestion.textContent = describeProgression(suggestion, planTarget.load, goalOverrides);
     progressionSuggestion.hidden = false;
   } else {
     progressionSuggestion.hidden = true;
@@ -3283,7 +3327,10 @@ function renderExercisePicker() {
         targetSets: 3,
         targetRepsMin: 8,
         targetRepsMax: 10,
-        targetLoad: 20
+        targetLoad: 20,
+        // A scheme's first target is a starting point, not a goal set by
+        // hand, so it never overrides a progression suggestion.
+        targetLoadSetAt: null
       };
       document.getElementById("plannedExerciseEntryName").textContent = exercise.name;
       renderPlannedExerciseDraft();
@@ -3318,7 +3365,15 @@ function openNextGoalEditor(templateId, exerciseId) {
   const planned = template.plannedExercises.find((candidate) => candidate.exerciseId === exerciseId);
   const exercise = appState.database.exercises.find((candidate) => candidate.id === exerciseId);
 
-  appState.nextGoalTarget = { templateId, exerciseId };
+  // Starts from the weight today's sets are actually aiming at (the
+  // suggestion, unless a goal already overrides it), not from the scheme's
+  // stored target, which may be an old starting weight by now.
+  const suggestion = getSuggestionForPlanned(planned);
+  const currentLoad = suggestion && !isGoalOverride(planned, suggestion) ? suggestion.load : planned.targetLoad;
+
+  // `startingLoad` is remembered so saving can tell whether the load was
+  // actually changed; see the save handler.
+  appState.nextGoalTarget = { templateId, exerciseId, startingLoad: currentLoad };
   appState.plannedExerciseDraft = {
     // Only here so the target-load stepper can look up this exercise's
     // minimum raise; the save handler copies the target fields one by one
@@ -3327,7 +3382,7 @@ function openNextGoalEditor(templateId, exerciseId) {
     targetSets: planned.targetSets,
     targetRepsMin: planned.targetRepsMin,
     targetRepsMax: planned.targetRepsMax,
-    targetLoad: planned.targetLoad
+    targetLoad: currentLoad
   };
 
   document.getElementById("plannedExerciseEntryName").textContent = exercise.name;
@@ -3402,7 +3457,7 @@ function resetPlannedExerciseEntryPanelToAddMode() {
 
 document.getElementById("savePlannedExerciseButton").addEventListener("click", () => {
   if (appState.nextGoalTarget) {
-    const { templateId, exerciseId } = appState.nextGoalTarget;
+    const { templateId, exerciseId, startingLoad } = appState.nextGoalTarget;
     const template = appState.database.workoutTemplates.find((candidate) => candidate.id === templateId);
     const planned = template.plannedExercises.find((candidate) => candidate.exerciseId === exerciseId);
     const draft = appState.plannedExerciseDraft;
@@ -3410,7 +3465,14 @@ document.getElementById("savePlannedExerciseButton").addEventListener("click", (
     planned.targetSets = draft.targetSets;
     planned.targetRepsMin = draft.targetRepsMin;
     planned.targetRepsMax = draft.targetRepsMax;
-    planned.targetLoad = draft.targetLoad;
+
+    // Only a load that was actually changed counts as a goal set by hand.
+    // Saving just to adjust sets or reps shouldn't lock in the current
+    // weight and quietly switch off the next session's suggestion.
+    if (draft.targetLoad !== startingLoad) {
+      planned.targetLoad = draft.targetLoad;
+      planned.targetLoadSetAt = new Date().toISOString();
+    }
     saveDatabase(appState.database);
 
     appState.nextGoalTarget = null;
