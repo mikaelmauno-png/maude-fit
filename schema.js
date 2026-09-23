@@ -111,7 +111,7 @@ const MUSCLE_GROUPS = [
 // so it is collected from day one even though nothing reads it yet.
 const DAY_STATUSES = ["normal", "poorSleep", "ill", "stressed"];
 
-// WorkoutTemplate — a reusable weekly scheme, e.g. "Weekly workout 1". Meant
+// WorkoutTemplate — a reusable weekly workout template, e.g. "Weekly workout 1". Meant
 // to be replaced every 1-3 months as training needs change, which is why old
 // ones are archived rather than deleted: a past Session still points at the
 // template it followed, so that history should stay resolvable.
@@ -137,7 +137,7 @@ const DAY_STATUSES = ["normal", "poorSleep", "ill", "stressed"];
 //                                   // over again (see isGoalOverride in
 //                                   // app.js). So a goal lasts one session.
 //     }
-//     // ...one entry per exercise in this scheme, in the order they're done
+//     // ...one entry per exercise in this workout template, in the order they're done
 //   ]
 // }
 
@@ -211,7 +211,7 @@ function migrateFrom4To5(database) {
 
 // Version 5 planned exercises have no targetLoadSetAt. null means "never
 // set by hand", which is true enough: before version 6 there was no way to
-// tell a hand-set goal apart from the scheme's original starting weight.
+// tell a hand-set goal apart from the workout template's original starting weight.
 function migrateFrom5To6(database) {
   for (const template of database.workoutTemplates) {
     for (const planned of template.plannedExercises) {

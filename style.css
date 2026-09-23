@@ -19,7 +19,7 @@ h1 {
   font-size: 1.5rem;
 }
 
-/* Every list in this app (exercises, schemes, planned exercises, checklist
+/* Every list in this app (exercises, workout templates, planned exercises, checklist
    rows) shares this same plain, bullet-free look. */
 ul {
   list-style: none;
@@ -98,7 +98,7 @@ ul li {
   min-width: 140px;
 }
 
-/* Same idea as .button-row, but stacked: used for the "Start: <scheme>"
+/* Same idea as .button-row, but stacked: used for the "Start: <workout template>"
    buttons, since there can be several and they read better as a vertical
    list than squeezed into one row. */
 .button-stack {
@@ -151,7 +151,7 @@ button:active {
   margin-top: -8px;
 }
 
-/* Distinguishes "what the scheme calls for" from "what you did last time"
+/* Distinguishes "what the workout template calls for" from "what you did last time"
    (#previousPerformance above), which sit right next to each other. */
 #plannedTarget {
   color: #8fb8ff;
@@ -167,11 +167,11 @@ button:active {
   margin: -4px 0 12px;
 }
 
-#schemeWorkoutCards {
+#templateWorkoutCards {
   margin-bottom: 24px;
 }
 
-/* One card per planned exercise in a scheme-based workout, holding that
+/* One card per planned exercise in a template-based workout, holding that
    exercise's row of set pills (see below). */
 .exercise-card {
   background-color: #1e1e1e;
@@ -359,10 +359,10 @@ h1 {
   margin-top: 0;
 }
 
-/* A row in the schemes list or the scheme editor's exercise list: a label
+/* A row in the workout templates list or the workout template editor's exercise list: a label
    plus one or two small action buttons, unlike the big full-width buttons
    used everywhere else. */
-.scheme-list-item {
+.list-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -374,14 +374,14 @@ h1 {
   margin-bottom: 8px;
 }
 
-.scheme-list-item span {
+.list-row span {
   flex: 1;
 }
 
 /* Wraps a name plus an optional subtitle (e.g. the muscle summary) so they
    stack as one flex:1 block instead of each span individually stretching
-   under the ".scheme-list-item span" rule above. */
-.scheme-list-item-info {
+   under the ".list-row span" rule above. */
+.list-row-info {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -389,12 +389,12 @@ h1 {
   min-width: 0;
 }
 
-.scheme-list-item-info span {
+.list-row-info span {
   flex: none;
 }
 
 /* Overrides button's flex:1/full-padding defaults for the small "Edit" /
-   "Archive" / "Remove" actions that sit inside a .scheme-list-item, so they
+   "Archive" / "Remove" actions that sit inside a .list-row, so they
    size to their text instead of stretching. */
 .small-button {
   flex: none;
@@ -422,8 +422,8 @@ h1 {
   font-size: 1.05rem;
 }
 
-/* One finished workout in the History screen. Unlike .scheme-list-item, this
-   holds several lines (date/scheme, then one line per exercise), so it's a
+/* One finished workout in the History screen. Unlike .list-row, this
+   holds several lines (date/workout template, then one line per exercise), so it's a
    plain block rather than a flex row. */
 .history-card {
   background-color: #1e1e1e;
@@ -443,14 +443,14 @@ h1 {
   margin-bottom: 4px;
 }
 
-#weeklySchemeSummary {
+#weeklyWorkoutTemplateSummary {
   background-color: #1e1e1e;
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 16px;
 }
 
-#weeklySchemeSummaryHeading {
+#weeklyWorkoutTemplateSummaryHeading {
   margin: 0 0 16px;
   font-size: 1.1rem;
 }

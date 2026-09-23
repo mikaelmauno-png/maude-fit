@@ -2,16 +2,16 @@
 // Training recommendations: double progression.
 //
 // "Double progression" means progressing two things in turn. First the reps
-// go up at a fixed weight, until every set reaches the top of the scheme's
+// go up at a fixed weight, until every set reaches the top of the workout template's
 // rep range. Then the weight goes up by the exercise's minimum raise, which
 // drops the reps back towards the bottom of the range, and the cycle
 // repeats.
 //
 // Everything here only *reads* the database and returns a suggestion. It
-// never changes logged sets or schemes; the app decides what to do with the
+// never changes logged sets or workout templates; the app decides what to do with the
 // suggestion (show it, pre-fill a stepper).
 //
-// Only scheme-based workouts get suggestions, because the rules need a
+// Only template-based workouts get suggestions, because the rules need a
 // target rep range and free-form workouts don't have one.
 // ---------------------------------------------------------------------------
 

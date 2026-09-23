@@ -36,9 +36,9 @@ const appState = {
   activeSessionId: null,       // null unless a workout is in progress
   setDraft: null,               // in-progress values for the set being logged
   editingSetId: null,           // id of an existing set being corrected, or null when logging a new one
-  schemeDraft: null,           // in-progress copy of the scheme being edited
+  workoutTemplateDraft: null,  // in-progress copy of the workout template being edited
   plannedExerciseDraft: null,  // in-progress values for a planned exercise
-  pendingTemplateId: null,     // scheme chosen at Start Workout, held while the gym picker is open
+  pendingTemplateId: null,     // workout template chosen at Start Workout, held while the gym picker is open
   nextGoalTarget: null,        // { templateId, exerciseId } while adjusting an existing planned exercise's target from a workout card; null otherwise
   freeformReviewExerciseId: null, // which exercise's logged-sets review card is open, in a free-form workout; null otherwise
   dayStatusDraft: null,           // { dayStatus, notes } while the today's-status panel is open; null otherwise
@@ -72,8 +72,8 @@ const mainScreen = document.getElementById("mainScreen");
 const activeWorkoutScreen = document.getElementById("activeWorkoutScreen");
 const settingsScreen = document.getElementById("settingsScreen");
 const dataScreen = document.getElementById("dataScreen");
-const schemesScreen = document.getElementById("schemesScreen");
-const schemeEditorScreen = document.getElementById("schemeEditorScreen");
+const workoutTemplatesScreen = document.getElementById("workoutTemplatesScreen");
+const workoutTemplateEditorScreen = document.getElementById("workoutTemplateEditorScreen");
 const exercisePickerScreen = document.getElementById("exercisePickerScreen");
 const plannedExerciseEntryPanel = document.getElementById("plannedExerciseEntryPanel");
 const exercisesScreen = document.getElementById("exercisesScreen");
@@ -101,7 +101,7 @@ const dayStatusPanel = document.getElementById("dayStatusPanel");
 // Every top-level screen, so each show*Screen() function below can hide all
 // of them and then reveal just its own, without repeating this list six times.
 const allScreens = [
-  mainScreen, activeWorkoutScreen, settingsScreen, dataScreen, schemesScreen, schemeEditorScreen,
+  mainScreen, activeWorkoutScreen, settingsScreen, dataScreen, workoutTemplatesScreen, workoutTemplateEditorScreen,
   exercisePickerScreen, plannedExerciseEntryPanel, exercisesScreen, historyScreen, gymsScreen,
   gymPickerScreen, setEntryPanel, exerciseStatsListScreen, exerciseStatsDetailScreen, muscleEditorPanel,
   personalBestsScreen, muscleStatsListScreen, muscleStatsDetailScreen, dayStatusPanel,
@@ -117,7 +117,7 @@ function hideAllScreens() {
 function showMainScreen() {
   hideAllScreens();
   mainScreen.hidden = false;
-  renderWeeklySchemeSummary();
+  renderWeeklyWorkoutTemplateSummary();
   renderMuscleCounters();
 }
 
@@ -139,16 +139,16 @@ function showDataScreen() {
   dataScreen.hidden = false;
 }
 
-function showSchemesScreen() {
+function showWorkoutTemplatesScreen() {
   hideAllScreens();
-  schemesScreen.hidden = false;
-  renderSchemesList();
+  workoutTemplatesScreen.hidden = false;
+  renderWorkoutTemplatesList();
 }
 
-function showSchemeEditorScreen() {
+function showWorkoutTemplateEditorScreen() {
   hideAllScreens();
-  schemeEditorScreen.hidden = false;
-  renderSchemeEditor();
+  workoutTemplateEditorScreen.hidden = false;
+  renderWorkoutTemplateEditor();
 }
 
 function showExercisesScreen() {
@@ -220,10 +220,10 @@ function showBodyweightScreen() {
 
 document.getElementById("viewSettingsButton").addEventListener("click", showSettingsScreen);
 document.getElementById("backFromSettingsButton").addEventListener("click", showMainScreen);
-document.getElementById("manageSchemesButton").addEventListener("click", showSchemesScreen);
+document.getElementById("manageWorkoutTemplatesButton").addEventListener("click", showWorkoutTemplatesScreen);
 // These three "Back" buttons return to Settings, not the main screen —
 // Settings is where each of these screens was actually opened from now.
-document.getElementById("backFromSchemesButton").addEventListener("click", showSettingsScreen);
+document.getElementById("backFromWorkoutTemplatesButton").addEventListener("click", showSettingsScreen);
 document.getElementById("manageExercisesButton").addEventListener("click", showExercisesScreen);
 document.getElementById("backFromExercisesButton").addEventListener("click", showSettingsScreen);
 document.getElementById("viewHistoryButton").addEventListener("click", showHistoryScreen);
@@ -238,7 +238,7 @@ document.getElementById("homeFromWorkoutButton").addEventListener("click", showM
 
 
 // ---------------------------------------------------------------------------
-// Looking up the active session and the scheme it follows
+// Looking up the active session and the workout template it follows
 // ---------------------------------------------------------------------------
 
 function getActiveSession() {
@@ -264,20 +264,20 @@ function getActiveTemplate() {
 // ---------------------------------------------------------------------------
 
 const exerciseListElement = document.getElementById("exerciseList");
-const schemeWorkoutCardsElement = document.getElementById("schemeWorkoutCards");
+const templateWorkoutCardsElement = document.getElementById("templateWorkoutCards");
 
 // Redraws whichever exercise area applies right now: the full free-form
-// library when there's no active scheme, or a card per planned exercise
+// library when there's no active workout template, or a card per planned exercise
 // (each holding one pill per target set) when there is one.
 function renderExerciseArea() {
   const template = getActiveTemplate();
   if (template) {
     exerciseListElement.hidden = true;
-    schemeWorkoutCardsElement.hidden = false;
-    renderSchemeWorkoutCards(template);
+    templateWorkoutCardsElement.hidden = false;
+    renderTemplateWorkoutCards(template);
   } else {
     exerciseListElement.hidden = false;
-    schemeWorkoutCardsElement.hidden = true;
+    templateWorkoutCardsElement.hidden = true;
     renderFreeformExerciseList();
   }
 }
@@ -285,7 +285,7 @@ function renderExerciseArea() {
 function renderFreeformExerciseList() {
   exerciseListElement.innerHTML = "";
 
-  // Archived exercises stay in the data (old sets/schemes still reference
+  // Archived exercises stay in the data (old sets/workout templates still reference
   // them) but shouldn't be offered for new logging.
   for (const exercise of appState.database.exercises.filter((candidate) => !candidate.isArchived)) {
     const itemElement = document.createElement("li");
@@ -394,7 +394,7 @@ function renderFreeformReview() {
 // between an already-logged set and one still waiting to be done).
 // `suggestion` is today's progression suggestion for this exercise (see
 // progression.js), or null. When there is one, a not-yet-logged pill shows
-// the suggested load instead of the scheme's fixed target load, unless a
+// the suggested load instead of the workout template's fixed target load, unless a
 // goal set by hand overrides it (see isGoalOverride).
 function buildSetPill(loggedSet, planned, suggestion) {
   const pill = document.createElement("button");
@@ -493,7 +493,7 @@ function decrementLoggedSetReps(setId) {
 }
 
 // Today's progression suggestion for one planned exercise in the active
-// scheme, or null when the exercise has no past sessions to go on.
+// workout template, or null when the exercise has no past sessions to go on.
 function getSuggestionForPlanned(planned) {
   return suggestNextTarget(
     appState.database, planned.exerciseId, planned.targetRepsMin, planned.targetRepsMax, getActiveSession()
@@ -541,8 +541,8 @@ function buildSuggestionLine(planned, suggestion) {
 
 // One card per planned exercise, shown all at once — order doesn't matter,
 // since any pill in any card can be tapped first.
-function renderSchemeWorkoutCards(template) {
-  schemeWorkoutCardsElement.innerHTML = "";
+function renderTemplateWorkoutCards(template) {
+  templateWorkoutCardsElement.innerHTML = "";
 
   for (const planned of template.plannedExercises) {
     const exercise = appState.database.exercises.find((candidate) => candidate.id === planned.exerciseId);
@@ -591,8 +591,8 @@ function renderSchemeWorkoutCards(template) {
 
     cardElement.appendChild(pillRowElement);
 
-    // Adjusts this exercise's target sets/reps/load on the scheme itself,
-    // so it's what shows next time this scheme is started (and for any of
+    // Adjusts this exercise's target sets/reps/load on the workout template itself,
+    // so it's what shows next time this workout template is started (and for any of
     // today's pills for this exercise not yet logged, since they read the
     // same target).
     const nextGoalButton = document.createElement("button");
@@ -602,7 +602,7 @@ function renderSchemeWorkoutCards(template) {
     nextGoalButton.addEventListener("click", () => openNextGoalEditor(template.id, planned.exerciseId));
     cardElement.appendChild(nextGoalButton);
 
-    schemeWorkoutCardsElement.appendChild(cardElement);
+    templateWorkoutCardsElement.appendChild(cardElement);
   }
 }
 
@@ -618,7 +618,7 @@ const endWorkoutButton = document.getElementById("endWorkoutButton");
 const workoutStatus = document.getElementById("workoutStatus");
 const dayStatusButton = document.getElementById("dayStatusButton");
 
-// Rebuilds the "Start: <scheme>" / "Start free-form workout" buttons. Once a
+// Rebuilds the "Start: <workout template>" / "Start free-form workout" buttons. Once a
 // workout is already in progress, those don't make sense any more — this
 // shows a single "Resume workout" button back to the active workout screen
 // instead, so there's always exactly one obvious thing to tap here.
@@ -658,11 +658,11 @@ function updateWorkoutControls() {
   workoutStatus.textContent = isActive ? "Workout in progress" : "";
   renderStartWorkoutChoices();
   updateRestTimer();
-  renderWeeklySchemeSummary();
+  renderWeeklyWorkoutTemplateSummary();
   renderMuscleCounters();
 }
 
-// Called when a scheme (or free-form) is picked to start. If any gyms have
+// Called when a workout template (or free-form) is picked to start. If any gyms have
 // been added, asks which one this workout is at before actually starting;
 // otherwise there's nothing to ask, so it starts right away.
 function beginStartWorkout(templateId) {
@@ -1010,7 +1010,7 @@ function resetSetEntryStepperEditUI() {
 }
 
 // `planTarget` (optional) is `{ load, repsMin, repsMax, suggestion,
-// isGoalOverride }` from a scheme's plan, passed in when opened from a
+// isGoalOverride }` from a workout template's plan, passed in when opened from a
 // pending set pill. When present, load/reps default to the plan rather than
 // to past performance, since the plan is what today is supposed to follow.
 // If progression.js produced a suggestion, that takes priority over the
@@ -1073,12 +1073,12 @@ function openSetEntryPanel(exerciseId, planTarget = null) {
 }
 
 // Where the load stepper starts: the progression suggestion if there is
-// one, else the scheme's planned load, else last time's load, else an empty
+// one, else the workout template's planned load, else last time's load, else an empty
 // Olympic bar (20 kg) for an exercise that's never been done.
 function chooseStartingLoad(planTarget, suggestion, previous) {
   // Once a set's already been logged for this exercise this session, later
   // sets default to that actual weight instead of resetting back to the
-  // suggestion or the scheme's static target every time — the target only
+  // suggestion or the workout template's static target every time — the target only
   // matters for deciding where to *start* today, and by the second set
   // that's already been resolved into a real number.
   if (previous && previous.sessionId === appState.activeSessionId) {
@@ -1373,10 +1373,10 @@ function renderExercisesManageList() {
 
   for (const exercise of appState.database.exercises.filter((candidate) => !candidate.isArchived)) {
     const rowElement = document.createElement("li");
-    rowElement.className = "scheme-list-item";
+    rowElement.className = "list-row";
 
     const infoElement = document.createElement("div");
-    infoElement.className = "scheme-list-item-info";
+    infoElement.className = "list-row-info";
 
     const nameSpan = document.createElement("span");
     nameSpan.textContent = exercise.isGymSpecific ? `${exercise.name} (gym-specific)` : exercise.name;
@@ -1401,7 +1401,7 @@ function renderExercisesManageList() {
     renameButton.textContent = "Rename";
     renameButton.addEventListener("click", () => {
       // Only Exercise.name changes here — the id (used by every set and
-      // scheme that references this exercise) is stable per schema.js and
+      // workout template that references this exercise) is stable per schema.js and
       // is never touched by a rename.
       const newName = prompt("Rename exercise", exercise.name);
       if (newName === null) {
@@ -1457,7 +1457,7 @@ function renderExercisesManageList() {
     archiveButton.className = "small-button";
     archiveButton.textContent = "Archive";
     archiveButton.addEventListener("click", () => {
-      // Archiving instead of deleting keeps past sets and schemes that
+      // Archiving instead of deleting keeps past sets and workout templates that
       // reference this exercise resolvable.
       exercise.isArchived = true;
       saveDatabase(appState.database);
@@ -1474,13 +1474,13 @@ function renderExercisesManageList() {
 // with no way back through the UI would defeat the reason it's archived
 // instead of deleted in the first place.
 // True (not just archived) deletion is only safe when nothing in the data
-// would be orphaned by it — no logged set, and no scheme still planning it.
+// would be orphaned by it — no logged set, and no workout template still planning it.
 function isExerciseUnused(exerciseId) {
   const usedInSets = appState.database.sets.some((set) => set.exerciseId === exerciseId);
-  const usedInSchemes = appState.database.workoutTemplates.some((template) =>
+  const usedInWorkoutTemplates = appState.database.workoutTemplates.some((template) =>
     template.plannedExercises.some((planned) => planned.exerciseId === exerciseId)
   );
-  return !usedInSets && !usedInSchemes;
+  return !usedInSets && !usedInWorkoutTemplates;
 }
 
 function renderArchivedExercisesList() {
@@ -1489,7 +1489,7 @@ function renderArchivedExercisesList() {
 
   for (const exercise of appState.database.exercises.filter((candidate) => candidate.isArchived)) {
     const rowElement = document.createElement("li");
-    rowElement.className = "scheme-list-item";
+    rowElement.className = "list-row";
 
     const nameSpan = document.createElement("span");
     nameSpan.textContent = exercise.name;
@@ -1786,7 +1786,7 @@ function renderGymsManageList() {
 
   for (const gym of appState.database.gyms.filter((candidate) => !candidate.isArchived)) {
     const rowElement = document.createElement("li");
-    rowElement.className = "scheme-list-item";
+    rowElement.className = "list-row";
 
     const nameSpan = document.createElement("span");
     nameSpan.textContent = gym.name;
@@ -1840,7 +1840,7 @@ function renderArchivedGymsList() {
 
   for (const gym of appState.database.gyms.filter((candidate) => candidate.isArchived)) {
     const rowElement = document.createElement("li");
-    rowElement.className = "scheme-list-item";
+    rowElement.className = "list-row";
 
     const nameSpan = document.createElement("span");
     nameSpan.textContent = gym.name;
@@ -1906,7 +1906,7 @@ document.getElementById("addGymButton").addEventListener("click", () => {
   renderGymsManageList();
 });
 
-// Shown right after picking a scheme (or free-form) to start, so the new
+// Shown right after picking a workout template (or free-form) to start, so the new
 // session's gymId can be set from the moment it's created.
 function renderGymPicker() {
   const listElement = document.getElementById("gymPickerList");
@@ -2242,7 +2242,7 @@ deleteBodyweightButton.addEventListener("click", () => {
 
 
 // ---------------------------------------------------------------------------
-// Week boundaries — shared by the weekly scheme summary and the per-exercise
+// Week boundaries — shared by the weekly workout template summary and the per-exercise
 // stats charts below, so "which week is this in" is computed one way.
 // ---------------------------------------------------------------------------
 
@@ -2271,15 +2271,15 @@ function getWeekKey(date) {
 
 
 // ---------------------------------------------------------------------------
-// Weekly scheme completion summary (main screen, only when idle)
+// Weekly workout template completion summary (main screen, only when idle)
 //
-// Completion % for a scheme this week = total reps actually logged across
+// Completion % for a workout template this week = total reps actually logged across
 // its exercises this week, divided by total reps planned (using the
 // midpoint of each exercise's rep range, since a plan is a range not a
 // single number), capped at 100.
 // ---------------------------------------------------------------------------
 
-function computeSchemeCompletionPercent(template, session) {
+function computeWorkoutTemplateCompletionPercent(template, session) {
   const sessionWorkingSets = appState.database.sets.filter(
     (set) => set.sessionId === session.id && !set.isWarmup
   );
@@ -2302,32 +2302,32 @@ function computeSchemeCompletionPercent(template, session) {
   return Math.min(100, Math.round((actualReps / plannedReps) * 100));
 }
 
-const weeklySchemeSummaryElement = document.getElementById("weeklySchemeSummary");
+const weeklyWorkoutTemplateSummaryElement = document.getElementById("weeklyWorkoutTemplateSummary");
 const weeklyBarsElement = document.getElementById("weeklyBars");
 
-function renderWeeklySchemeSummary() {
+function renderWeeklyWorkoutTemplateSummary() {
   // Only meaningful as a "what's left this week" dashboard when there's
   // nothing currently being logged — during a workout, the exercise cards
   // themselves are that context.
   if (appState.activeSessionId !== null) {
-    weeklySchemeSummaryElement.hidden = true;
+    weeklyWorkoutTemplateSummaryElement.hidden = true;
     return;
   }
 
   const activeTemplates = appState.database.workoutTemplates.filter((template) => !template.isArchived);
   if (activeTemplates.length === 0) {
-    weeklySchemeSummaryElement.hidden = true;
+    weeklyWorkoutTemplateSummaryElement.hidden = true;
     return;
   }
-  weeklySchemeSummaryElement.hidden = false;
+  weeklyWorkoutTemplateSummaryElement.hidden = false;
 
   const { start, end } = getCurrentWeekRange();
   weeklyBarsElement.innerHTML = "";
   let completedCount = 0;
 
   for (const template of activeTemplates) {
-    // The most recent session this week following this scheme, if any —
-    // picks one representative session when a scheme was somehow done
+    // The most recent session this week following this workout template, if any —
+    // picks one representative session when a workout template was somehow done
     // more than once in a week, rather than trying to combine them.
     const sessionsThisWeek = appState.database.sessions
       .filter((session) => {
@@ -2350,7 +2350,7 @@ function renderWeeklySchemeSummary() {
     track.className = "weekly-bar-track";
 
     if (mostRecentSession) {
-      const percent = computeSchemeCompletionPercent(template, mostRecentSession);
+      const percent = computeWorkoutTemplateCompletionPercent(template, mostRecentSession);
       const fill = document.createElement("div");
       fill.className = "weekly-bar-fill";
       // A floor so even a low percentage still shows a visible sliver
@@ -2379,7 +2379,7 @@ function renderWeeklySchemeSummary() {
     weeklyBarsElement.appendChild(barContainer);
   }
 
-  document.getElementById("weeklySchemeSummaryHeading").textContent =
+  document.getElementById("weeklyWorkoutTemplateSummaryHeading").textContent =
     `This week's workouts — ${completedCount}/${activeTemplates.length} done`;
 }
 
@@ -2390,8 +2390,8 @@ function renderWeeklySchemeSummary() {
 // "Completed" sums each working set's muscle weight (1.0 for its main
 // muscle, 0.5 for each secondary) across this week's logged sets, whatever
 // exercise or session they came from. "Projected" sums targetSets x muscle
-// weight across every active scheme — the same "each scheme once this
-// week" assumption the weekly scheme summary above already makes.
+// weight across every active workout template — the same "each workout template once this
+// week" assumption the weekly workout template summary above already makes.
 // ---------------------------------------------------------------------------
 
 function computeMuscleCounters() {
@@ -2438,7 +2438,7 @@ function computeMuscleCounters() {
     projected: projected[muscle] || 0
   }));
 
-  // Most-planned muscles first, so the muscles this week's schemes actually
+  // Most-planned muscles first, so the muscles this week's workout templates actually
   // emphasize are what's visible without scrolling.
   rows.sort((a, b) => (b.projected - a.projected) || (b.completed - a.completed));
   return rows;
@@ -3082,17 +3082,17 @@ document.getElementById("backFromMuscleStatsDetailButton").addEventListener("cli
 
 
 // ---------------------------------------------------------------------------
-// Schemes list
+// Workout templates list
 // ---------------------------------------------------------------------------
 
-function renderSchemesList() {
-  const listElement = document.getElementById("schemesList");
+function renderWorkoutTemplatesList() {
+  const listElement = document.getElementById("workoutTemplatesList");
   listElement.innerHTML = "";
 
   const activeTemplates = appState.database.workoutTemplates.filter((template) => !template.isArchived);
   for (const template of activeTemplates) {
     const rowElement = document.createElement("li");
-    rowElement.className = "scheme-list-item";
+    rowElement.className = "list-row";
 
     const nameSpan = document.createElement("span");
     nameSpan.textContent = template.name;
@@ -3103,9 +3103,9 @@ function renderSchemesList() {
     editButton.textContent = "Edit";
     editButton.addEventListener("click", () => {
       // A deep copy, so cancelling the edit doesn't leave half-applied
-      // changes on the saved scheme.
-      appState.schemeDraft = JSON.parse(JSON.stringify(template));
-      showSchemeEditorScreen();
+      // changes on the saved workout template.
+      appState.workoutTemplateDraft = JSON.parse(JSON.stringify(template));
+      showWorkoutTemplateEditorScreen();
     });
 
     const archiveButton = document.createElement("button");
@@ -3114,11 +3114,11 @@ function renderSchemesList() {
     archiveButton.textContent = "Archive";
     archiveButton.addEventListener("click", () => {
       // Archiving instead of deleting keeps past sessions that followed this
-      // scheme resolvable, the same reasoning as Exercise.isArchived.
+      // workout template resolvable, the same reasoning as Exercise.isArchived.
       template.isArchived = true;
       saveDatabase(appState.database);
-      renderSchemesList();
-      renderArchivedSchemesList();
+      renderWorkoutTemplatesList();
+      renderArchivedWorkoutTemplatesList();
     });
 
     rowElement.append(nameSpan, editButton, archiveButton);
@@ -3126,18 +3126,18 @@ function renderSchemesList() {
   }
 }
 
-function isSchemeUnused(templateId) {
+function isWorkoutTemplateUnused(templateId) {
   return !appState.database.sessions.some((session) => session.templateId === templateId);
 }
 
-function renderArchivedSchemesList() {
-  const listElement = document.getElementById("archivedSchemesList");
+function renderArchivedWorkoutTemplatesList() {
+  const listElement = document.getElementById("archivedWorkoutTemplatesList");
   listElement.innerHTML = "";
 
   const archivedTemplates = appState.database.workoutTemplates.filter((template) => template.isArchived);
   for (const template of archivedTemplates) {
     const rowElement = document.createElement("li");
-    rowElement.className = "scheme-list-item";
+    rowElement.className = "list-row";
 
     const nameSpan = document.createElement("span");
     nameSpan.textContent = template.name;
@@ -3149,14 +3149,14 @@ function renderArchivedSchemesList() {
     unarchiveButton.addEventListener("click", () => {
       template.isArchived = false;
       saveDatabase(appState.database);
-      renderSchemesList();
-      renderArchivedSchemesList();
+      renderWorkoutTemplatesList();
+      renderArchivedWorkoutTemplatesList();
       renderStartWorkoutChoices();
     });
 
     rowElement.append(nameSpan, unarchiveButton);
 
-    if (isSchemeUnused(template.id)) {
+    if (isWorkoutTemplateUnused(template.id)) {
       const deleteButton = document.createElement("button");
       deleteButton.type = "button";
       deleteButton.className = "small-button destructive-button";
@@ -3170,7 +3170,7 @@ function renderArchivedSchemesList() {
           (candidate) => candidate.id !== template.id
         );
         saveDatabase(appState.database);
-        renderArchivedSchemesList();
+        renderArchivedWorkoutTemplatesList();
       });
       rowElement.appendChild(deleteButton);
     }
@@ -3179,50 +3179,50 @@ function renderArchivedSchemesList() {
   }
 }
 
-document.getElementById("toggleArchivedSchemesButton").addEventListener("click", (event) => {
-  const archivedListElement = document.getElementById("archivedSchemesList");
+document.getElementById("toggleArchivedWorkoutTemplatesButton").addEventListener("click", (event) => {
+  const archivedListElement = document.getElementById("archivedWorkoutTemplatesList");
   archivedListElement.hidden = !archivedListElement.hidden;
   event.currentTarget.textContent = archivedListElement.hidden ? "Show archived" : "Hide archived";
   if (!archivedListElement.hidden) {
-    renderArchivedSchemesList();
+    renderArchivedWorkoutTemplatesList();
   }
 });
 
-document.getElementById("addSchemeButton").addEventListener("click", () => {
-  appState.schemeDraft = {
+document.getElementById("addWorkoutTemplateButton").addEventListener("click", () => {
+  appState.workoutTemplateDraft = {
     id: crypto.randomUUID(),
     name: "",
     isArchived: false,
     plannedExercises: []
   };
-  showSchemeEditorScreen();
+  showWorkoutTemplateEditorScreen();
 });
 
 
 // ---------------------------------------------------------------------------
-// Scheme editor
+// Workout template editor
 // ---------------------------------------------------------------------------
 
-const schemeNameInput = document.getElementById("schemeNameInput");
+const workoutTemplateNameInput = document.getElementById("workoutTemplateNameInput");
 
-function renderSchemeEditor() {
-  // Whether this id already exists among saved schemes tells new from
+function renderWorkoutTemplateEditor() {
+  // Whether this id already exists among saved workout templates tells new from
   // existing, without needing extra state that would have to be kept out of
   // what eventually gets saved.
-  const isNewScheme = !appState.database.workoutTemplates.some(
-    (template) => template.id === appState.schemeDraft.id
+  const isNewWorkoutTemplate = !appState.database.workoutTemplates.some(
+    (template) => template.id === appState.workoutTemplateDraft.id
   );
-  document.getElementById("schemeEditorTitle").textContent = isNewScheme ? "New workout" : "Edit workout";
-  schemeNameInput.value = appState.schemeDraft.name;
+  document.getElementById("workoutTemplateEditorTitle").textContent = isNewWorkoutTemplate ? "New workout" : "Edit workout";
+  workoutTemplateNameInput.value = appState.workoutTemplateDraft.name;
 
   const listElement = document.getElementById("plannedExerciseList");
   listElement.innerHTML = "";
 
-  appState.schemeDraft.plannedExercises.forEach((planned, index) => {
+  appState.workoutTemplateDraft.plannedExercises.forEach((planned, index) => {
     const exercise = appState.database.exercises.find((candidate) => candidate.id === planned.exerciseId);
 
     const rowElement = document.createElement("li");
-    rowElement.className = "scheme-list-item";
+    rowElement.className = "list-row";
 
     const detailSpan = document.createElement("span");
     detailSpan.textContent =
@@ -3236,20 +3236,20 @@ function renderSchemeEditor() {
     moveUpButton.textContent = "↑";
     moveUpButton.disabled = index === 0;
     moveUpButton.addEventListener("click", () => {
-      const plannedExercises = appState.schemeDraft.plannedExercises;
+      const plannedExercises = appState.workoutTemplateDraft.plannedExercises;
       [plannedExercises[index - 1], plannedExercises[index]] = [plannedExercises[index], plannedExercises[index - 1]];
-      renderSchemeEditor();
+      renderWorkoutTemplateEditor();
     });
 
     const moveDownButton = document.createElement("button");
     moveDownButton.type = "button";
     moveDownButton.className = "small-button tiny-button";
     moveDownButton.textContent = "↓";
-    moveDownButton.disabled = index === appState.schemeDraft.plannedExercises.length - 1;
+    moveDownButton.disabled = index === appState.workoutTemplateDraft.plannedExercises.length - 1;
     moveDownButton.addEventListener("click", () => {
-      const plannedExercises = appState.schemeDraft.plannedExercises;
+      const plannedExercises = appState.workoutTemplateDraft.plannedExercises;
       [plannedExercises[index], plannedExercises[index + 1]] = [plannedExercises[index + 1], plannedExercises[index]];
-      renderSchemeEditor();
+      renderWorkoutTemplateEditor();
     });
 
     const removeButton = document.createElement("button");
@@ -3257,8 +3257,8 @@ function renderSchemeEditor() {
     removeButton.className = "small-button";
     removeButton.textContent = "Remove";
     removeButton.addEventListener("click", () => {
-      appState.schemeDraft.plannedExercises.splice(index, 1);
-      renderSchemeEditor();
+      appState.workoutTemplateDraft.plannedExercises.splice(index, 1);
+      renderWorkoutTemplateEditor();
     });
 
     rowElement.append(detailSpan, moveUpButton, moveDownButton, removeButton);
@@ -3266,18 +3266,18 @@ function renderSchemeEditor() {
   });
 }
 
-schemeNameInput.addEventListener("input", () => {
-  appState.schemeDraft.name = schemeNameInput.value;
+workoutTemplateNameInput.addEventListener("input", () => {
+  appState.workoutTemplateDraft.name = workoutTemplateNameInput.value;
 });
 
 document.getElementById("addPlannedExerciseButton").addEventListener("click", () => {
   exercisePickerScreen.hidden = false;
-  schemeEditorScreen.hidden = true;
+  workoutTemplateEditorScreen.hidden = true;
   renderExercisePicker();
 });
 
-document.getElementById("saveSchemeButton").addEventListener("click", () => {
-  const draft = appState.schemeDraft;
+document.getElementById("saveWorkoutTemplateButton").addEventListener("click", () => {
+  const draft = appState.workoutTemplateDraft;
 
   if (draft.name.trim() === "") {
     alert("Give the workout a name before saving.");
@@ -3296,19 +3296,19 @@ document.getElementById("saveSchemeButton").addEventListener("click", () => {
   }
 
   saveDatabase(appState.database);
-  appState.schemeDraft = null;
+  appState.workoutTemplateDraft = null;
   renderStartWorkoutChoices();
-  showSchemesScreen();
+  showWorkoutTemplatesScreen();
 });
 
-document.getElementById("cancelSchemeEditButton").addEventListener("click", () => {
-  appState.schemeDraft = null;
-  showSchemesScreen();
+document.getElementById("cancelWorkoutTemplateEditButton").addEventListener("click", () => {
+  appState.workoutTemplateDraft = null;
+  showWorkoutTemplatesScreen();
 });
 
 
 // ---------------------------------------------------------------------------
-// Exercise picker (for adding an exercise to the scheme being edited)
+// Exercise picker (for adding an exercise to the workout template being edited)
 // ---------------------------------------------------------------------------
 
 function renderExercisePicker() {
@@ -3328,7 +3328,7 @@ function renderExercisePicker() {
         targetRepsMin: 8,
         targetRepsMax: 10,
         targetLoad: 20,
-        // A scheme's first target is a starting point, not a goal set by
+        // A workout template's first target is a starting point, not a goal set by
         // hand, so it never overrides a progression suggestion.
         targetLoadSetAt: null
       };
@@ -3344,21 +3344,21 @@ function renderExercisePicker() {
 
 document.getElementById("cancelExercisePickerButton").addEventListener("click", () => {
   exercisePickerScreen.hidden = true;
-  schemeEditorScreen.hidden = false;
+  workoutTemplateEditorScreen.hidden = false;
 });
 
 
 // ---------------------------------------------------------------------------
 // Planned exercise target entry (sets / rep range / load for one exercise
-// within the scheme being edited) — also reused, via nextGoalTarget, to
+// within the workout template being edited) — also reused, via nextGoalTarget, to
 // adjust an existing planned exercise's target from an active workout card.
 // ---------------------------------------------------------------------------
 
 const plannedExerciseEntryHint = document.getElementById("plannedExerciseEntryHint");
 
-// Opens the same panel used to add a new exercise to a scheme, but for
+// Opens the same panel used to add a new exercise to a workout template, but for
 // changing an *existing* one's target — triggered by "Set goal for next
-// time" on a workout card. Doesn't touch appState.schemeDraft: this saves
+// time" on a workout card. Doesn't touch appState.workoutTemplateDraft: this saves
 // straight to the template in appState.database, not to an in-progress edit.
 function openNextGoalEditor(templateId, exerciseId) {
   const template = appState.database.workoutTemplates.find((candidate) => candidate.id === templateId);
@@ -3366,7 +3366,7 @@ function openNextGoalEditor(templateId, exerciseId) {
   const exercise = appState.database.exercises.find((candidate) => candidate.id === exerciseId);
 
   // Starts from the weight today's sets are actually aiming at (the
-  // suggestion, unless a goal already overrides it), not from the scheme's
+  // suggestion, unless a goal already overrides it), not from the workout template's
   // stored target, which may be an old starting weight by now.
   const suggestion = getSuggestionForPlanned(planned);
   const currentLoad = suggestion && !isGoalOverride(planned, suggestion) ? suggestion.load : planned.targetLoad;
@@ -3447,7 +3447,7 @@ makeStepperValueEditable(
   () => appState.plannedExerciseDraft, "targetLoad", 0, false, renderPlannedExerciseDraft
 );
 
-// Resets the panel back to its "add a new exercise to the scheme being
+// Resets the panel back to its "add a new exercise to the workout template being
 // edited" defaults, so the next time it's opened for that purpose it
 // doesn't carry over the next-goal wording.
 function resetPlannedExerciseEntryPanelToAddMode() {
@@ -3483,11 +3483,11 @@ document.getElementById("savePlannedExerciseButton").addEventListener("click", (
     return;
   }
 
-  appState.schemeDraft.plannedExercises.push(appState.plannedExerciseDraft);
+  appState.workoutTemplateDraft.plannedExercises.push(appState.plannedExerciseDraft);
   appState.plannedExerciseDraft = null;
   plannedExerciseEntryPanel.hidden = true;
-  schemeEditorScreen.hidden = false;
-  renderSchemeEditor();
+  workoutTemplateEditorScreen.hidden = false;
+  renderWorkoutTemplateEditor();
 });
 
 document.getElementById("cancelPlannedExerciseButton").addEventListener("click", () => {
@@ -3501,7 +3501,7 @@ document.getElementById("cancelPlannedExerciseButton").addEventListener("click",
 
   appState.plannedExerciseDraft = null;
   plannedExerciseEntryPanel.hidden = true;
-  schemeEditorScreen.hidden = false;
+  workoutTemplateEditorScreen.hidden = false;
 });
 
 
