@@ -3168,7 +3168,7 @@ function renderSchemeEditor() {
   const isNewScheme = !appState.database.workoutTemplates.some(
     (template) => template.id === appState.schemeDraft.id
   );
-  document.getElementById("schemeEditorTitle").textContent = isNewScheme ? "New scheme" : "Edit scheme";
+  document.getElementById("schemeEditorTitle").textContent = isNewScheme ? "New workout" : "Edit workout";
   schemeNameInput.value = appState.schemeDraft.name;
 
   const listElement = document.getElementById("plannedExerciseList");
@@ -3236,7 +3236,7 @@ document.getElementById("saveSchemeButton").addEventListener("click", () => {
   const draft = appState.schemeDraft;
 
   if (draft.name.trim() === "") {
-    alert("Give the scheme a name before saving.");
+    alert("Give the workout a name before saving.");
     return;
   }
   if (draft.plannedExercises.length === 0) {
@@ -3397,7 +3397,7 @@ makeStepperValueEditable(
 // doesn't carry over the next-goal wording.
 function resetPlannedExerciseEntryPanelToAddMode() {
   plannedExerciseEntryHint.hidden = true;
-  document.getElementById("savePlannedExerciseButton").textContent = "Add to scheme";
+  document.getElementById("savePlannedExerciseButton").textContent = "Add to workout";
 }
 
 document.getElementById("savePlannedExerciseButton").addEventListener("click", () => {
