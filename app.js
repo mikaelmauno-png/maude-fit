@@ -41,7 +41,7 @@ try {
 
   let backupKey;
   try {
-    backupKey =backUpUnloadableData();
+    backupKey = backUpUnloadableData();
   } catch (backupError) {
     // Usually a full storage quota. Without a backup, starting fresh would
     // destroy the old data on the first save, so stop here instead. A
