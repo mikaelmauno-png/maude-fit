@@ -613,6 +613,13 @@ function renderTemplateWorkoutCards(template) {
       cardElement.appendChild(buildSuggestionLine(planned, suggestion));
     }
 
+    // Same line as in the set panel, so last session is visible between
+    // sets without opening anything.
+    const lastSessionLine = document.createElement("p");
+    lastSessionLine.className = "last-session-line";
+    lastSessionLine.textContent = describeLastSession(planned.exerciseId);
+    cardElement.appendChild(lastSessionLine);
+
     const pillRowElement = document.createElement("div");
     pillRowElement.className = "set-pills";
 
@@ -984,7 +991,7 @@ updateRestTimer();
 // than retroactive data fixes). Two independent kinds of PR: heaviest
 // weight ever, and highest single-set volume (load × reps) ever, for that
 // exercise. Warmups never count, and for a gym-specific exercise the
-// comparison is scoped to the same gym, matching findPreviousWorkingSet().
+// comparison is scoped to the same gym, matching findMostRecentWorkingSet().
 // ---------------------------------------------------------------------------
 
 const prBannerElement = document.getElementById("prBanner");
@@ -1162,15 +1169,20 @@ const saveSetButton = document.getElementById("saveSetButton");
 const deleteSetButton = document.getElementById("deleteSetButton");
 
 // Finds the most recently performed working (non-warmup) set for an
-// exercise, across all past sessions. Warmups are excluded because they
-// don't represent what was actually trained.
+// exercise, across all sessions — today's included. Warmups are excluded
+// because they don't represent what was actually trained.
+//
+// Only used to pick the set panel's starting values: once a set has been
+// logged today, the next one should start from it. What's *shown* as last
+// time's performance comes from describeLastSession below instead, which
+// deliberately skips today and covers the whole session, not one set.
 //
 // For a gym-specific exercise (machine/cable — see schema.js), this only
 // looks at sets from sessions logged at the same gym as the current one,
 // since those load numbers aren't comparable across locations. It falls
 // back to an ungrouped, all-gyms lookup when the exercise isn't flagged
 // gym-specific, or when today's session has no gym set to scope by.
-function findPreviousWorkingSet(exerciseId) {
+function findMostRecentWorkingSet(exerciseId) {
   const exercise = appState.database.exercises.find((candidate) => candidate.id === exerciseId);
   const activeSession = getActiveSession();
 
@@ -1194,6 +1206,44 @@ function findPreviousWorkingSet(exerciseId) {
   return matchingSets.reduce((mostRecent, set) =>
     set.performedAt > mostRecent.performedAt ? set : mostRecent
   );
+}
+
+// The grey "Last time" line, shown on a workout card and in the set panel:
+// every working set from the most recent earlier session of this exercise,
+// e.g. "Last time · 22 Sep: 100 kg × 8 · 8 · 7 — RIR 2 · 2 · 1".
+//
+// Built on findRecentSessions from progression.js, which already skips
+// today's session, ignores warmups, and keeps a gym-specific exercise to
+// today's gym. Sharing it means this line and the green suggestion are
+// always based on the same session and can't disagree.
+function describeLastSession(exerciseId) {
+  const exercise = appState.database.exercises.find((candidate) => candidate.id === exerciseId);
+  const activeSession = getActiveSession();
+  // Said out loud when the lookup is gym-scoped, so "not done before" isn't
+  // confusing for an exercise that has been done plenty — just elsewhere.
+  const isScopedToThisGym = Boolean(exercise.isGymSpecific && activeSession && activeSession.gymId);
+
+  const recentSessions = findRecentSessions(appState.database, exercise, activeSession, 1);
+  if (recentSessions.length === 0) {
+    return isScopedToThisGym ? "Not done at this gym before." : "First time doing this exercise.";
+  }
+
+  const { session, workingSets } = recentSessions[0];
+  const setsInOrder = workingSets.slice().sort((a, b) => a.order - b.order);
+  const scopeNote = isScopedToThisGym ? " (at this gym)" : "";
+  const rirText = setsInOrder.map((set) => set.rir).join(" · ");
+  return `Last time · ${formatShortDate(session.startedAt)}${scopeNote}: ` +
+    `${formatLoadsAndReps(setsInOrder)} — RIR ${rirText}`;
+}
+
+// "100 kg × 8 · 8 · 7" when every set used the same weight (the usual
+// case), otherwise each set in full: "100×8 · 100×8 · 97.5×7".
+function formatLoadsAndReps(sets) {
+  const everySetSameLoad = sets.every((set) => set.load === sets[0].load);
+  if (everySetSameLoad) {
+    return `${sets[0].load} kg × ${sets.map((set) => set.reps).join(" · ")}`;
+  }
+  return sets.map((set) => `${set.load}×${set.reps}`).join(" · ");
 }
 
 // Redraws the stepper values and the RIR row's visibility from
@@ -1232,7 +1282,7 @@ function resetSetEntryStepperEditUI() {
 // that suggestion's session (isGoalOverride), which wins over both.
 function openSetEntryPanel(exerciseId, planTarget = null) {
   const exercise = appState.database.exercises.find((candidate) => candidate.id === exerciseId);
-  const previous = findPreviousWorkingSet(exerciseId);
+  const previous = findMostRecentWorkingSet(exerciseId);
 
   resetSetEntryStepperEditUI();
   hidePersonalBestBanner();
@@ -1268,18 +1318,7 @@ function openSetEntryPanel(exerciseId, planTarget = null) {
     progressionSuggestion.hidden = true;
   }
 
-  if (previous) {
-    // Says "at this gym" when the comparison is gym-scoped, so it's clear
-    // why "No previous data" can still show up for an exercise that's
-    // actually been done many times, just not at today's gym.
-    const scopeNote = exercise.isGymSpecific && getActiveSession() && getActiveSession().gymId
-      ? " at this gym"
-      : "";
-    previousPerformance.textContent =
-      `Last${scopeNote}: ${previous.load} kg × ${previous.reps} (RIR ${previous.rir})`;
-  } else {
-    previousPerformance.textContent = "No previous data for this exercise.";
-  }
+  previousPerformance.textContent = describeLastSession(exerciseId);
 
   renderSetDraft();
   setEntryPanel.hidden = false;

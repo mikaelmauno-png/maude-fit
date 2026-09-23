@@ -34,7 +34,7 @@ function roundLoad(load) {
 // today, so it has to be based on what happened *before* today.
 //
 // For a gym-specific exercise (a machine or cable stack), only sessions at
-// the same gym count, for the same reason as findPreviousWorkingSet in
+// the same gym count, for the same reason as findMostRecentWorkingSet in
 // app.js: 50 kg on one gym's machine isn't 50 kg on another's.
 function findRecentSessions(database, exercise, activeSession, sessionCount) {
   const scopeToGymId = exercise.isGymSpecific && activeSession && activeSession.gymId

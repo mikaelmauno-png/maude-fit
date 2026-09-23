@@ -200,6 +200,14 @@ body:has(.bottom-sheet:not([hidden]))::before {
   font-size: 0.95rem;
 }
 
+/* The same "Last time" line on a workout card, between the green
+   suggestion and the set pills. */
+.last-session-line {
+  color: #b0b0b0;
+  font-size: 0.95rem;
+  margin: 0 0 12px;
+}
+
 #plannedExerciseEntryHint {
   color: #b0b0b0;
   font-size: 0.95rem;
