@@ -905,9 +905,22 @@ function startWorkout(templateId, gymId) {
   renderExerciseArea();
 }
 
+// True when a workout holds nothing at all: no sets (warmups included) and
+// no day status or notes. Such a workout was almost certainly started by
+// mistake, and saving it would turn that workout's tile green for the week
+// (at 0%) and leave a blank card in History.
+function isSessionEmpty(session) {
+  const hasSets = appState.database.sets.some((set) => set.sessionId === session.id);
+  return !hasSets && session.dayStatus === "normal" && session.notes === "";
+}
+
 endWorkoutButton.addEventListener("click", () => {
   const session = getActiveSession();
-  session.endedAt = new Date().toISOString();
+  if (isSessionEmpty(session)) {
+    deleteSessionAndItsSets(session.id);
+  } else {
+    session.endedAt = new Date().toISOString();
+  }
   saveDatabase(appState.database);
   closeSetEntryPanel();
   closeFreeformReview();
@@ -3911,10 +3924,10 @@ function recoverUnfinishedSessions() {
   if (isRecentEnoughToResume(newestSession)) {
     appState.activeSessionId = newestSession.id;
   } else {
-    finishSessionAtLastActivity(newestSession);
+    closeUnfinishedSession(newestSession);
   }
   for (const olderSession of unfinishedSessions.slice(1)) {
-    finishSessionAtLastActivity(olderSession);
+    closeUnfinishedSession(olderSession);
   }
   saveDatabase(appState.database);
 }
@@ -3935,6 +3948,16 @@ function isRecentEnoughToResume(session) {
   const millisecondsSinceActivity = Date.now() - new Date(findLastActivityTime(session)).getTime();
   const hoursSinceActivity = millisecondsSinceActivity / (60 * 60 * 1000);
   return hoursSinceActivity <= HOURS_WITHIN_WHICH_A_WORKOUT_RESUMES;
+}
+
+// An empty workout is dropped rather than finished, same as ending one by
+// hand (see isSessionEmpty).
+function closeUnfinishedSession(session) {
+  if (isSessionEmpty(session)) {
+    deleteSessionAndItsSets(session.id);
+    return;
+  }
+  finishSessionAtLastActivity(session);
 }
 
 // The real end time is unknown, so the last logged set stands in for it —
