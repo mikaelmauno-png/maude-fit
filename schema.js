@@ -19,7 +19,11 @@
 // Exercise.isGymSpecific below.
 //
 // Bumped to 4 for the addition of BodyweightEntry below.
-const SCHEMA_VERSION = 4;
+//
+// Bumped to 5 for the addition of Exercise.minimumLoadIncrement below. This
+// is the first bump with a migration (see migrateDatabase), so data saved
+// under version 4 is upgraded in place instead of being refused.
+const SCHEMA_VERSION = 5;
 
 // Every piece of app data lives under this one localStorage key, as a single
 // JSON string. One key is simpler to export, import, and reason about than
@@ -42,10 +46,15 @@ const STORAGE_KEY = "workoutLog";
 //   name:    "Barbell bench press",   // shown in the UI, safe to reword
 //   muscles: { chest: 1.0, frontDelt: 0.5, triceps: 0.5 },
 //   isArchived: false,                // hidden from pickers, kept for old history
-//   isGymSpecific: false              // true for machines/cable stacks whose
+//   isGymSpecific: false,             // true for machines/cable stacks whose
 //                                     // load numbers aren't comparable between
 //                                     // gyms; false for free weights, where a
 //                                     // kilogram means the same thing anywhere
+//   minimumLoadIncrement: 2.5         // kilograms: the smallest weight raise
+//                                     // this exercise's equipment allows (e.g.
+//                                     // 1 for small dumbbells, 5 for a machine
+//                                     // stack). Progression suggestions step
+//                                     // the load by exactly this much.
 // }
 //
 // About `muscles`: a value of 1.0 means the muscle is the prime mover
@@ -169,6 +178,43 @@ function createEmptyDatabase() {
 
 
 // ---------------------------------------------------------------------------
+// Migrations
+//
+// When SCHEMA_VERSION goes up, data saved by the older version still sits in
+// localStorage (and in old export files). A migration rewrites that old data
+// into the new shape, one version step at a time, so months of history
+// survive an app update.
+// ---------------------------------------------------------------------------
+
+// Version 4 exercises have no minimumLoadIncrement. 2.5 kg is the smallest
+// raise on a standard barbell (a 1.25 kg plate per side), so it's the
+// safest guess; machines and small dumbbells can be corrected afterwards in
+// the exercise library.
+function migrateFrom4To5(database) {
+  for (const exercise of database.exercises) {
+    exercise.minimumLoadIncrement = 2.5;
+  }
+  database.schemaVersion = 5;
+}
+
+// Keyed by the version each migration upgrades *from*. Versions with no
+// entry here (1-3) are too old to migrate and are still refused.
+const MIGRATIONS = {
+  4: migrateFrom4To5
+};
+
+// Applies migrations one step at a time until the data reaches
+// SCHEMA_VERSION, or stops at a version with no migration. The caller still
+// checks the final version, so unmigratable data is refused loudly rather
+// than half-upgraded silently.
+function migrateDatabase(database) {
+  while (database.schemaVersion !== SCHEMA_VERSION && MIGRATIONS[database.schemaVersion]) {
+    MIGRATIONS[database.schemaVersion](database);
+  }
+}
+
+
+// ---------------------------------------------------------------------------
 // Loading and saving
 // ---------------------------------------------------------------------------
 
@@ -189,6 +235,13 @@ function loadDatabase() {
   } catch (error) {
     console.error("Saved data could not be parsed. Not overwriting it.", error);
     throw new Error("Saved data is corrupt. Export a backup before continuing.");
+  }
+
+  // Upgrade older saved data, and write the upgraded version straight back
+  // so the migration only ever runs once per phone.
+  if (parsed.schemaVersion !== SCHEMA_VERSION && MIGRATIONS[parsed.schemaVersion]) {
+    migrateDatabase(parsed);
+    saveDatabase(parsed);
   }
 
   if (parsed.schemaVersion !== SCHEMA_VERSION) {
@@ -257,6 +310,10 @@ function exportDatabase() {
 function importDatabase(jsonText) {
   const parsed = JSON.parse(jsonText);
 
+  // An export made before an app update is still a valid backup, so known
+  // older versions are upgraded. Unknown versions still fail loudly below.
+  migrateDatabase(parsed);
+
   if (parsed.schemaVersion !== SCHEMA_VERSION) {
     throw new Error(
       `That file uses schema version ${parsed.schemaVersion}, but this app ` +
@@ -294,34 +351,39 @@ const STARTER_EXERCISES = [
     name: "Barbell bench press",
     muscles: { chest: 1.0, frontDelt: 0.5, triceps: 0.5 },
     isArchived: false,
-    isGymSpecific: false
+    isGymSpecific: false,
+    minimumLoadIncrement: 2.5
   },
   {
     id: "barbell-squat",
     name: "Barbell back squat",
     muscles: { quads: 1.0, glutes: 0.5, adductors: 0.5 },
     isArchived: false,
-    isGymSpecific: false
+    isGymSpecific: false,
+    minimumLoadIncrement: 2.5
   },
   {
     id: "romanian-deadlift",
     name: "Romanian deadlift",
     muscles: { hamstrings: 1.0, glutes: 1.0, lowerBack: 0.5 },
     isArchived: false,
-    isGymSpecific: false
+    isGymSpecific: false,
+    minimumLoadIncrement: 2.5
   },
   {
     id: "pull-up",
     name: "Pull-up",
     muscles: { lats: 1.0, biceps: 0.5, upperBack: 0.5 },
     isArchived: false,
-    isGymSpecific: false
+    isGymSpecific: false,
+    minimumLoadIncrement: 2.5
   },
   {
     id: "overhead-press",
     name: "Overhead press",
     muscles: { frontDelt: 1.0, triceps: 0.5, sideDelt: 0.5 },
     isArchived: false,
-    isGymSpecific: false
+    isGymSpecific: false,
+    minimumLoadIncrement: 2.5
   }
 ];

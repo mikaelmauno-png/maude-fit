@@ -1175,6 +1175,11 @@ function renderExercisesManageList() {
     nameSpan.textContent = exercise.isGymSpecific ? `${exercise.name} (gym-specific)` : exercise.name;
     infoElement.appendChild(nameSpan);
 
+    const incrementSpan = document.createElement("span");
+    incrementSpan.className = "history-card-line";
+    incrementSpan.textContent = `Min raise: ${exercise.minimumLoadIncrement} kg`;
+    infoElement.appendChild(incrementSpan);
+
     const musclesDescription = describeMuscles(exercise.muscles);
     if (musclesDescription) {
       const muscleSpan = document.createElement("span");
@@ -1201,6 +1206,25 @@ function renderExercisesManageList() {
         return;
       }
       exercise.name = trimmedName;
+      saveDatabase(appState.database);
+      renderExercisesManageList();
+    });
+
+    const incrementButton = document.createElement("button");
+    incrementButton.type = "button";
+    incrementButton.className = "small-button";
+    incrementButton.textContent = "Min raise";
+    incrementButton.addEventListener("click", () => {
+      const typedIncrement = prompt("Smallest weight raise for this exercise (kg)", exercise.minimumLoadIncrement);
+      if (typedIncrement === null) {
+        return;
+      }
+      const newIncrement = parseLoadIncrement(typedIncrement);
+      if (newIncrement === null) {
+        alert("Enter a weight above 0, e.g. 2.5.");
+        return;
+      }
+      exercise.minimumLoadIncrement = newIncrement;
       saveDatabase(appState.database);
       renderExercisesManageList();
     });
@@ -1234,7 +1258,7 @@ function renderExercisesManageList() {
       renderArchivedExercisesList();
     });
 
-    rowElement.append(infoElement, renameButton, musclesButton, gymToggleButton, archiveButton);
+    rowElement.append(infoElement, renameButton, incrementButton, musclesButton, gymToggleButton, archiveButton);
     listElement.appendChild(rowElement);
   }
 }
@@ -1311,12 +1335,30 @@ document.getElementById("toggleArchivedExercisesButton").addEventListener("click
   }
 });
 
+// Turns typed text into a weight increment, or null if it isn't a usable
+// one. Accepts a comma as the decimal mark too ("1,25"), since a Finnish
+// phone keyboard often offers a comma rather than a dot.
+function parseLoadIncrement(text) {
+  const parsed = parseFloat(String(text).replace(",", "."));
+  if (Number.isNaN(parsed) || parsed <= 0) {
+    return null;
+  }
+  return parsed;
+}
+
 document.getElementById("addExerciseButton").addEventListener("click", () => {
   const nameInput = document.getElementById("newExerciseNameInput");
   const gymSpecificCheckbox = document.getElementById("newExerciseGymSpecificCheckbox");
+  const incrementInput = document.getElementById("newExerciseIncrementInput");
   const name = nameInput.value.trim();
   if (name === "") {
     alert("Enter a name for the exercise.");
+    return;
+  }
+
+  const minimumLoadIncrement = parseLoadIncrement(incrementInput.value);
+  if (minimumLoadIncrement === null) {
+    alert("Enter a minimum weight raise above 0, e.g. 2.5.");
     return;
   }
 
@@ -1344,11 +1386,13 @@ document.getElementById("addExerciseButton").addEventListener("click", () => {
     // single quick step.
     muscles: {},
     isArchived: false,
-    isGymSpecific: gymSpecificCheckbox.checked
+    isGymSpecific: gymSpecificCheckbox.checked,
+    minimumLoadIncrement
   });
   saveDatabase(appState.database);
   nameInput.value = "";
   gymSpecificCheckbox.checked = false;
+  incrementInput.value = "2.5";
   renderExercisesManageList();
 });
 

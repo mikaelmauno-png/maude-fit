@@ -266,6 +266,13 @@
         <input type="checkbox" id="newExerciseGymSpecificCheckbox">
         Machine/gym-specific (load isn't comparable between gyms)
       </label>
+      <!-- The smallest weight jump this equipment allows. Training
+           suggestions raise or lower the load by exactly this much, so a
+           5 kg machine stack never gets told to add 2.5 kg. -->
+      <label class="text-field">
+        Minimum weight raise (kg)
+        <input type="number" inputmode="decimal" id="newExerciseIncrementInput" value="2.5" min="0.25" step="0.25">
+      </label>
       <div class="button-row">
         <button id="addExerciseButton">Add exercise</button>
       </div>
