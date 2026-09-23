@@ -489,6 +489,7 @@ h1 {
 }
 
 .weekly-bar-fill {
+  position: relative;
   width: 100%;
   background-color: #3a8a45;
   display: flex;
@@ -502,6 +503,21 @@ h1 {
   color: #ffffff;
   font-size: 0.8rem;
   font-weight: bold;
+}
+
+/* A short fill can't hold its own label, so the label is lifted out of it:
+   position: absolute takes it out of the fill's layout, and bottom: 100%
+   puts its bottom edge on the fill's top edge. It still lands inside the
+   grey track, which has room to show it. The fill needs position: relative
+   (above) for "100%" to mean the fill's height rather than the page's. */
+.weekly-bar-fill-short .weekly-bar-percent {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  padding-bottom: 2px;
+  text-align: center;
+  color: #f0f0f0;
 }
 
 .weekly-bar-label {

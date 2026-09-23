@@ -2591,6 +2591,12 @@ function renderWeeklyWorkoutTemplateSummary() {
       // A floor so even a low percentage still shows a visible sliver
       // instead of looking identical to "not done".
       fill.style.height = `${Math.max(percent, 8)}%`;
+      // Below this the green part is shorter than the label's text, which
+      // would be cut off — so the label moves to sit just above the fill.
+      const minimumPercentThatFitsLabel = 20;
+      if (percent < minimumPercentThatFitsLabel) {
+        fill.classList.add("weekly-bar-fill-short");
+      }
       const percentLabel = document.createElement("span");
       percentLabel.className = "weekly-bar-percent";
       percentLabel.textContent = `${percent}%`;
