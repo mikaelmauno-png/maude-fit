@@ -15,17 +15,50 @@ if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("service-worker.js");
 }
 
-// Loading can fail if localStorage holds data saved under an older
-// SCHEMA_VERSION (see schema.js) — there's no migration written yet, so
-// rather than leaving the app permanently broken, this starts fresh and says
-// so clearly, instead of silently discarding whatever was there.
+// Copies the stored text that couldn't be loaded to its own backup key, and
+// returns that key. This must happen before the app starts on a blank
+// database: the very next save writes to STORAGE_KEY and would otherwise
+// overwrite the old training history for good.
+//
+// The raw text is copied as-is, without parsing, so even corrupt JSON is
+// kept exactly as it was. The timestamp in the key means a second failure
+// later on can never overwrite an earlier backup.
+function backUpUnloadableData() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  const backupKey = `${STORAGE_KEY}-backup-${new Date().toISOString()}`;
+  localStorage.setItem(backupKey, raw);
+  return backupKey;
+}
+
+// Loading fails if the stored data is corrupt, or was saved under a schema
+// version that has no migration in schema.js. Starting on a blank database
+// keeps the app usable, but only once the old data is safely backed up.
 let initialDatabase;
 try {
   initialDatabase = loadDatabase();
 } catch (error) {
-  console.error("Could not load saved data, starting fresh.", error);
+  console.error("Could not load saved data.", error);
+
+  let backupKey;
+  try {
+    backupKey =backUpUnloadableData();
+  } catch (backupError) {
+    // Usually a full storage quota. Without a backup, starting fresh would
+    // destroy the old data on the first save, so stop here instead. A
+    // broken app can be fixed; lost history can't be recovered.
+    console.error("Could not back up the unloadable data.", backupError);
+    alert(
+      "Your saved data could not be loaded, and it could not be backed up " +
+      "either. The app will not start, so that nothing gets overwritten. " +
+      "Your data is still stored under \"" + STORAGE_KEY + "\"."
+    );
+    throw backupError;
+  }
+
   alert(
-    "Saved data was from an older version of this app and could not be loaded. Starting with a blank database."
+    "Your saved data could not be loaded (" + error.message + ").\n\n" +
+    "Nothing was deleted: a copy was kept under \"" + backupKey + "\". " +
+    "Starting with a blank database."
   );
   initialDatabase = createEmptyDatabase();
 }
