@@ -214,10 +214,11 @@
          so it can be shown over activeWorkoutScreen (workout template cards /
          free-form list) or over historyScreen (editing a past set) without
          needing either screen hidden underneath it. Whichever screen opened
-         it stays visible; this one is layered in below via its own "hidden"
-         toggle, same pattern as plannedExerciseEntryPanel further down.
+         it stays visible underneath; class="bottom-sheet" pins this one to
+         the bottom of the screen on top of it (see style.css), same pattern
+         as the other panels with that class.
          =================================================================== -->
-    <section id="setEntryPanel" hidden>
+    <section id="setEntryPanel" class="bottom-sheet" hidden>
       <h2 id="setEntryExerciseName"></h2>
       <!-- Only shown when this set came from a workout template's plan. -->
       <p id="plannedTarget" hidden></p>
@@ -285,7 +286,7 @@
          session's History card ("Edit status"), so it needs to layer over
          either screen.
          =================================================================== -->
-    <section id="dayStatusPanel" hidden>
+    <section id="dayStatusPanel" class="bottom-sheet" hidden>
       <h2 id="dayStatusHeading">Today's status</h2>
       <!-- Filled in from DAY_STATUSES in schema.js, so this stays in sync
            with the schema's contract rather than duplicating the list. -->
@@ -352,7 +353,7 @@
          section shown over exercisesScreen (not a full screen swap), same
          pattern as plannedExerciseEntryPanel and setEntryPanel.
          =================================================================== -->
-    <section id="muscleEditorPanel" hidden>
+    <section id="muscleEditorPanel" class="bottom-sheet" hidden>
       <h2 id="muscleEditorExerciseName"></h2>
 
       <h3>Main muscle</h3>
@@ -628,7 +629,7 @@
          existing exercise's target from an active template workout's card
          ("Set goal for next time").
          =================================================================== -->
-    <section id="plannedExerciseEntryPanel" hidden>
+    <section id="plannedExerciseEntryPanel" class="bottom-sheet" hidden>
       <h2 id="plannedExerciseEntryName"></h2>
       <p id="plannedExerciseEntryHint" hidden></p>
 

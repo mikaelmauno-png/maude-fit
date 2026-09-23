@@ -133,11 +133,66 @@ button:active {
   background-color: #7a2424;
 }
 
-#setEntryPanel {
+/* ---------------------------------------------------------------------------
+   Bottom sheets: the set panel, today's status, the goal editor and the
+   muscle editor. Each opens on top of whatever screen it was opened from,
+   pinned to the bottom edge where the thumb already is — otherwise it would
+   appear wherever it happens to sit in index.html, often far off-screen
+   (below every workout card, or above a scrolled-down History list).
+   --------------------------------------------------------------------------- */
+
+/* position: fixed takes the sheet out of the page's normal flow and pins it
+   to the screen itself, so it shows in the same place however far the page
+   underneath is scrolled. A sheet taller than 90% of the screen (the muscle
+   editor) scrolls inside itself instead of running off the top.
+   env(safe-area-inset-bottom) keeps the last buttons clear of an iPhone's
+   home-indicator strip, same as the bottom nav bar. */
+.bottom-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  max-height: 90vh;
+  overflow-y: auto;
+  /* Scrolling to the end of a tall sheet shouldn't carry on into scrolling
+     the page behind it. */
+  overscroll-behavior: contain;
+  box-sizing: border-box;
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
   background-color: #1e1e1e;
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 24px;
+  border-top: 1px solid #333333;
+  border-radius: 16px 16px 0 0;
+}
+
+.bottom-sheet h2 {
+  margin-top: 0;
+}
+
+/* While any sheet is open, the page behind it is dimmed and frozen.
+   `body:has(...)` means "the body, whenever it contains an open sheet" —
+   so no JavaScript has to remember to switch this on and off; it follows
+   the sheets' own `hidden` attribute automatically. */
+body:has(.bottom-sheet:not([hidden])) {
+  overflow: hidden;
+}
+
+/* The dimming layer. ::before adds an extra, invisible-in-the-HTML box to
+   the body; position: fixed with all four sides at 0 stretches it over the
+   whole screen, just under the sheet (z-index 9 vs. the sheet's 10). Beyond
+   dimming, it catches taps: without it, a tap beside the sheet could land
+   on another set pill behind it and swap out what was being entered.
+   Tapping it deliberately does nothing — an inaccurate thumb shouldn't be
+   able to throw away the steppers' values. Cancel is the way out. */
+body:has(.bottom-sheet:not([hidden]))::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 9;
+  background-color: rgba(0, 0, 0, 0.6);
 }
 
 #previousPerformance {

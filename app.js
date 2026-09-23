@@ -3613,6 +3613,10 @@ function renderExercisePicker() {
       document.getElementById("plannedExerciseEntryName").textContent = exercise.name;
       renderPlannedExerciseDraft();
       exercisePickerScreen.hidden = true;
+      // The panel is a bottom sheet (style.css), so it needs a screen
+      // behind it: the workout being edited, where the exercise is about
+      // to land.
+      workoutTemplateEditorScreen.hidden = false;
       plannedExerciseEntryPanel.hidden = false;
     });
     itemElement.appendChild(buttonElement);
