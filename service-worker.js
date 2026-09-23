@@ -9,7 +9,7 @@
 // without bumping it, "install" below sees the old cache already exists and
 // never re-fetches anything, so a code change would never actually reach a
 // phone that already has the app installed.
-const CACHE_NAME = "treeniappi-v14";
+const CACHE_NAME = "treeniappi-v15";
 
 const APP_SHELL_FILES = [
   "./",
@@ -25,8 +25,13 @@ const APP_SHELL_FILES = [
 ];
 
 self.addEventListener("install", (event) => {
+  // cache: "reload" makes each file come fresh from the server. Without it
+  // the browser may hand back its own ordinary copy (GitHub Pages lets
+  // those live for 10 minutes), and a new version could get stored with
+  // some of the previous version's files inside it.
+  const freshRequests = APP_SHELL_FILES.map((url) => new Request(url, { cache: "reload" }));
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL_FILES))
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(freshRequests))
   );
   // Take over immediately instead of waiting for every open tab to close —
   // a workout logger someone is relying on right now shouldn't need a full

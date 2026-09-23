@@ -13,6 +13,7 @@
 // app still works without one, just without offline caching.
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("service-worker.js");
+  watchForAppUpdates();
 }
 
 // Copies the stored text that couldn't be loaded to its own backup key, and
@@ -69,6 +70,7 @@ const appState = {
   activeSessionId: null,       // null unless a workout is in progress
   setDraft: null,               // in-progress values for the set being logged
   editingSetId: null,           // id of an existing set being corrected, or null when logging a new one
+  isAppUpdateWaiting: false,   // true once a new app version has taken over but this page hasn't reloaded into it yet
   selectedWorkoutTileTemplateId: null, // which home-screen workout tile's details panel is open; null when none
   workoutTemplateDraft: null,  // in-progress copy of the workout template being edited
   plannedExerciseDraft: null,  // in-progress values for a planned exercise
@@ -154,6 +156,9 @@ function showMainScreen() {
   renderStartWorkoutChoices();
   renderWeeklyWorkoutTemplateSummary();
   renderMuscleCounters();
+  // Coming back home (e.g. after ending a workout) is the moment a waiting
+  // update can finally be applied.
+  reloadForUpdateIfSafe();
 }
 
 // Doesn't touch appState.activeSessionId or end the workout — this just
@@ -3812,6 +3817,67 @@ importFileInput.addEventListener("change", () => {
   };
   reader.readAsText(chosenFile);
 });
+
+
+// ---------------------------------------------------------------------------
+// App updates
+//
+// A new version reaches the phone in the background: service-worker.js
+// notices changed files, downloads them, and takes over. But the page
+// already on screen was loaded from the old files, so without a reload the
+// new version would only show up the *next* time the app is opened.
+//
+// The reload only ever happens on the home screen with no workout in
+// progress. A workout in progress isn't restored after a reload, and an
+// open set-entry panel would lose what was being typed.
+// ---------------------------------------------------------------------------
+
+function watchForAppUpdates() {
+  // On the very first visit no service worker is in charge yet, and the
+  // first one taking over is just installation, not an update — there is
+  // nothing newer to reload into.
+  const hadServiceWorkerAtLoad = navigator.serviceWorker.controller !== null;
+
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadServiceWorkerAtLoad) {
+      return;
+    }
+    appState.isAppUpdateWaiting = true;
+    reloadForUpdateIfSafe();
+  });
+
+  // Switching back to the app on a phone usually just wakes up the old page
+  // instead of loading it again, and the browser only checks for a new
+  // version on a real load. So check by hand each time the app comes back
+  // into view.
+  document.addEventListener("visibilitychange", checkForAppUpdate);
+}
+
+function checkForAppUpdate() {
+  if (document.visibilityState !== "visible") {
+    return;
+  }
+  navigator.serviceWorker.getRegistration().then((registration) => {
+    if (!registration) {
+      return;
+    }
+    // Fails with no signal. Nothing to do about that — the next time the
+    // app comes back into view it simply tries again.
+    registration.update().catch(() => {});
+  });
+}
+
+function reloadForUpdateIfSafe() {
+  if (!appState.isAppUpdateWaiting) {
+    return;
+  }
+  const isIdleOnHomeScreen = !mainScreen.hidden && appState.activeSessionId === null;
+  if (!isIdleOnHomeScreen) {
+    // Stays waiting; showMainScreen() calls this again on the way home.
+    return;
+  }
+  location.reload();
+}
 
 
 // ---------------------------------------------------------------------------
