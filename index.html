@@ -456,6 +456,7 @@
 
       <div id="bodyweightChartArea">
         <h3>Trend</h3>
+        <div id="bodyweightRangePicker" class="button-row chart-range-picker"></div>
         <div id="bodyweightChart" class="stats-chart"></div>
       </div>
       <p id="bodyweightEmptyMessage" hidden>No weigh-ins logged yet.</p>
@@ -507,7 +508,6 @@
         <button id="backFromExerciseStatsDetailButton">Back</button>
       </div>
       <h1 id="exerciseStatsDetailName"></h1>
-      <p id="exerciseStatsEmptyMessage" hidden>No working sets logged for this exercise yet.</p>
 
       <!-- Only shown for a gym-specific exercise that's been logged at more
            than one gym — machine/cable numbers aren't comparable across
@@ -515,6 +515,12 @@
            entirely (not just empty) for a non-gym-specific exercise or one
            only ever done at a single gym, since there's nothing to choose. -->
       <div id="exerciseStatsGymPicker" class="button-row" hidden></div>
+
+      <!-- 6 wk / 12 wk / 24 wk / All — filled in by renderChartRangePicker
+           in app.js. Same buttons, and the same shared setting, above every
+           trend chart. -->
+      <div id="exerciseStatsRangePicker" class="button-row chart-range-picker"></div>
+      <p id="exerciseStatsEmptyMessage" hidden></p>
 
       <div id="exerciseStatsCharts" hidden>
         <h3>Weight (heaviest set per week, kg)</h3>
@@ -560,7 +566,8 @@
         <button id="backFromMuscleStatsDetailButton">Back</button>
       </div>
       <h1 id="muscleStatsDetailName"></h1>
-      <p id="muscleStatsEmptyMessage" hidden>No sets logged for this muscle yet.</p>
+      <div id="muscleStatsRangePicker" class="button-row chart-range-picker"></div>
+      <p id="muscleStatsEmptyMessage" hidden></p>
       <div id="muscleStatsChartContainer" hidden>
         <h3>Weighted sets per week</h3>
         <div id="muscleStatsChart" class="stats-chart"></div>

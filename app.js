@@ -81,6 +81,7 @@ const appState = {
   dayStatusEditingSessionId: null, // which session the open day-status panel is editing (active or a past one); null when the panel is closed
   muscleEditorExerciseId: null,   // which exercise's muscle editor is open; null otherwise
   muscleDraft: null,              // { mainMuscle, secondaryMuscles } while the muscle editor is open; null otherwise
+  chartRangeWeeks: 12,              // how many weeks back every trend chart shows (6, 12 or 24), or null for all-time; one setting shared by all charts
   exerciseStatsSelectedGymId: null, // which gym's data the stats charts are scoped to, when the exercise is gym-specific and used at more than one gym
   bodyweightDraftWeightKg: null,    // value shown on the bodyweight stepper; null only before the Bodyweight screen has been opened once
   editingBodyweightEntryId: null,   // id of a past entry being corrected, or null while logging today's weight
@@ -2501,20 +2502,27 @@ function renderBodyweightChart() {
   chartAreaElement.hidden = false;
   emptyMessageElement.hidden = true;
 
-  // Capped to the most recent 30 entries so the chart stays readable years
-  // into logging — same reasoning the exercise stats charts cap to 8 weeks.
+  renderChartRangePicker(document.getElementById("bodyweightRangePicker"), renderBodyweightChart);
+
   const recentEntries = appState.database.bodyweightEntries
-    .slice()
-    .sort((a, b) => a.loggedAt.localeCompare(b.loggedAt))
-    .slice(-30);
+    .filter((entry) => isWithinChartRange(entry.loggedAt))
+    .sort((a, b) => a.loggedAt.localeCompare(b.loggedAt));
+
+  // Unlike the other two screens, the range buttons live inside the chart
+  // area here, so they stay visible with the "nothing in range" note below
+  // them instead of the whole area disappearing.
+  const chartElement = document.getElementById("bodyweightChart");
+  if (recentEntries.length === 0) {
+    chartElement.textContent = describeEmptyChartRange();
+    return;
+  }
 
   const dataPoints = recentEntries.map((entry) => ({
     label: formatSessionDate(entry.loggedAt),
     value: entry.weightKg
   }));
 
-  document.getElementById("bodyweightChart").innerHTML =
-    buildLineChartSVG(dataPoints, (value) => `${value} kg`);
+  chartElement.innerHTML = buildLineChartSVG(dataPoints, (value) => `${value} kg`);
 }
 
 function renderBodyweightList() {
@@ -2637,6 +2645,63 @@ function getCurrentWeekRange() {
 // Monday, e.g. "2026-09-21".
 function getWeekKey(date) {
   return getWeekRangeContaining(date).start.toISOString().slice(0, 10);
+}
+
+
+// ---------------------------------------------------------------------------
+// Chart time range — the "6 wk / 12 wk / 24 wk / All" buttons above every
+// trend chart (exercise, muscle, bodyweight). One shared setting, so
+// choosing a range on one chart carries over to the next one you open.
+// ---------------------------------------------------------------------------
+
+const CHART_RANGES = [
+  { label: "6 wk", weeks: 6 },
+  { label: "12 wk", weeks: 12 },
+  { label: "24 wk", weeks: 24 },
+  { label: "All", weeks: null }
+];
+
+// The earliest moment the selected range includes, or null for all-time.
+// Counted in whole Monday-to-Monday weeks with this week as the last one, so
+// "6 wk" means this week plus the five before it — the same weeks the chart
+// points are grouped into.
+function getChartRangeStart() {
+  if (appState.chartRangeWeeks === null) {
+    return null;
+  }
+  const start = getCurrentWeekRange().start;
+  start.setDate(start.getDate() - (appState.chartRangeWeeks - 1) * 7);
+  return start;
+}
+
+function isWithinChartRange(isoString) {
+  const rangeStart = getChartRangeStart();
+  return rangeStart === null || new Date(isoString) >= rangeStart;
+}
+
+// Fills `containerElement` with one toggle button per range. `onChange` is
+// the screen's own render function, called after the choice is saved in
+// appState so the screen can redraw its charts (and these buttons) with it.
+function renderChartRangePicker(containerElement, onChange) {
+  containerElement.innerHTML = "";
+  for (const range of CHART_RANGES) {
+    const rangeButton = document.createElement("button");
+    rangeButton.type = "button";
+    rangeButton.className = "day-status-option";
+    rangeButton.textContent = range.label;
+    rangeButton.classList.toggle("day-status-option-selected", range.weeks === appState.chartRangeWeeks);
+    rangeButton.addEventListener("click", () => {
+      appState.chartRangeWeeks = range.weeks;
+      onChange();
+    });
+    containerElement.appendChild(rangeButton);
+  }
+}
+
+// What an empty chart says when there is older data, just none in the
+// chosen range — so it doesn't look as if the history has vanished.
+function describeEmptyChartRange() {
+  return `Nothing logged in the last ${appState.chartRangeWeeks} weeks. Try a longer range.`;
 }
 
 
@@ -3109,14 +3174,15 @@ function getGymsUsedForExercise(exerciseId) {
   return appState.database.gyms.filter((gym) => gymIds.has(gym.id));
 }
 
-// One point per week that has data (most recent `weekCount` such weeks),
-// each the heaviest non-warmup set logged that week for this exercise.
+// One point per week that has data within the selected chart range (see
+// getChartRangeStart), each the heaviest non-warmup set logged that week
+// for this exercise.
 // `gymId` (optional) restricts this to sets from sessions at that gym —
 // used for a gym-specific exercise, so the chart doesn't mix load numbers
 // that aren't comparable between locations.
-function getWeeklyBestSets(exerciseId, weekCount, gymId = null) {
+function getWeeklyBestSets(exerciseId, gymId = null) {
   let workingSets = appState.database.sets.filter(
-    (set) => set.exerciseId === exerciseId && !set.isWarmup
+    (set) => set.exerciseId === exerciseId && !set.isWarmup && isWithinChartRange(set.performedAt)
   );
 
   if (gymId !== null) {
@@ -3138,7 +3204,26 @@ function getWeeklyBestSets(exerciseId, weekCount, gymId = null) {
   // Week keys are ISO dates (Monday of that week), so sorting the strings
   // sorts them chronologically too.
   const sortedWeekKeys = Array.from(bestByWeekKey.keys()).sort();
-  return sortedWeekKeys.slice(-weekCount).map((weekKey) => bestByWeekKey.get(weekKey));
+  return sortedWeekKeys.map((weekKey) => bestByWeekKey.get(weekKey));
+}
+
+// Which points get a value and date written next to them. At most
+// `maximumLabels`: always the first and last, plus others spread evenly in
+// between. A long range can have dozens of points, and a label on every one
+// would pile up into an unreadable smear on a phone-width chart.
+function chooseLabelledPointIndexes(pointCount, maximumLabels) {
+  const labelledIndexes = new Set();
+  if (pointCount <= maximumLabels) {
+    for (let index = 0; index < pointCount; index++) {
+      labelledIndexes.add(index);
+    }
+    return labelledIndexes;
+  }
+  const spacing = (pointCount - 1) / (maximumLabels - 1);
+  for (let labelNumber = 0; labelNumber < maximumLabels; labelNumber++) {
+    labelledIndexes.add(Math.round(labelNumber * spacing));
+  }
+  return labelledIndexes;
 }
 
 // Builds a small hand-drawn line chart as an SVG string (no charting
@@ -3161,16 +3246,23 @@ function buildLineChartSVG(dataPoints, valueFormatter) {
   const points = dataPoints.map((point, index) => {
     const x = padding.left + index * xStep;
     const y = padding.top + plotHeight - ((point.value - minValue) / valueRange) * plotHeight;
-    return { x, y, point };
+    return { x, y, point, index };
   });
 
   const pathData = points
     .map((p, index) => `${index === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
     .join(" ");
 
+  // Smaller dots once there are many, so they don't merge into a solid bar.
+  const dotRadius = points.length > 30 ? 2 : 3.5;
   const circlesSVG = points
-    .map((p) => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.5" fill="#2a6df4" />`)
+    .map((p) => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${dotRadius}" fill="#2a6df4" />`)
     .join("");
+
+  // Four fit: a full date like "19.4.2026" is wide enough that a fifth
+  // would start touching its neighbours on a phone-width chart.
+  const labelledIndexes = chooseLabelledPointIndexes(points.length, 4);
+  const labelledPoints = points.filter((p) => labelledIndexes.has(p.index));
 
   // A label centered ("middle") on the first or last point would extend
   // past the chart's left/right edge and get clipped by the viewBox — so
@@ -3182,17 +3274,17 @@ function buildLineChartSVG(dataPoints, valueFormatter) {
     return "middle";
   }
 
-  const valueLabelsSVG = points
-    .map((p, index) => {
+  const valueLabelsSVG = labelledPoints
+    .map((p) => {
       // Clamps the label near the top of the chart instead of letting it
       // run off the edge when the point itself is close to the top.
       const labelY = Math.max(p.y - 8, 12);
-      return `<text x="${p.x.toFixed(1)}" y="${labelY.toFixed(1)}" font-size="11" fill="#f0f0f0" text-anchor="${anchorFor(index)}">${valueFormatter(p.point.value)}</text>`;
+      return `<text x="${p.x.toFixed(1)}" y="${labelY.toFixed(1)}" font-size="11" fill="#f0f0f0" text-anchor="${anchorFor(p.index)}">${valueFormatter(p.point.value)}</text>`;
     })
     .join("");
 
-  const axisLabelsSVG = points
-    .map((p, index) => `<text x="${p.x.toFixed(1)}" y="${height - 6}" font-size="10" fill="#9a9a9a" text-anchor="${anchorFor(index)}">${p.point.label}</text>`)
+  const axisLabelsSVG = labelledPoints
+    .map((p) => `<text x="${p.x.toFixed(1)}" y="${height - 6}" font-size="10" fill="#9a9a9a" text-anchor="${anchorFor(p.index)}">${p.point.label}</text>`)
     .join("");
 
   return `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">` +
@@ -3262,11 +3354,19 @@ function renderExerciseStatsDetail(exerciseId) {
     appState.exerciseStatsSelectedGymId = gymsUsed[0] ? gymsUsed[0].id : null;
   }
 
-  const weeklyBestSets = getWeeklyBestSets(exerciseId, 8, appState.exerciseStatsSelectedGymId);
+  renderChartRangePicker(
+    document.getElementById("exerciseStatsRangePicker"),
+    () => renderExerciseStatsDetail(exerciseId)
+  );
+
+  const weeklyBestSets = getWeeklyBestSets(exerciseId, appState.exerciseStatsSelectedGymId);
   const emptyMessage = document.getElementById("exerciseStatsEmptyMessage");
   const chartsContainer = document.getElementById("exerciseStatsCharts");
 
   if (weeklyBestSets.length === 0) {
+    // This screen is only reachable for an exercise with logged sets, so
+    // an empty chart here always means "none in this range".
+    emptyMessage.textContent = describeEmptyChartRange();
     emptyMessage.hidden = false;
     chartsContainer.hidden = true;
     return;
@@ -3394,11 +3494,11 @@ document.getElementById("backFromPersonalBestsButton").addEventListener("click",
 // One point per week that has data (most recent `weekCount` such weeks):
 // the total weighted sets for `muscle` across every exercise that has it,
 // summed from that week's non-warmup sets.
-function getWeeklyMuscleSetCounts(muscle, weekCount) {
+function getWeeklyMuscleSetCounts(muscle) {
   const countsByWeekKey = new Map();
 
   for (const set of appState.database.sets) {
-    if (set.isWarmup) {
+    if (set.isWarmup || !isWithinChartRange(set.performedAt)) {
       continue;
     }
     const exercise = appState.database.exercises.find((candidate) => candidate.id === set.exerciseId);
@@ -3413,7 +3513,7 @@ function getWeeklyMuscleSetCounts(muscle, weekCount) {
   // Week keys are ISO dates (Monday of that week), so sorting the strings
   // sorts them chronologically too — same trick getWeeklyBestSets() uses.
   const sortedWeekKeys = Array.from(countsByWeekKey.keys()).sort();
-  return sortedWeekKeys.slice(-weekCount).map((weekKey) => ({
+  return sortedWeekKeys.map((weekKey) => ({
     weekKey,
     value: countsByWeekKey.get(weekKey)
   }));
@@ -3455,11 +3555,19 @@ function renderMuscleStatsList() {
 function renderMuscleStatsDetail(muscle) {
   document.getElementById("muscleStatsDetailName").textContent = MUSCLE_GROUP_LABELS[muscle];
 
-  const weeklyCounts = getWeeklyMuscleSetCounts(muscle, 8);
+  renderChartRangePicker(
+    document.getElementById("muscleStatsRangePicker"),
+    () => renderMuscleStatsDetail(muscle)
+  );
+
+  const weeklyCounts = getWeeklyMuscleSetCounts(muscle);
   const emptyMessage = document.getElementById("muscleStatsEmptyMessage");
   const chartContainer = document.getElementById("muscleStatsChartContainer");
 
   if (weeklyCounts.length === 0) {
+    // Only muscles with logged sets are listed, so empty means "none in
+    // this range".
+    emptyMessage.textContent = describeEmptyChartRange();
     emptyMessage.hidden = false;
     chartContainer.hidden = true;
     return;

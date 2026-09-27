@@ -923,3 +923,10 @@ h1 {
 .picker-group ul {
   margin: 0 0 16px 12px;
 }
+
+/* Four short range buttons ("6 wk" ... "All") should share one row. The
+   usual .button-row minimum width would wrap them onto two rows. */
+.chart-range-picker button {
+  min-width: 0;
+  padding: 12px 8px;
+}
