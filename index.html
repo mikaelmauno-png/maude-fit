@@ -694,7 +694,28 @@
 
       <div class="button-row">
         <button id="savePlannedExerciseButton">Add to workout</button>
+        <!-- Only shown when adding an exercise to a workout in progress:
+             then the button above means "today only" and this one means
+             "today and the template too". -->
+        <button id="savePlannedExerciseToTemplateButton" hidden>Today + template</button>
         <button id="cancelPlannedExerciseButton">Cancel</button>
+      </div>
+    </section>
+
+
+    <!-- ===================================================================
+         REMOVE EXERCISE PANEL: opened from a workout card's "Remove from
+         workout" button (edit mode only). Which buttons show depends on
+         the exercise; see openRemoveExercisePanel in app.js. Nothing here
+         deletes logged sets.
+         =================================================================== -->
+    <section id="removeExercisePanel" class="bottom-sheet" hidden>
+      <h2 id="removeExerciseHeading"></h2>
+      <p id="removeExerciseHint"></p>
+      <div class="button-stack">
+        <button id="removeExerciseTodayButton">Skip it today only</button>
+        <button id="removeExerciseFromTemplateButton" class="destructive-button"></button>
+        <button id="cancelRemoveExerciseButton" class="card-action-button">Cancel</button>
       </div>
     </section>
 

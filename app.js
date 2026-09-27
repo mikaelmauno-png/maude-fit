@@ -75,6 +75,10 @@ const appState = {
   workoutTemplateDraft: null,  // in-progress copy of the workout template being edited
   plannedExerciseDraft: null,  // in-progress values for a planned exercise
   pendingTemplateId: null,     // workout template chosen at Start Workout, held while the gym picker is open
+  isEditingWorkoutExercises: false, // true while the active workout shows its "Add exercise" and "Remove" buttons
+  exercisePickerPurpose: null, // "workoutTemplate" (adding to the template being edited) or "activeWorkout" (adding to the workout in progress) while the exercise picker is open
+  isAddingExerciseToWorkout: false, // true while the target panel is setting up an exercise being added to the workout in progress
+  removeExerciseTargetId: null, // which exercise the "Remove from workout" panel is about; null when it's closed
   nextGoalTarget: null,        // { templateId, exerciseId } while adjusting an existing planned exercise's target from a workout card; null otherwise
   freeformReviewExerciseId: null, // which exercise's logged-sets review card is open, in a free-form workout; null otherwise
   dayStatusDraft: null,           // { dayStatus, notes } while the today's-status panel is open; null otherwise
@@ -135,6 +139,7 @@ const setEntryPanel = document.getElementById("setEntryPanel");
 // either activeWorkoutScreen (the "Today's status" button) or historyScreen
 // (a past session's "Edit status" button).
 const dayStatusPanel = document.getElementById("dayStatusPanel");
+const removeExercisePanel = document.getElementById("removeExercisePanel");
 
 // Every top-level screen, so each show*Screen() function below can hide all
 // of them and then reveal just its own, without repeating this list six times.
@@ -143,7 +148,7 @@ const allScreens = [
   exercisePickerScreen, plannedExerciseEntryPanel, exercisesScreen, historyScreen, gymsScreen,
   gymPickerScreen, setEntryPanel, exerciseStatsListScreen, exerciseStatsDetailScreen, muscleEditorPanel,
   personalBestsScreen, muscleStatsListScreen, muscleStatsDetailScreen, dayStatusPanel,
-  bodyweightScreen
+  bodyweightScreen, removeExercisePanel
 ];
 
 function hideAllScreens() {
@@ -316,6 +321,20 @@ function getActiveTemplate() {
     return null;
   }
   return appState.database.workoutTemplates.find((template) => template.id === session.templateId) || null;
+}
+
+// A template workout's exercise list for that day: the template's own
+// list, minus anything skipped for that workout only, plus anything added
+// for that workout only (see Session in schema.js).
+function getSessionPlannedExercises(session, template) {
+  const keptFromTemplate = template.plannedExercises.filter(
+    (planned) => !session.removedExerciseIds.includes(planned.exerciseId)
+  );
+  return keptFromTemplate.concat(session.addedExercises);
+}
+
+function isAddedForThisWorkoutOnly(session, exerciseId) {
+  return session.addedExercises.some((planned) => planned.exerciseId === exerciseId);
 }
 
 
@@ -611,8 +630,9 @@ function buildSuggestionLine(planned, suggestion) {
 // since any pill in any card can be tapped first.
 function renderTemplateWorkoutCards(template) {
   templateWorkoutCardsElement.innerHTML = "";
+  const session = getActiveSession();
 
-  for (const planned of template.plannedExercises) {
+  for (const planned of getSessionPlannedExercises(session, template)) {
     const exercise = appState.database.exercises.find((candidate) => candidate.id === planned.exerciseId);
     const loggedSets = appState.database.sets
       .filter(
@@ -673,15 +693,60 @@ function renderTemplateWorkoutCards(template) {
     // so it's what shows next time this workout template is started (and for any of
     // today's pills for this exercise not yet logged, since they read the
     // same target).
-    const nextGoalButton = document.createElement("button");
-    nextGoalButton.type = "button";
-    nextGoalButton.className = "card-action-button";
-    nextGoalButton.textContent = "Set goal for next time";
-    nextGoalButton.addEventListener("click", () => openNextGoalEditor(template.id, planned.exerciseId));
-    cardElement.appendChild(nextGoalButton);
+    // Not for an exercise added for today only: it isn't in the template,
+    // so there's no "next time" for a goal to apply to.
+    if (!isAddedForThisWorkoutOnly(session, planned.exerciseId)) {
+      const nextGoalButton = document.createElement("button");
+      nextGoalButton.type = "button";
+      nextGoalButton.className = "card-action-button";
+      nextGoalButton.textContent = "Set goal for next time";
+      nextGoalButton.addEventListener("click", () => openNextGoalEditor(template.id, planned.exerciseId));
+      cardElement.appendChild(nextGoalButton);
+    }
+
+    // Only in edit mode, so a stray thumb mid-set can't reach it.
+    if (appState.isEditingWorkoutExercises) {
+      const removeButton = document.createElement("button");
+      removeButton.type = "button";
+      removeButton.className = "card-action-button destructive-button";
+      removeButton.textContent = "Remove from workout";
+      removeButton.addEventListener("click", () => openRemoveExercisePanel(planned.exerciseId));
+      cardElement.appendChild(removeButton);
+    }
 
     templateWorkoutCardsElement.appendChild(cardElement);
   }
+
+  templateWorkoutCardsElement.appendChild(buildWorkoutEditControls());
+}
+
+// Below the last card: "Edit exercises" switches edit mode on, which adds
+// a "Remove from workout" button to each card and an "Add exercise" button
+// here. Kept behind a toggle because changing the workout is rare, and the
+// screen should stay about logging sets the rest of the time.
+function buildWorkoutEditControls() {
+  const controlsElement = document.createElement("div");
+  controlsElement.className = "workout-edit-controls";
+
+  if (appState.isEditingWorkoutExercises) {
+    const addButton = document.createElement("button");
+    addButton.type = "button";
+    addButton.textContent = "Add exercise";
+    addButton.addEventListener("click", openExercisePickerForActiveWorkout);
+    controlsElement.appendChild(addButton);
+  }
+
+  const toggleButton = document.createElement("button");
+  toggleButton.type = "button";
+  toggleButton.className = "card-action-button";
+  toggleButton.textContent = appState.isEditingWorkoutExercises ? "Done editing" : "Edit exercises";
+  toggleButton.addEventListener("click", () => {
+    appState.isEditingWorkoutExercises = !appState.isEditingWorkoutExercises;
+    renderExerciseArea();
+  });
+  controlsElement.appendChild(toggleButton);
+
+  return controlsElement;
 }
 
 renderExerciseArea();
@@ -933,9 +998,12 @@ function startWorkout(templateId, gymId) {
     dayStatus: "normal",
     notes: "",
     templateId: templateId,
-    gymId: gymId
+    gymId: gymId,
+    addedExercises: [],
+    removedExerciseIds: []
   };
   appState.database.sessions.push(session);
+  appState.isEditingWorkoutExercises = false;
   appState.activeSessionId = session.id;
   appState.pendingTemplateId = null;
   saveDatabase(appState.database);
@@ -969,6 +1037,7 @@ endWorkoutButton.addEventListener("click", () => {
   hidePersonalBestBanner();
   closeDayStatusPanel();
   appState.activeSessionId = null;
+  appState.isEditingWorkoutExercises = false;
   showMainScreen();
   updateWorkoutControls();
   renderExerciseArea();
@@ -1014,7 +1083,7 @@ function findUnfinishedExerciseTimers(sessionSets) {
   }
 
   const timers = [];
-  for (const planned of template.plannedExercises) {
+  for (const planned of getSessionPlannedExercises(getActiveSession(), template)) {
     const exerciseSets = sessionSets.filter((set) => set.exerciseId === planned.exerciseId);
     const workingSetCount = exerciseSets.filter((set) => !set.isWarmup).length;
     const isStartedButUnfinished = exerciseSets.length > 0 && workingSetCount < planned.targetSets;
@@ -2009,7 +2078,12 @@ function isExerciseUnused(exerciseId) {
   const usedInWorkoutTemplates = appState.database.workoutTemplates.some((template) =>
     template.plannedExercises.some((planned) => planned.exerciseId === exerciseId)
   );
-  return !usedInSets && !usedInWorkoutTemplates;
+  // An exercise added to one workout only, even with no sets logged yet,
+  // still has that workout's card pointing at it.
+  const usedInSessions = appState.database.sessions.some((session) =>
+    isAddedForThisWorkoutOnly(session, exerciseId)
+  );
+  return !usedInSets && !usedInWorkoutTemplates && !usedInSessions;
 }
 
 function renderArchivedExercisesList() {
@@ -2921,7 +2995,9 @@ function computeWorkoutTemplateCompletionPercent(template, session) {
   let plannedReps = 0;
   let actualReps = 0;
 
-  for (const planned of template.plannedExercises) {
+  // That session's own exercise list, so skipping an exercise for the day
+  // doesn't count against it, and an added one counts towards it.
+  for (const planned of getSessionPlannedExercises(session, template)) {
     plannedReps += ((planned.targetRepsMin + planned.targetRepsMax) / 2) * planned.targetSets;
     for (const set of sessionWorkingSets) {
       if (set.exerciseId === planned.exerciseId) {
@@ -3980,6 +4056,7 @@ workoutTemplateNameInput.addEventListener("input", () => {
 });
 
 document.getElementById("addPlannedExerciseButton").addEventListener("click", () => {
+  appState.exercisePickerPurpose = "workoutTemplate";
   exercisePickerScreen.hidden = false;
   workoutTemplateEditorScreen.hidden = true;
   renderExercisePicker();
@@ -4067,7 +4144,14 @@ function renderExercisePicker() {
   const pickerElement = document.getElementById("exercisePickerGroups");
   pickerElement.innerHTML = "";
 
-  const activeExercises = appState.database.exercises.filter((candidate) => !candidate.isArchived);
+  let activeExercises = appState.database.exercises.filter((candidate) => !candidate.isArchived);
+  // Adding to a workout in progress: leave out what's already in it, so the
+  // same exercise can't end up with two cards.
+  if (appState.exercisePickerPurpose === "activeWorkout") {
+    const exerciseIdsInWorkout = getSessionPlannedExercises(getActiveSession(), getActiveTemplate())
+      .map((planned) => planned.exerciseId);
+    activeExercises = activeExercises.filter((exercise) => !exerciseIdsInWorkout.includes(exercise.id));
+  }
   for (const group of groupExercisesByMainMuscle(activeExercises)) {
     pickerElement.appendChild(buildExercisePickerGroup(group));
   }
@@ -4082,6 +4166,10 @@ function buildExercisePickerItem(exercise) {
   buttonElement.className = "exercise-item";
   buttonElement.textContent = exercise.name;
   buttonElement.addEventListener("click", () => {
+    if (appState.exercisePickerPurpose === "activeWorkout") {
+      openTargetPanelForAddingToWorkout(exercise);
+      return;
+    }
     appState.plannedExerciseDraft = {
       exerciseId: exercise.id,
       targetSets: 3,
@@ -4107,7 +4195,12 @@ function buildExercisePickerItem(exercise) {
 
 document.getElementById("cancelExercisePickerButton").addEventListener("click", () => {
   exercisePickerScreen.hidden = true;
-  workoutTemplateEditorScreen.hidden = false;
+  if (appState.exercisePickerPurpose === "activeWorkout") {
+    activeWorkoutScreen.hidden = false;
+  } else {
+    workoutTemplateEditorScreen.hidden = false;
+  }
+  appState.exercisePickerPurpose = null;
 });
 
 
@@ -4216,9 +4309,14 @@ makeStepperValueEditable(
 function resetPlannedExerciseEntryPanelToAddMode() {
   plannedExerciseEntryHint.hidden = true;
   document.getElementById("savePlannedExerciseButton").textContent = "Add to workout";
+  savePlannedExerciseToTemplateButton.hidden = true;
 }
 
 document.getElementById("savePlannedExerciseButton").addEventListener("click", () => {
+  if (appState.isAddingExerciseToWorkout) {
+    addDraftExerciseToActiveWorkout(false);
+    return;
+  }
   if (appState.nextGoalTarget) {
     const { templateId, exerciseId, startingLoad } = appState.nextGoalTarget;
     const template = appState.database.workoutTemplates.find((candidate) => candidate.id === templateId);
@@ -4254,6 +4352,10 @@ document.getElementById("savePlannedExerciseButton").addEventListener("click", (
 });
 
 document.getElementById("cancelPlannedExerciseButton").addEventListener("click", () => {
+  if (appState.isAddingExerciseToWorkout) {
+    closeTargetPanelForAddingToWorkout();
+    return;
+  }
   if (appState.nextGoalTarget) {
     appState.nextGoalTarget = null;
     appState.plannedExerciseDraft = null;
@@ -4266,6 +4368,198 @@ document.getElementById("cancelPlannedExerciseButton").addEventListener("click",
   plannedExerciseEntryPanel.hidden = true;
   workoutTemplateEditorScreen.hidden = false;
 });
+
+
+// ---------------------------------------------------------------------------
+// Changing the exercises of the workout in progress
+//
+// Adding reuses the exercise picker and the target panel above; removing
+// has a small panel of its own. Either can apply to this workout only
+// (stored on the session, see Session in schema.js) or to the template as
+// well, so it's there next time too.
+// ---------------------------------------------------------------------------
+
+const savePlannedExerciseToTemplateButton = document.getElementById("savePlannedExerciseToTemplateButton");
+
+function openExercisePickerForActiveWorkout() {
+  appState.exercisePickerPurpose = "activeWorkout";
+  activeWorkoutScreen.hidden = true;
+  exercisePickerScreen.hidden = false;
+  renderExercisePicker();
+  window.scrollTo(0, 0);
+}
+
+// Starting targets: the template's own, when it still lists this exercise
+// (it was only skipped for today). Otherwise 3 × 8-10 at the load last used
+// for this exercise, if any, so the load stepper needs a few taps at most;
+// 20 kg (an empty bar) when it's never been done.
+function chooseTargetsForAddingToWorkout(exercise, template) {
+  const plannedInTemplate = template.plannedExercises.find((planned) => planned.exerciseId === exercise.id);
+  if (plannedInTemplate) {
+    return { ...plannedInTemplate };
+  }
+  const previous = findMostRecentWorkingSet(exercise.id);
+  return {
+    exerciseId: exercise.id,
+    targetSets: 3,
+    targetRepsMin: 8,
+    targetRepsMax: 10,
+    targetLoad: previous ? previous.load : 20,
+    targetLoadSetAt: null
+  };
+}
+
+function openTargetPanelForAddingToWorkout(exercise) {
+  const template = getActiveTemplate();
+  appState.isAddingExerciseToWorkout = true;
+  appState.plannedExerciseDraft = chooseTargetsForAddingToWorkout(exercise, template);
+
+  document.getElementById("plannedExerciseEntryName").textContent = exercise.name;
+  plannedExerciseEntryHint.textContent =
+    `Add it to today's workout only, or to "${template.name}" as well so it's there next time too.`;
+  plannedExerciseEntryHint.hidden = false;
+  // The two save buttons are the "only today, or the template too?"
+  // question, so choosing is one tap with no extra dialog afterwards.
+  document.getElementById("savePlannedExerciseButton").textContent = "Only today";
+  savePlannedExerciseToTemplateButton.textContent = "Today + template";
+  savePlannedExerciseToTemplateButton.hidden = false;
+
+  renderPlannedExerciseDraft();
+  exercisePickerScreen.hidden = true;
+  activeWorkoutScreen.hidden = false;
+  plannedExerciseEntryPanel.hidden = false;
+}
+
+function closeTargetPanelForAddingToWorkout() {
+  appState.isAddingExerciseToWorkout = false;
+  appState.exercisePickerPurpose = null;
+  appState.plannedExerciseDraft = null;
+  plannedExerciseEntryPanel.hidden = true;
+  resetPlannedExerciseEntryPanelToAddMode();
+  renderExerciseArea();
+}
+
+function addDraftExerciseToActiveWorkout(isAlsoAddedToTemplate) {
+  const session = getActiveSession();
+  const template = getActiveTemplate();
+  const draft = appState.plannedExerciseDraft;
+
+  // The exercise might have been skipped for today earlier; adding it back
+  // undoes that skip, whichever button was used.
+  session.removedExerciseIds = session.removedExerciseIds.filter((id) => id !== draft.exerciseId);
+
+  if (isAlsoAddedToTemplate) {
+    // If the template still lists it (it was only skipped for today), its
+    // targets are updated rather than listing it twice.
+    const existingPlanned = template.plannedExercises.find((planned) => planned.exerciseId === draft.exerciseId);
+    if (existingPlanned) {
+      Object.assign(existingPlanned, draft);
+    } else {
+      template.plannedExercises.push(draft);
+    }
+  } else {
+    session.addedExercises.push(draft);
+  }
+
+  saveDatabase(appState.database);
+  closeTargetPanelForAddingToWorkout();
+}
+
+savePlannedExerciseToTemplateButton.addEventListener("click", () => addDraftExerciseToActiveWorkout(true));
+
+const removeExerciseHeading = document.getElementById("removeExerciseHeading");
+const removeExerciseHint = document.getElementById("removeExerciseHint");
+const removeExerciseTodayButton = document.getElementById("removeExerciseTodayButton");
+const removeExerciseFromTemplateButton = document.getElementById("removeExerciseFromTemplateButton");
+
+function hasSetsInActiveWorkout(exerciseId) {
+  return appState.database.sets.some(
+    (set) => set.sessionId === appState.activeSessionId && set.exerciseId === exerciseId
+  );
+}
+
+// Which of the two remove buttons make sense depends on where the exercise
+// came from and whether it already has sets today. Logged sets are never
+// deleted from here: an exercise with sets today keeps its card today.
+function openRemoveExercisePanel(exerciseId) {
+  const session = getActiveSession();
+  const template = getActiveTemplate();
+  const exercise = appState.database.exercises.find((candidate) => candidate.id === exerciseId);
+  const hasSetsToday = hasSetsInActiveWorkout(exerciseId);
+  const isTodayOnly = isAddedForThisWorkoutOnly(session, exerciseId);
+  // A template has to keep at least one exercise, same rule as the
+  // template editor's Save button.
+  const isLastInTemplate = template.plannedExercises.length === 1;
+
+  appState.removeExerciseTargetId = exerciseId;
+  removeExerciseHeading.textContent = `Remove ${exercise.name}?`;
+  removeExerciseTodayButton.hidden = hasSetsToday;
+  removeExerciseTodayButton.textContent = isTodayOnly ? "Remove" : "Skip it today only";
+  removeExerciseFromTemplateButton.hidden = isTodayOnly || isLastInTemplate;
+  removeExerciseFromTemplateButton.textContent = hasSetsToday
+    ? `Remove from "${template.name}" from next time`
+    : `Remove today and from "${template.name}"`;
+
+  if (isTodayOnly && hasSetsToday) {
+    removeExerciseHint.textContent =
+      "It already has sets logged today. Delete those sets first (long-press a pill) to remove it.";
+  } else if (isTodayOnly) {
+    removeExerciseHint.textContent = "It was added for today only, so the template isn't affected.";
+  } else if (hasSetsToday) {
+    removeExerciseHint.textContent = "It already has sets logged today, so it stays in today's workout.";
+  } else {
+    removeExerciseHint.textContent = "";
+  }
+  if (!isTodayOnly && isLastInTemplate) {
+    removeExerciseHint.textContent += " It's the only exercise in the template, so it can't be removed from there.";
+  }
+
+  removeExercisePanel.hidden = false;
+}
+
+function closeRemoveExercisePanel() {
+  appState.removeExerciseTargetId = null;
+  removeExercisePanel.hidden = true;
+  renderExerciseArea();
+}
+
+function removeExerciseFromActiveWorkoutOnly(exerciseId) {
+  const session = getActiveSession();
+  if (isAddedForThisWorkoutOnly(session, exerciseId)) {
+    session.addedExercises = session.addedExercises.filter((planned) => planned.exerciseId !== exerciseId);
+  } else {
+    session.removedExerciseIds.push(exerciseId);
+  }
+}
+
+// With sets already logged today, a copy of its targets moves to this
+// workout's own list, so today's card (and its logged sets) stays put
+// while the template drops it from next time on.
+function removeExerciseFromTemplate(exerciseId) {
+  const session = getActiveSession();
+  const template = getActiveTemplate();
+  const planned = template.plannedExercises.find((candidate) => candidate.exerciseId === exerciseId);
+  template.plannedExercises = template.plannedExercises.filter((candidate) => candidate !== planned);
+  if (hasSetsInActiveWorkout(exerciseId)) {
+    // `{ ...planned }` makes a separate copy of the object, so the two
+    // lists never share (and accidentally co-edit) one object.
+    session.addedExercises.push({ ...planned });
+  }
+}
+
+removeExerciseTodayButton.addEventListener("click", () => {
+  removeExerciseFromActiveWorkoutOnly(appState.removeExerciseTargetId);
+  saveDatabase(appState.database);
+  closeRemoveExercisePanel();
+});
+
+removeExerciseFromTemplateButton.addEventListener("click", () => {
+  removeExerciseFromTemplate(appState.removeExerciseTargetId);
+  saveDatabase(appState.database);
+  closeRemoveExercisePanel();
+});
+
+document.getElementById("cancelRemoveExerciseButton").addEventListener("click", closeRemoveExercisePanel);
 
 
 // ---------------------------------------------------------------------------

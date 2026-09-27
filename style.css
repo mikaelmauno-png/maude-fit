@@ -970,3 +970,15 @@ h1 {
 .workout-side-actions .card-action-button {
   margin-top: 0;
 }
+
+/* Under the last workout card: the "Edit exercises" toggle, plus "Add
+   exercise" while editing. Spaced off the cards so it isn't mistaken for
+   part of the last one. */
+.workout-edit-controls {
+  margin-top: 20px;
+}
+
+.workout-edit-controls > button:not(.card-action-button) {
+  display: block;
+  width: 100%;
+}
