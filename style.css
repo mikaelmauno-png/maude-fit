@@ -1003,6 +1003,8 @@ h1 {
   font-weight: bold;
 }
 
-#backUpNowButton {
+/* Full width like the other big actions: an easy target for a thumb. */
+#backUpNowButton,
+#restoreAutoCopyButton {
   width: 100%;
 }
