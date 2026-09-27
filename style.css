@@ -930,3 +930,15 @@ h1 {
   min-width: 0;
   padding: 12px 8px;
 }
+
+/* "Today's status" and "Log bodyweight" side by side on the workout screen:
+   both are occasional, so they share one row instead of taking two. */
+.workout-side-actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.workout-side-actions .card-action-button {
+  margin-top: 0;
+}

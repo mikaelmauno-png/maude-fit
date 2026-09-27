@@ -146,7 +146,12 @@
            part of ending the workout, so the common "just finish and go"
            path stays a single tap. Sets Session.dayStatus/notes, which the
            schema already collects for the future training engine. -->
-      <button id="dayStatusButton" class="card-action-button" hidden>Today's status</button>
+      <div class="workout-side-actions">
+        <button id="dayStatusButton" class="card-action-button" hidden>Today's status</button>
+        <!-- Opens the Bodyweight screen; saving there comes straight back
+             here. Shows today's weight once it's logged. -->
+        <button id="workoutBodyweightButton" class="card-action-button" hidden>Log bodyweight</button>
+      </div>
 
       <!-- Free-form only: exercises rendered as plain buttons, tapped to log
            a set directly. Each row also gets a small "review" button once at

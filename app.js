@@ -85,6 +85,7 @@ const appState = {
   exerciseStatsSelectedGymId: null, // which gym's data the stats charts are scoped to, when the exercise is gym-specific and used at more than one gym
   bodyweightDraftWeightKg: null,    // value shown on the bodyweight stepper; null only before the Bodyweight screen has been opened once
   editingBodyweightEntryId: null,   // id of a past entry being corrected, or null while logging today's weight
+  isBodyweightOpenedFromWorkout: false, // true when the Bodyweight screen was opened from the active workout, so Back and Save return there instead of home
   bodyDiagramView: "front"          // which side of the muscle-diagram body outline is showing, "front" or "back"
 };
 
@@ -168,6 +169,17 @@ function showMainScreen() {
 function showActiveWorkoutScreen() {
   hideAllScreens();
   activeWorkoutScreen.hidden = false;
+  // Today's weigh-in may have just been logged on the Bodyweight screen.
+  renderWorkoutBodyweightButton();
+}
+
+// Back to wherever the Bodyweight screen was opened from.
+function leaveBodyweightScreen() {
+  if (appState.isBodyweightOpenedFromWorkout) {
+    showActiveWorkoutScreen();
+  } else {
+    showMainScreen();
+  }
 }
 
 function showSettingsScreen() {
@@ -252,8 +264,9 @@ function showMuscleStatsDetailScreen(muscle) {
   renderMuscleStatsDetail(muscle);
 }
 
-function showBodyweightScreen() {
+function showBodyweightScreen(isOpenedFromWorkout) {
   hideAllScreens();
+  appState.isBodyweightOpenedFromWorkout = isOpenedFromWorkout;
   bodyweightScreen.hidden = false;
   resetBodyweightEntryToToday();
   renderBodyweightScreen();
@@ -269,14 +282,14 @@ document.getElementById("manageExercisesButton").addEventListener("click", showE
 document.getElementById("backFromExercisesButton").addEventListener("click", showSettingsScreen);
 document.getElementById("viewHistoryButton").addEventListener("click", showHistoryScreen);
 document.getElementById("backFromHistoryButton").addEventListener("click", showMainScreen);
-document.getElementById("viewBodyweightButton").addEventListener("click", showBodyweightScreen);
+document.getElementById("viewBodyweightButton").addEventListener("click", () => showBodyweightScreen(false));
 // The bottom bar only exists on the home screen, so "Home" is always where
 // you already are — it scrolls back up to the workouts instead, which is
 // what tapping the current tab does in most phone apps.
 document.getElementById("navHomeButton").addEventListener("click", () => {
   window.scrollTo({ top: 0, behavior: "smooth" });
 });
-document.getElementById("backFromBodyweightButton").addEventListener("click", showMainScreen);
+document.getElementById("backFromBodyweightButton").addEventListener("click", leaveBodyweightScreen);
 document.getElementById("manageGymsButton").addEventListener("click", showGymsScreen);
 document.getElementById("backFromGymsButton").addEventListener("click", showSettingsScreen);
 document.getElementById("viewDataButton").addEventListener("click", showDataScreen);
@@ -879,6 +892,8 @@ function updateWorkoutControls() {
   const isActive = appState.activeSessionId !== null;
   endWorkoutButton.hidden = !isActive;
   dayStatusButton.hidden = !isActive;
+  workoutBodyweightButton.hidden = !isActive;
+  renderWorkoutBodyweightButton();
   workoutStatus.textContent = isActive ? "Workout in progress" : "";
   renderStartWorkoutChoices();
   updateRestTimer();
@@ -1146,6 +1161,25 @@ function closeDayStatusPanel() {
 }
 
 dayStatusButton.addEventListener("click", () => openDayStatusPanel(getActiveSession().id));
+
+
+// ---------------------------------------------------------------------------
+// Bodyweight from the workout screen — a shortcut to the Bodyweight screen,
+// for weighing in at the gym without leaving the workout via Home.
+// ---------------------------------------------------------------------------
+
+const workoutBodyweightButton = document.getElementById("workoutBodyweightButton");
+
+// Shows today's weight once it's logged, so a glance tells whether the
+// weigh-in is already done.
+function renderWorkoutBodyweightButton() {
+  const todaysEntry = findTodaysBodyweightEntry();
+  workoutBodyweightButton.textContent = todaysEntry
+    ? `Bodyweight: ${todaysEntry.weightKg.toFixed(1)} kg`
+    : "Log bodyweight";
+}
+
+workoutBodyweightButton.addEventListener("click", () => showBodyweightScreen(true));
 
 dayStatusNotesInput.addEventListener("input", () => {
   appState.dayStatusDraft.notes = dayStatusNotesInput.value;
@@ -2597,8 +2631,16 @@ saveBodyweightButton.addEventListener("click", () => {
       });
     }
   }
+  // A weigh-in mid-workout is a quick detour: once today's weight is
+  // saved, go straight back to the workout. Correcting a past entry stays
+  // on this screen, since that's a deliberate visit to the list.
+  const wasLoggingToday = appState.editingBodyweightEntryId === null;
   saveDatabase(appState.database);
   resetBodyweightEntryToToday();
+  if (wasLoggingToday && appState.isBodyweightOpenedFromWorkout) {
+    showActiveWorkoutScreen();
+    return;
+  }
   renderBodyweightScreen();
 });
 
