@@ -26,7 +26,10 @@
 //
 // Bumped to 6 for the addition of targetLoadSetAt on each planned exercise
 // in a WorkoutTemplate below.
-const SCHEMA_VERSION = 6;
+//
+// Bumped to 7 for the addition of lastBackedUpAt on the database itself
+// (see createEmptyDatabase).
+const SCHEMA_VERSION = 7;
 
 // Every piece of app data lives under this one localStorage key, as a single
 // JSON string. One key is simpler to export, import, and reason about than
@@ -184,7 +187,10 @@ function createEmptyDatabase() {
                             // press I have done"
     workoutTemplates: [],  // WorkoutTemplate objects
     gyms: [],                // Gym objects
-    bodyweightEntries: []      // BodyweightEntry objects
+    bodyweightEntries: [],     // BodyweightEntry objects
+    lastBackedUpAt: null       // ISO timestamp of the last backup file that
+                               // was actually saved or shared; null if never.
+                               // Drives the home screen's backup reminder.
   };
 }
 
@@ -221,11 +227,20 @@ function migrateFrom5To6(database) {
   database.schemaVersion = 6;
 }
 
+// Version 6 data has no lastBackedUpAt. Any export made earlier left no
+// record of when it happened, so null ("never") is the honest value: the
+// reminder then asks for a fresh backup, which is harmless.
+function migrateFrom6To7(database) {
+  database.lastBackedUpAt = null;
+  database.schemaVersion = 7;
+}
+
 // Keyed by the version each migration upgrades *from*. Versions with no
 // entry here (1-3) are too old to migrate and are still refused.
 const MIGRATIONS = {
   4: migrateFrom4To5,
-  5: migrateFrom5To6
+  5: migrateFrom5To6,
+  6: migrateFrom6To7
 };
 
 // Applies migrations one step at a time until the data reaches
