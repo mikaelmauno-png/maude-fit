@@ -327,6 +327,13 @@
         <button id="saveDayStatusButton">Save</button>
         <button id="cancelDayStatusButton">Cancel</button>
       </div>
+      <!-- Only when opened by End workout (see openDayStatusPanelToFinish
+           in app.js): then tapping a status above saves it and ends the
+           workout, and these replace Save/Cancel. -->
+      <div class="button-stack">
+        <button id="finishWithoutStatusButton" hidden>Finish without status</button>
+        <button id="backToWorkoutButton" class="card-action-button" hidden>Back to workout</button>
+      </div>
     </section>
 
 

@@ -1008,3 +1008,10 @@ h1 {
 #restoreAutoCopyButton {
   width: 100%;
 }
+
+/* "Today: Poor sleep" once a status is set: a green outline and text, so
+   "done" and "still to do" look different at a glance. */
+.card-action-button.day-status-button-set {
+  color: #7ddc8a;
+  box-shadow: inset 0 0 0 1px #3f7a48;
+}

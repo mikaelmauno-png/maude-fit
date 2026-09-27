@@ -32,7 +32,9 @@
 //
 // Bumped to 8 for the addition of lastBackedUpAt on the database itself
 // (see createEmptyDatabase).
-const SCHEMA_VERSION = 8;
+//
+// Bumped to 9 because Session.dayStatus may now be null ("not set yet").
+const SCHEMA_VERSION = 9;
 
 // Every piece of app data lives under this one localStorage key, as a single
 // JSON string. One key is simpler to export, import, and reason about than
@@ -103,7 +105,8 @@ const MUSCLE_GROUPS = [
 //   id:         "3a41...",
 //   startedAt:  "2026-08-31T17:05:00.000Z",
 //   endedAt:    "2026-08-31T18:20:00.000Z",   // null while in progress
-//   dayStatus:  "normal",                     // see DAY_STATUSES below
+//   dayStatus:  "normal",                     // see DAY_STATUSES below;
+//                                              // null until it's set
 //   notes:      "",
 //   templateId: "weekly-workout-1",           // which WorkoutTemplate this
 //                                              // followed, or null for a
@@ -129,6 +132,10 @@ const MUSCLE_GROUPS = [
 // dayStatus records the context that would otherwise be lost. The engine will
 // later use it to avoid mistaking a bad night's sleep for a training problem,
 // so it is collected from day one even though nothing reads it yet.
+//
+// A new session starts with null, meaning "not set yet", so the app can tell
+// "felt normal" apart from "never answered". Sessions saved before version 9
+// started at "normal" instead, so for those "normal" can mean either.
 const DAY_STATUSES = ["normal", "poorSleep", "ill", "stressed"];
 
 // WorkoutTemplate — a reusable weekly workout template, e.g. "Weekly workout 1". Meant
@@ -262,13 +269,21 @@ function migrateFrom7To8(database) {
   database.schemaVersion = 8;
 }
 
+// Version 8 data needs no rewriting: every stored dayStatus is still a valid
+// value. The bump only exists so an older copy of the app refuses a
+// version 9 export, whose sessions may hold a null status it doesn't expect.
+function migrateFrom8To9(database) {
+  database.schemaVersion = 9;
+}
+
 // Keyed by the version each migration upgrades *from*. Versions with no
 // entry here (1-3) are too old to migrate and are still refused.
 const MIGRATIONS = {
   4: migrateFrom4To5,
   5: migrateFrom5To6,
   6: migrateFrom6To7,
-  7: migrateFrom7To8
+  7: migrateFrom7To8,
+  8: migrateFrom8To9
 };
 
 // Applies migrations one step at a time until the data reaches

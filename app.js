@@ -101,6 +101,7 @@ const appState = {
   freeformReviewExerciseId: null, // which exercise's logged-sets review card is open, in a free-form workout; null otherwise
   dayStatusDraft: null,           // { dayStatus, notes } while the today's-status panel is open; null otherwise
   dayStatusEditingSessionId: null, // which session the open day-status panel is editing (active or a past one); null when the panel is closed
+  isFinishingWorkout: false,      // true while the day-status panel is open because End workout was tapped with no status set
   muscleEditorExerciseId: null,   // which exercise's muscle editor is open; null otherwise
   muscleDraft: null,              // { mainMuscle, secondaryMuscles } while the muscle editor is open; null otherwise
   chartRangeWeeks: 12,              // how many weeks back every trend chart shows (6, 12 or 24), or null for all-time; one setting shared by all charts
@@ -982,6 +983,7 @@ function updateWorkoutControls() {
   const isActive = appState.activeSessionId !== null;
   endWorkoutButton.hidden = !isActive;
   dayStatusButton.hidden = !isActive;
+  renderDayStatusButton();
   workoutBodyweightButton.hidden = !isActive;
   renderWorkoutBodyweightButton();
   workoutStatus.textContent = isActive ? "Workout in progress" : "";
@@ -1015,7 +1017,8 @@ function startWorkout(templateId, gymId) {
     id: crypto.randomUUID(),
     startedAt: new Date().toISOString(),
     endedAt: null,
-    dayStatus: "normal",
+    // Not set yet; see DAY_STATUSES in schema.js.
+    dayStatus: null,
     notes: "",
     templateId: templateId,
     gymId: gymId,
@@ -1041,10 +1044,23 @@ function startWorkout(templateId, gymId) {
 // (at 0%) and leave a blank card in History.
 function isSessionEmpty(session) {
   const hasSets = appState.database.sets.some((set) => set.sessionId === session.id);
-  return !hasSets && session.dayStatus === "normal" && session.notes === "";
+  const hasNoStatus = session.dayStatus === null || session.dayStatus === "normal";
+  return !hasSets && hasNoStatus && session.notes === "";
 }
 
+// A workout with sets but no status yet gets one chance to set it: the
+// status panel opens, and tapping a status there ends the workout too, so
+// it costs exactly one tap either way (see openDayStatusPanelToFinish).
 endWorkoutButton.addEventListener("click", () => {
+  const session = getActiveSession();
+  if (session.dayStatus === null && !isSessionEmpty(session)) {
+    openDayStatusPanelToFinish(session.id);
+    return;
+  }
+  finishActiveWorkout();
+});
+
+function finishActiveWorkout() {
   const session = getActiveSession();
   if (isSessionEmpty(session)) {
     deleteSessionAndItsSets(session.id);
@@ -1061,7 +1077,7 @@ endWorkoutButton.addEventListener("click", () => {
   showMainScreen();
   updateWorkoutControls();
   renderExerciseArea();
-});
+}
 
 
 // ---------------------------------------------------------------------------
@@ -1343,9 +1359,10 @@ function hidePersonalBestBanner() {
 // ---------------------------------------------------------------------------
 // Today's status (Session.dayStatus / notes)
 //
-// Deliberately not part of starting or ending a workout — either would add
-// a mandatory step to this app's two most frequent actions. Available as an
-// optional button any time a workout is active instead.
+// Available as a button any time a workout is active. Never a required
+// step: at the end of a workout with no status set, the panel opens once
+// more, but picking a status there is itself the tap that ends the workout,
+// and "Finish without status" skips it.
 // ---------------------------------------------------------------------------
 
 const DAY_STATUS_LABELS = {
@@ -1369,6 +1386,12 @@ for (const status of DAY_STATUSES) {
   optionButton.dataset.dayStatus = status;
   optionButton.addEventListener("click", () => {
     appState.dayStatusDraft.dayStatus = status;
+    if (appState.isFinishingWorkout) {
+      saveDayStatusDraft();
+      closeDayStatusPanel();
+      finishActiveWorkout();
+      return;
+    }
     renderDayStatusPanel();
   });
   dayStatusOptionsElement.appendChild(optionButton);
@@ -1390,14 +1413,44 @@ function openDayStatusPanel(sessionId) {
   appState.dayStatusEditingSessionId = sessionId;
   appState.dayStatusDraft = { dayStatus: session.dayStatus, notes: session.notes };
   dayStatusHeading.textContent = session.endedAt === null ? "Today's status" : "Edit status";
+  showDayStatusPanelButtons(false);
   renderDayStatusPanel();
   dayStatusPanel.hidden = false;
+}
+
+// The same panel, opened by End workout. Here a status button saves and
+// finishes in one tap, so the usual Save/Cancel pair is swapped for
+// "Finish without status" and "Back to workout". Any note typed first is
+// saved along with the status.
+function openDayStatusPanelToFinish(sessionId) {
+  openDayStatusPanel(sessionId);
+  appState.isFinishingWorkout = true;
+  dayStatusHeading.textContent = "How was today?";
+  showDayStatusPanelButtons(true);
+}
+
+function showDayStatusPanelButtons(isFinishing) {
+  document.getElementById("saveDayStatusButton").hidden = isFinishing;
+  document.getElementById("cancelDayStatusButton").hidden = isFinishing;
+  document.getElementById("finishWithoutStatusButton").hidden = !isFinishing;
+  document.getElementById("backToWorkoutButton").hidden = !isFinishing;
+}
+
+function saveDayStatusDraft() {
+  const session = appState.database.sessions.find(
+    (candidate) => candidate.id === appState.dayStatusEditingSessionId
+  );
+  session.dayStatus = appState.dayStatusDraft.dayStatus;
+  session.notes = appState.dayStatusDraft.notes;
+  saveDatabase(appState.database);
 }
 
 function closeDayStatusPanel() {
   appState.dayStatusDraft = null;
   appState.dayStatusEditingSessionId = null;
+  appState.isFinishingWorkout = false;
   dayStatusPanel.hidden = true;
+  renderDayStatusButton();
   // Safe to call even when History isn't the visible screen — it just
   // redraws the (currently hidden) history list. Same pattern as
   // closeSetEntryPanel() below.
@@ -1432,18 +1485,33 @@ dayStatusNotesInput.addEventListener("input", () => {
 });
 
 document.getElementById("saveDayStatusButton").addEventListener("click", () => {
-  const session = appState.database.sessions.find(
-    (candidate) => candidate.id === appState.dayStatusEditingSessionId
-  );
-  session.dayStatus = appState.dayStatusDraft.dayStatus;
-  session.notes = appState.dayStatusDraft.notes;
-  saveDatabase(appState.database);
+  saveDayStatusDraft();
   closeDayStatusPanel();
 });
 
 document.getElementById("cancelDayStatusButton").addEventListener("click", () => {
   closeDayStatusPanel();
 });
+
+// Still saves a note typed in the panel; the status stays unset.
+document.getElementById("finishWithoutStatusButton").addEventListener("click", () => {
+  saveDayStatusDraft();
+  closeDayStatusPanel();
+  finishActiveWorkout();
+});
+
+document.getElementById("backToWorkoutButton").addEventListener("click", () => {
+  closeDayStatusPanel();
+});
+
+// Green with the chosen status once set ("Today: Poor sleep"), plain grey
+// "Today's status" until then, so a glance shows whether it's done.
+function renderDayStatusButton() {
+  const session = getActiveSession();
+  const isSet = session !== null && session.dayStatus !== null;
+  dayStatusButton.textContent = isSet ? `Today: ${DAY_STATUS_LABELS[session.dayStatus]}` : "Today's status";
+  dayStatusButton.classList.toggle("day-status-button-set", isSet);
+}
 
 
 // ---------------------------------------------------------------------------
@@ -2601,10 +2669,11 @@ function renderHistoryList() {
 
     // "Normal" and empty notes are the defaults every session starts with,
     // so only shown when there's actually something to say.
-    if (session.dayStatus !== "normal" || session.notes !== "") {
+    const hasStatusWorthShowing = session.dayStatus !== null && session.dayStatus !== "normal";
+    if (hasStatusWorthShowing || session.notes !== "") {
       const statusLine = document.createElement("div");
       statusLine.className = "history-card-line";
-      const statusText = session.dayStatus !== "normal" ? DAY_STATUS_LABELS[session.dayStatus] : null;
+      const statusText = hasStatusWorthShowing ? DAY_STATUS_LABELS[session.dayStatus] : null;
       statusLine.textContent = [statusText, session.notes].filter(Boolean).join(" — ");
       cardElement.appendChild(statusLine);
     }
