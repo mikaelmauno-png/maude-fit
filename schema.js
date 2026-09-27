@@ -27,9 +27,12 @@
 // Bumped to 6 for the addition of targetLoadSetAt on each planned exercise
 // in a WorkoutTemplate below.
 //
-// Bumped to 7 for the addition of lastBackedUpAt on the database itself
+// Bumped to 7 for the addition of Session.addedExercises and
+// Session.removedExerciseIds below.
+//
+// Bumped to 8 for the addition of lastBackedUpAt on the database itself
 // (see createEmptyDatabase).
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 // Every piece of app data lives under this one localStorage key, as a single
 // JSON string. One key is simpler to export, import, and reason about than
@@ -105,9 +108,23 @@ const MUSCLE_GROUPS = [
 //   templateId: "weekly-workout-1",           // which WorkoutTemplate this
 //                                              // followed, or null for a
 //                                              // free-form workout
-//   gymId:      "gym-uuid..."                 // which Gym this was at, or
+//   gymId:      "gym-uuid...",                // which Gym this was at, or
 //                                              // null if not recorded
+//   addedExercises: [],                        // planned exercises added
+//                                              // to this workout only, same
+//                                              // shape as a WorkoutTemplate's
+//                                              // plannedExercises entries
+//   removedExerciseIds: []                     // exercise ids from the
+//                                              // template skipped in this
+//                                              // workout only
 // }
+//
+// A template workout's exercise list for the day is the template's
+// plannedExercises, minus removedExerciseIds, plus addedExercises. Changes
+// made "for this workout only" live here rather than in the template, so
+// the template stays as it was for next time, and the record of how this
+// workout differed from its plan is kept. Both stay empty for a free-form
+// workout, which has no plan to differ from.
 
 // dayStatus records the context that would otherwise be lost. The engine will
 // later use it to avoid mistaking a bad night's sleep for a training problem,
@@ -227,12 +244,22 @@ function migrateFrom5To6(database) {
   database.schemaVersion = 6;
 }
 
-// Version 6 data has no lastBackedUpAt. Any export made earlier left no
+// Version 6 sessions have no per-workout exercise changes. Empty lists are
+// exactly right: before version 7 there was no way to make any.
+function migrateFrom6To7(database) {
+  for (const session of database.sessions) {
+    session.addedExercises = [];
+    session.removedExerciseIds = [];
+  }
+  database.schemaVersion = 7;
+}
+
+// Version 7 data has no lastBackedUpAt. Any export made earlier left no
 // record of when it happened, so null ("never") is the honest value: the
 // reminder then asks for a fresh backup, which is harmless.
-function migrateFrom6To7(database) {
+function migrateFrom7To8(database) {
   database.lastBackedUpAt = null;
-  database.schemaVersion = 7;
+  database.schemaVersion = 8;
 }
 
 // Keyed by the version each migration upgrades *from*. Versions with no
@@ -240,7 +267,8 @@ function migrateFrom6To7(database) {
 const MIGRATIONS = {
   4: migrateFrom4To5,
   5: migrateFrom5To6,
-  6: migrateFrom6To7
+  6: migrateFrom6To7,
+  7: migrateFrom7To8
 };
 
 // Applies migrations one step at a time until the data reaches

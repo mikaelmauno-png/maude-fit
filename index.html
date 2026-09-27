@@ -144,9 +144,15 @@
         <button id="endWorkoutButton" hidden>End workout</button>
       </div>
       <p id="workoutStatus"></p>
-      <!-- Counts up from whenever the most recently logged set (in the
-           current workout) was saved, so rest time is visible at a glance. -->
-      <p id="restTimer"></p>
+      <!-- Pinned to the top of the screen while scrolling (see style.css).
+           workoutClock: time since the workout started, plus how long this
+           workout usually takes. restTimer: counts up from whenever the most
+           recently logged set was saved, so rest time is visible at a
+           glance. -->
+      <div id="workoutTimers">
+        <p id="workoutClock"></p>
+        <p id="restTimer"></p>
+      </div>
 
       <!-- Shown briefly after saving a new set that beats every previous
            set for that exercise on weight or on load×reps ("volume"). -->
@@ -156,7 +162,12 @@
            part of ending the workout, so the common "just finish and go"
            path stays a single tap. Sets Session.dayStatus/notes, which the
            schema already collects for the future training engine. -->
-      <button id="dayStatusButton" class="card-action-button" hidden>Today's status</button>
+      <div class="workout-side-actions">
+        <button id="dayStatusButton" class="card-action-button" hidden>Today's status</button>
+        <!-- Opens the Bodyweight screen; saving there comes straight back
+             here. Shows today's weight once it's logged. -->
+        <button id="workoutBodyweightButton" class="card-action-button" hidden>Log bodyweight</button>
+      </div>
 
       <!-- Free-form only: exercises rendered as plain buttons, tapped to log
            a set directly. Each row also gets a small "review" button once at
@@ -228,13 +239,12 @@
 
 
     <!-- ===================================================================
-         SET ENTRY PANEL: a top-level section, not nested in another screen,
-         so it can be shown over activeWorkoutScreen (workout template cards /
-         free-form list) or over historyScreen (editing a past set) without
-         needing either screen hidden underneath it. Whichever screen opened
-         it stays visible underneath; class="bottom-sheet" pins this one to
-         the bottom of the screen on top of it (see style.css), same pattern
-         as the other panels with that class.
+         SET ENTRY PANEL: during a workout, app.js moves this element into
+         the tapped exercise's card, right under its pills (see
+         positionSetEntryPanel). This spot is its home for everywhere else:
+         editing a past set from History, where class="bottom-sheet" pins it
+         to the bottom of the screen over the list (see style.css), same
+         pattern as the other panels with that class.
          =================================================================== -->
     <section id="setEntryPanel" class="bottom-sheet" hidden>
       <h2 id="setEntryExerciseName"></h2>
@@ -475,6 +485,7 @@
 
       <div id="bodyweightChartArea">
         <h3>Trend</h3>
+        <div id="bodyweightRangePicker" class="button-row chart-range-picker"></div>
         <div id="bodyweightChart" class="stats-chart"></div>
       </div>
       <p id="bodyweightEmptyMessage" hidden>No weigh-ins logged yet.</p>
@@ -526,7 +537,6 @@
         <button id="backFromExerciseStatsDetailButton">Back</button>
       </div>
       <h1 id="exerciseStatsDetailName"></h1>
-      <p id="exerciseStatsEmptyMessage" hidden>No working sets logged for this exercise yet.</p>
 
       <!-- Only shown for a gym-specific exercise that's been logged at more
            than one gym — machine/cable numbers aren't comparable across
@@ -534,6 +544,12 @@
            entirely (not just empty) for a non-gym-specific exercise or one
            only ever done at a single gym, since there's nothing to choose. -->
       <div id="exerciseStatsGymPicker" class="button-row" hidden></div>
+
+      <!-- 6 wk / 12 wk / 24 wk / All — filled in by renderChartRangePicker
+           in app.js. Same buttons, and the same shared setting, above every
+           trend chart. -->
+      <div id="exerciseStatsRangePicker" class="button-row chart-range-picker"></div>
+      <p id="exerciseStatsEmptyMessage" hidden></p>
 
       <div id="exerciseStatsCharts" hidden>
         <h3>Weight (heaviest set per week, kg)</h3>
@@ -579,7 +595,8 @@
         <button id="backFromMuscleStatsDetailButton">Back</button>
       </div>
       <h1 id="muscleStatsDetailName"></h1>
-      <p id="muscleStatsEmptyMessage" hidden>No sets logged for this muscle yet.</p>
+      <div id="muscleStatsRangePicker" class="button-row chart-range-picker"></div>
+      <p id="muscleStatsEmptyMessage" hidden></p>
       <div id="muscleStatsChartContainer" hidden>
         <h3>Weighted sets per week</h3>
         <div id="muscleStatsChart" class="stats-chart"></div>
@@ -629,11 +646,13 @@
 
     <!-- ===================================================================
          EXERCISE PICKER: choose which exercise to add to the workout template being
-         edited. Reuses the same exercise-item button style as the main list.
+         edited. Grouped by main muscle into collapsible sections (filled in
+         by renderExercisePicker in app.js), each holding the same
+         exercise-item buttons as the main list.
          =================================================================== -->
     <section id="exercisePickerScreen" hidden>
       <h1>Choose exercise</h1>
-      <ul id="exercisePickerList"></ul>
+      <div id="exercisePickerGroups"></div>
       <div class="button-row">
         <button id="cancelExercisePickerButton">Cancel</button>
       </div>
@@ -693,7 +712,28 @@
 
       <div class="button-row">
         <button id="savePlannedExerciseButton">Add to workout</button>
+        <!-- Only shown when adding an exercise to a workout in progress:
+             then the button above means "today only" and this one means
+             "today and the template too". -->
+        <button id="savePlannedExerciseToTemplateButton" hidden>Today + template</button>
         <button id="cancelPlannedExerciseButton">Cancel</button>
+      </div>
+    </section>
+
+
+    <!-- ===================================================================
+         REMOVE EXERCISE PANEL: opened from a workout card's "Remove from
+         workout" button (edit mode only). Which buttons show depends on
+         the exercise; see openRemoveExercisePanel in app.js. Nothing here
+         deletes logged sets.
+         =================================================================== -->
+    <section id="removeExercisePanel" class="bottom-sheet" hidden>
+      <h2 id="removeExerciseHeading"></h2>
+      <p id="removeExerciseHint"></p>
+      <div class="button-stack">
+        <button id="removeExerciseTodayButton">Skip it today only</button>
+        <button id="removeExerciseFromTemplateButton" class="destructive-button"></button>
+        <button id="cancelRemoveExerciseButton" class="card-action-button">Cancel</button>
       </div>
     </section>
 

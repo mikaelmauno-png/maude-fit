@@ -60,30 +60,58 @@ ul li {
   font-size: 0.95rem;
 }
 
-/* Large and bold: meant to be glanced at from arm's length while resting
-   between sets, same reasoning as the "large tap targets" rule.
-   `position: sticky` keeps it pinned to the top of the screen once the
-   exercise cards below scroll past it. It needs its own background (the
-   same colour as the page) and a z-index, otherwise the cards would show
-   through it and draw on top of it while scrolling underneath. */
-#restTimer {
+/* The clock and rest timer block. `position: sticky` keeps it pinned to
+   the top of the screen once the exercise cards below scroll past it. It
+   needs its own background (the same colour as the page) and a z-index,
+   otherwise the cards would show through it and draw on top of it while
+   scrolling underneath. */
+#workoutTimers {
   position: sticky;
   top: 0;
   z-index: 5;
   background-color: #121212;
-  min-height: 1.4em;
   margin: 8px 0 16px;
   padding: 8px 0;
+}
+
+/* Smaller and grey: the whole-workout clock is context, the rest timer
+   below it is the number that matters between sets. */
+#workoutClock {
+  margin: 0 0 4px;
+  color: #b0b0b0;
+  font-size: 0.95rem;
+}
+
+/* Large and bold: meant to be glanced at from arm's length while resting
+   between sets, same reasoning as the "large tap targets" rule. */
+#restTimer {
+  min-height: 1.4em;
+  margin: 0;
   color: #f0f0f0;
   font-size: 1.8rem;
   font-weight: bold;
 }
 
-/* Before the first set of a workout the timer has no text. Pinned, it would
-   be an empty strip covering the top of the cards, so it only sticks once
-   there is a time to show. */
-#restTimer:empty {
-  position: static;
+/* Superset mode: one line per unfinished exercise (see updateRestTimer
+   in app.js). Smaller than the single timer, but still large enough to
+   read at arm's length, with the name on the left and its time on the
+   right. */
+#restTimer.rest-timer-superset {
+  font-size: 1.3rem;
+}
+
+.rest-timer-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* A long exercise name is cut off with "…" rather than wrapping, which
+   would push the timers onto extra lines. */
+.rest-timer-exercise {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 /* Amber/gold rather than the app's usual blue or green, so a personal best
@@ -209,6 +237,34 @@ body:has(.bottom-sheet:not([hidden]))::before {
   left: 0;
   z-index: 9;
   background-color: rgba(0, 0, 0, 0.6);
+}
+
+/* The set panel when it opens inside a workout card, under the pills (see
+   positionSetEntryPanel in app.js). A slightly lighter box than the card
+   around it, so it reads as "the thing being filled in now".
+   scroll-margin-top leaves room for the pinned rest timer, so scrolling
+   the panel into view never tucks its top edge under the timer. */
+.inline-set-panel {
+  margin: 12px 0;
+  padding: 4px 16px 16px;
+  background-color: #2a2a2a;
+  border: 1px solid #3d3d3d;
+  border-radius: 12px;
+  scroll-margin-top: 80px;
+}
+
+/* The card's own heading already names the exercise right above. */
+.inline-set-panel h2 {
+  display: none;
+}
+
+/* Inside a workout template card, the suggestion and "Last time" lines are
+   already on the card just above the pills, so repeating them would only
+   push the Save button further down the screen. A free-form workout has no
+   such card, so there they stay. */
+#templateWorkoutCards .inline-set-panel #progressionSuggestion,
+#templateWorkoutCards .inline-set-panel #previousPerformance {
+  display: none;
 }
 
 #previousPerformance {
@@ -868,6 +924,63 @@ h1 {
 
 .workout-tile-start-button:active {
   background-color: #cfcfcf;
+}
+
+/* One muscle group in the exercise picker (a <details> box). The <summary>
+   line is the part you tap to open and close it, so it gets the same big
+   card-sized tap target as the exercise buttons inside it. */
+.picker-group {
+  margin-bottom: 8px;
+}
+
+.picker-group summary {
+  padding: 16px;
+  background-color: #262626;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.picker-group[open] summary {
+  margin-bottom: 8px;
+}
+
+/* The exercises inside an open group, nudged in from the left so it's clear
+   which heading they belong to. */
+.picker-group ul {
+  margin: 0 0 16px 12px;
+}
+
+/* Four short range buttons ("6 wk" ... "All") should share one row. The
+   usual .button-row minimum width would wrap them onto two rows. */
+.chart-range-picker button {
+  min-width: 0;
+  padding: 12px 8px;
+}
+
+/* "Today's status" and "Log bodyweight" side by side on the workout screen:
+   both are occasional, so they share one row instead of taking two. */
+.workout-side-actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.workout-side-actions .card-action-button {
+  margin-top: 0;
+}
+
+/* Under the last workout card: the "Edit exercises" toggle, plus "Add
+   exercise" while editing. Spaced off the cards so it isn't mistaken for
+   part of the last one. */
+.workout-edit-controls {
+  margin-top: 20px;
+}
+
+.workout-edit-controls > button:not(.card-action-button) {
+  display: block;
+  width: 100%;
 }
 
 /* ---------------------------------------------------------------------------

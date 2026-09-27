@@ -93,15 +93,21 @@ const appState = {
   workoutTemplateDraft: null,  // in-progress copy of the workout template being edited
   plannedExerciseDraft: null,  // in-progress values for a planned exercise
   pendingTemplateId: null,     // workout template chosen at Start Workout, held while the gym picker is open
+  isEditingWorkoutExercises: false, // true while the active workout shows its "Add exercise" and "Remove" buttons
+  exercisePickerPurpose: null, // "workoutTemplate" (adding to the template being edited) or "activeWorkout" (adding to the workout in progress) while the exercise picker is open
+  isAddingExerciseToWorkout: false, // true while the target panel is setting up an exercise being added to the workout in progress
+  removeExerciseTargetId: null, // which exercise the "Remove from workout" panel is about; null when it's closed
   nextGoalTarget: null,        // { templateId, exerciseId } while adjusting an existing planned exercise's target from a workout card; null otherwise
   freeformReviewExerciseId: null, // which exercise's logged-sets review card is open, in a free-form workout; null otherwise
   dayStatusDraft: null,           // { dayStatus, notes } while the today's-status panel is open; null otherwise
   dayStatusEditingSessionId: null, // which session the open day-status panel is editing (active or a past one); null when the panel is closed
   muscleEditorExerciseId: null,   // which exercise's muscle editor is open; null otherwise
   muscleDraft: null,              // { mainMuscle, secondaryMuscles } while the muscle editor is open; null otherwise
+  chartRangeWeeks: 12,              // how many weeks back every trend chart shows (6, 12 or 24), or null for all-time; one setting shared by all charts
   exerciseStatsSelectedGymId: null, // which gym's data the stats charts are scoped to, when the exercise is gym-specific and used at more than one gym
   bodyweightDraftWeightKg: null,    // value shown on the bodyweight stepper; null only before the Bodyweight screen has been opened once
   editingBodyweightEntryId: null,   // id of a past entry being corrected, or null while logging today's weight
+  isBodyweightOpenedFromWorkout: false, // true when the Bodyweight screen was opened from the active workout, so Back and Save return there instead of home
   bodyDiagramView: "front"          // which side of the muscle-diagram body outline is showing, "front" or "back"
 };
 
@@ -151,6 +157,7 @@ const setEntryPanel = document.getElementById("setEntryPanel");
 // either activeWorkoutScreen (the "Today's status" button) or historyScreen
 // (a past session's "Edit status" button).
 const dayStatusPanel = document.getElementById("dayStatusPanel");
+const removeExercisePanel = document.getElementById("removeExercisePanel");
 
 // Every top-level screen, so each show*Screen() function below can hide all
 // of them and then reveal just its own, without repeating this list six times.
@@ -159,7 +166,7 @@ const allScreens = [
   exercisePickerScreen, plannedExerciseEntryPanel, exercisesScreen, historyScreen, gymsScreen,
   gymPickerScreen, setEntryPanel, exerciseStatsListScreen, exerciseStatsDetailScreen, muscleEditorPanel,
   personalBestsScreen, muscleStatsListScreen, muscleStatsDetailScreen, dayStatusPanel,
-  bodyweightScreen
+  bodyweightScreen, removeExercisePanel
 ];
 
 function hideAllScreens() {
@@ -186,6 +193,17 @@ function showMainScreen() {
 function showActiveWorkoutScreen() {
   hideAllScreens();
   activeWorkoutScreen.hidden = false;
+  // Today's weigh-in may have just been logged on the Bodyweight screen.
+  renderWorkoutBodyweightButton();
+}
+
+// Back to wherever the Bodyweight screen was opened from.
+function leaveBodyweightScreen() {
+  if (appState.isBodyweightOpenedFromWorkout) {
+    showActiveWorkoutScreen();
+  } else {
+    showMainScreen();
+  }
 }
 
 function showSettingsScreen() {
@@ -271,8 +289,9 @@ function showMuscleStatsDetailScreen(muscle) {
   renderMuscleStatsDetail(muscle);
 }
 
-function showBodyweightScreen() {
+function showBodyweightScreen(isOpenedFromWorkout) {
   hideAllScreens();
+  appState.isBodyweightOpenedFromWorkout = isOpenedFromWorkout;
   bodyweightScreen.hidden = false;
   resetBodyweightEntryToToday();
   renderBodyweightScreen();
@@ -288,14 +307,14 @@ document.getElementById("manageExercisesButton").addEventListener("click", showE
 document.getElementById("backFromExercisesButton").addEventListener("click", showSettingsScreen);
 document.getElementById("viewHistoryButton").addEventListener("click", showHistoryScreen);
 document.getElementById("backFromHistoryButton").addEventListener("click", showMainScreen);
-document.getElementById("viewBodyweightButton").addEventListener("click", showBodyweightScreen);
+document.getElementById("viewBodyweightButton").addEventListener("click", () => showBodyweightScreen(false));
 // The bottom bar only exists on the home screen, so "Home" is always where
 // you already are — it scrolls back up to the workouts instead, which is
 // what tapping the current tab does in most phone apps.
 document.getElementById("navHomeButton").addEventListener("click", () => {
   window.scrollTo({ top: 0, behavior: "smooth" });
 });
-document.getElementById("backFromBodyweightButton").addEventListener("click", showMainScreen);
+document.getElementById("backFromBodyweightButton").addEventListener("click", leaveBodyweightScreen);
 document.getElementById("manageGymsButton").addEventListener("click", showGymsScreen);
 document.getElementById("backFromGymsButton").addEventListener("click", showSettingsScreen);
 document.getElementById("viewDataButton").addEventListener("click", showDataScreen);
@@ -324,6 +343,20 @@ function getActiveTemplate() {
   return appState.database.workoutTemplates.find((template) => template.id === session.templateId) || null;
 }
 
+// A template workout's exercise list for that day: the template's own
+// list, minus anything skipped for that workout only, plus anything added
+// for that workout only (see Session in schema.js).
+function getSessionPlannedExercises(session, template) {
+  const keptFromTemplate = template.plannedExercises.filter(
+    (planned) => !session.removedExerciseIds.includes(planned.exerciseId)
+  );
+  return keptFromTemplate.concat(session.addedExercises);
+}
+
+function isAddedForThisWorkoutOnly(session, exerciseId) {
+  return session.addedExercises.some((planned) => planned.exerciseId === exerciseId);
+}
+
 
 // ---------------------------------------------------------------------------
 // Exercise list (main screen)
@@ -346,6 +379,12 @@ function renderExerciseArea() {
     templateWorkoutCardsElement.hidden = true;
     renderFreeformExerciseList();
   }
+  // Redrawing the cards throws away the old ones, and an open set panel
+  // sitting inside one of them goes with it, so put it back under the
+  // freshly drawn pills.
+  if (!setEntryPanel.hidden) {
+    positionSetEntryPanel();
+  }
 }
 
 function renderFreeformExerciseList() {
@@ -365,6 +404,9 @@ function renderFreeformExerciseList() {
     buttonElement.addEventListener("click", () => {
       openSetEntryPanel(exercise.id);
     });
+    // Marks where the set panel opens for this exercise (see
+    // findSetEntryPanelAnchor).
+    buttonElement.dataset.setPanelAnchor = exercise.id;
     itemElement.appendChild(buttonElement);
 
     const loggedCount = appState.database.sets.filter(
@@ -608,8 +650,9 @@ function buildSuggestionLine(planned, suggestion) {
 // since any pill in any card can be tapped first.
 function renderTemplateWorkoutCards(template) {
   templateWorkoutCardsElement.innerHTML = "";
+  const session = getActiveSession();
 
-  for (const planned of template.plannedExercises) {
+  for (const planned of getSessionPlannedExercises(session, template)) {
     const exercise = appState.database.exercises.find((candidate) => candidate.id === planned.exerciseId);
     const loggedSets = appState.database.sets
       .filter(
@@ -641,6 +684,9 @@ function renderTemplateWorkoutCards(template) {
 
     const pillRowElement = document.createElement("div");
     pillRowElement.className = "set-pills";
+    // Marks where the set panel opens for this exercise (see
+    // findSetEntryPanelAnchor).
+    pillRowElement.dataset.setPanelAnchor = planned.exerciseId;
 
     // One pill per planned set, filled in from whatever's actually been
     // logged so far for it.
@@ -667,15 +713,60 @@ function renderTemplateWorkoutCards(template) {
     // so it's what shows next time this workout template is started (and for any of
     // today's pills for this exercise not yet logged, since they read the
     // same target).
-    const nextGoalButton = document.createElement("button");
-    nextGoalButton.type = "button";
-    nextGoalButton.className = "card-action-button";
-    nextGoalButton.textContent = "Set goal for next time";
-    nextGoalButton.addEventListener("click", () => openNextGoalEditor(template.id, planned.exerciseId));
-    cardElement.appendChild(nextGoalButton);
+    // Not for an exercise added for today only: it isn't in the template,
+    // so there's no "next time" for a goal to apply to.
+    if (!isAddedForThisWorkoutOnly(session, planned.exerciseId)) {
+      const nextGoalButton = document.createElement("button");
+      nextGoalButton.type = "button";
+      nextGoalButton.className = "card-action-button";
+      nextGoalButton.textContent = "Set goal for next time";
+      nextGoalButton.addEventListener("click", () => openNextGoalEditor(template.id, planned.exerciseId));
+      cardElement.appendChild(nextGoalButton);
+    }
+
+    // Only in edit mode, so a stray thumb mid-set can't reach it.
+    if (appState.isEditingWorkoutExercises) {
+      const removeButton = document.createElement("button");
+      removeButton.type = "button";
+      removeButton.className = "card-action-button destructive-button";
+      removeButton.textContent = "Remove from workout";
+      removeButton.addEventListener("click", () => openRemoveExercisePanel(planned.exerciseId));
+      cardElement.appendChild(removeButton);
+    }
 
     templateWorkoutCardsElement.appendChild(cardElement);
   }
+
+  templateWorkoutCardsElement.appendChild(buildWorkoutEditControls());
+}
+
+// Below the last card: "Edit exercises" switches edit mode on, which adds
+// a "Remove from workout" button to each card and an "Add exercise" button
+// here. Kept behind a toggle because changing the workout is rare, and the
+// screen should stay about logging sets the rest of the time.
+function buildWorkoutEditControls() {
+  const controlsElement = document.createElement("div");
+  controlsElement.className = "workout-edit-controls";
+
+  if (appState.isEditingWorkoutExercises) {
+    const addButton = document.createElement("button");
+    addButton.type = "button";
+    addButton.textContent = "Add exercise";
+    addButton.addEventListener("click", openExercisePickerForActiveWorkout);
+    controlsElement.appendChild(addButton);
+  }
+
+  const toggleButton = document.createElement("button");
+  toggleButton.type = "button";
+  toggleButton.className = "card-action-button";
+  toggleButton.textContent = appState.isEditingWorkoutExercises ? "Done editing" : "Edit exercises";
+  toggleButton.addEventListener("click", () => {
+    appState.isEditingWorkoutExercises = !appState.isEditingWorkoutExercises;
+    renderExerciseArea();
+  });
+  controlsElement.appendChild(toggleButton);
+
+  return controlsElement;
 }
 
 renderExerciseArea();
@@ -816,6 +907,11 @@ function buildWorkoutTilePanel(template, sessionThisWeek) {
   } else {
     statusLine.textContent = "Not done this week";
   }
+  // Handy before starting: "do I have time for this one today?"
+  const estimate = estimateWorkoutDuration(template.id);
+  if (estimate) {
+    statusLine.textContent += ` · usually ${describeDurationEstimate(estimate)}`;
+  }
   panel.appendChild(statusLine);
 
   const exerciseList = document.createElement("ol");
@@ -886,6 +982,8 @@ function updateWorkoutControls() {
   const isActive = appState.activeSessionId !== null;
   endWorkoutButton.hidden = !isActive;
   dayStatusButton.hidden = !isActive;
+  workoutBodyweightButton.hidden = !isActive;
+  renderWorkoutBodyweightButton();
   workoutStatus.textContent = isActive ? "Workout in progress" : "";
   renderStartWorkoutChoices();
   updateRestTimer();
@@ -920,9 +1018,12 @@ function startWorkout(templateId, gymId) {
     dayStatus: "normal",
     notes: "",
     templateId: templateId,
-    gymId: gymId
+    gymId: gymId,
+    addedExercises: [],
+    removedExerciseIds: []
   };
   appState.database.sessions.push(session);
+  appState.isEditingWorkoutExercises = false;
   appState.activeSessionId = session.id;
   appState.pendingTemplateId = null;
   saveDatabase(appState.database);
@@ -956,6 +1057,7 @@ endWorkoutButton.addEventListener("click", () => {
   hidePersonalBestBanner();
   closeDayStatusPanel();
   appState.activeSessionId = null;
+  appState.isEditingWorkoutExercises = false;
   showMainScreen();
   updateWorkoutControls();
   renderExerciseArea();
@@ -965,44 +1067,196 @@ endWorkoutButton.addEventListener("click", () => {
 // ---------------------------------------------------------------------------
 // Rest timer
 //
-// Counts up from whenever the most recently logged set (in the current
-// workout, any exercise, warmups included — this is about physical
-// exertion, not performance context) was saved. Purely computed from
-// existing Set.performedAt timestamps, so there's no new stored state.
+// Normally one timer, counting up from whenever the most recently logged set
+// (in the current workout, any exercise, warmups included — this is about
+// physical exertion, not performance context) was saved.
+//
+// During a superset — two or more exercises each part-way through their
+// planned sets — it shows one timer per exercise instead, each counting from
+// that exercise's own last set, since that's the rest that matters when you
+// go back to it. Purely computed from existing Set.performedAt timestamps,
+// so there's no new stored state.
 // ---------------------------------------------------------------------------
 
 const restTimerElement = document.getElementById("restTimer");
 
+// An exercise left unfinished longer than this is treated as abandoned, not
+// as part of a superset, so its timer doesn't sit there counting up forever.
+const SUPERSET_TIMER_CUTOFF_MINUTES = 15;
+
+function secondsSince(isoString) {
+  return Math.max(0, Math.floor((Date.now() - new Date(isoString).getTime()) / 1000));
+}
+
+function findMostRecentSet(sets) {
+  return sets.reduce((latest, set) => (set.performedAt > latest.performedAt ? set : latest));
+}
+
+// The exercises currently part-way through their planned sets, each as
+// { exerciseName, lastSetAt }, newest first. Only template workouts have a
+// planned set count to be "part-way" through, so a free-form workout always
+// gets an empty list (and with it the single timer).
+function findUnfinishedExerciseTimers(sessionSets) {
+  const template = getActiveTemplate();
+  if (!template) {
+    return [];
+  }
+
+  const timers = [];
+  for (const planned of getSessionPlannedExercises(getActiveSession(), template)) {
+    const exerciseSets = sessionSets.filter((set) => set.exerciseId === planned.exerciseId);
+    const workingSetCount = exerciseSets.filter((set) => !set.isWarmup).length;
+    const isStartedButUnfinished = exerciseSets.length > 0 && workingSetCount < planned.targetSets;
+    if (!isStartedButUnfinished) {
+      continue;
+    }
+
+    const lastSetAt = findMostRecentSet(exerciseSets).performedAt;
+    if (secondsSince(lastSetAt) > SUPERSET_TIMER_CUTOFF_MINUTES * 60) {
+      continue;
+    }
+    const exercise = appState.database.exercises.find((candidate) => candidate.id === planned.exerciseId);
+    timers.push({ exerciseName: exercise.name, lastSetAt });
+  }
+  return timers.sort((a, b) => b.lastSetAt.localeCompare(a.lastSetAt));
+}
+
 function updateRestTimer() {
+  restTimerElement.innerHTML = "";
+  restTimerElement.classList.remove("rest-timer-superset");
   if (appState.activeSessionId === null) {
-    restTimerElement.textContent = "";
     return;
   }
 
   const sessionSets = appState.database.sets.filter((set) => set.sessionId === appState.activeSessionId);
   if (sessionSets.length === 0) {
-    restTimerElement.textContent = "";
     return;
   }
 
-  const mostRecentSet = sessionSets.reduce((latest, set) =>
-    set.performedAt > latest.performedAt ? set : latest
-  );
+  const unfinishedExerciseTimers = findUnfinishedExerciseTimers(sessionSets);
+  if (unfinishedExerciseTimers.length < 2) {
+    const mostRecentSet = findMostRecentSet(sessionSets);
+    restTimerElement.textContent = `Rest: ${formatElapsedTime(secondsSince(mostRecentSet.performedAt))}`;
+    return;
+  }
 
-  const elapsedSeconds = Math.max(
-    0,
-    Math.floor((Date.now() - new Date(mostRecentSet.performedAt).getTime()) / 1000)
-  );
-  const minutes = Math.floor(elapsedSeconds / 60);
-  const seconds = elapsedSeconds % 60;
-  restTimerElement.textContent = `Rest: ${minutes}:${String(seconds).padStart(2, "0")}`;
+  // One line per exercise. The class switches to a smaller font so two or
+  // three lines still fit in the pinned block without covering the screen.
+  restTimerElement.classList.add("rest-timer-superset");
+  for (const timer of unfinishedExerciseTimers) {
+    const lineElement = document.createElement("span");
+    lineElement.className = "rest-timer-line";
+
+    const nameElement = document.createElement("span");
+    nameElement.className = "rest-timer-exercise";
+    nameElement.textContent = timer.exerciseName;
+
+    const timeElement = document.createElement("span");
+    timeElement.textContent = formatElapsedTime(secondsSince(timer.lastSetAt));
+
+    lineElement.append(nameElement, timeElement);
+    restTimerElement.appendChild(lineElement);
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// Workout clock and duration estimate
+//
+// "Workout 32:10 · usually 70–80 min": time since the workout started, and
+// how long the same workout template has taken before. Like the rest timer,
+// computed from timestamps already stored, so nothing new is saved.
+// ---------------------------------------------------------------------------
+
+const workoutClockElement = document.getElementById("workoutClock");
+
+// "1:05:09" past an hour, "32:10" before that.
+function formatElapsedTime(totalSeconds) {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const paddedSeconds = String(seconds).padStart(2, "0");
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${paddedSeconds}`;
+  }
+  return `${minutes}:${paddedSeconds}`;
+}
+
+function updateWorkoutClock() {
+  const session = getActiveSession();
+  if (!session) {
+    workoutClockElement.textContent = "";
+    return;
+  }
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - new Date(session.startedAt).getTime()) / 1000));
+  let clockText = `Workout ${formatElapsedTime(elapsedSeconds)}`;
+
+  const estimate = session.templateId ? estimateWorkoutDuration(session.templateId) : null;
+  if (estimate) {
+    clockText += ` · usually ${describeDurationEstimate(estimate)}`;
+  }
+  workoutClockElement.textContent = clockText;
+}
+
+// How many minutes each recent finished session of this workout template
+// took, newest first. Measured from start to the last logged set rather
+// than to endedAt: tapping "End workout" late (in the car, or the next
+// morning) would otherwise make the workout look far longer than it was.
+function findRecentWorkoutDurationsInMinutes(templateId, sessionCount) {
+  return appState.database.sessions
+    .filter((session) => session.templateId === templateId && session.endedAt !== null)
+    .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+    .slice(0, sessionCount)
+    .map((session) => {
+      const durationMilliseconds = new Date(findLastActivityTime(session)) - new Date(session.startedAt);
+      return durationMilliseconds / 60000;
+    })
+    // A session with a single set (or none) has no meaningful length.
+    .filter((minutes) => minutes > 0);
+}
+
+// A typical range for this workout's length, as { lowMinutes, highMinutes }
+// rounded to 5 minutes, or null with fewer than two past sessions to go on.
+// With four or more, the quickest and slowest quarter are left out, so one
+// unusually short or long day doesn't stretch the range. Uses the last ten
+// sessions, so the estimate follows the workout as it changes over months.
+function estimateWorkoutDuration(templateId) {
+  const durations = findRecentWorkoutDurationsInMinutes(templateId, 10).sort((a, b) => a - b);
+  if (durations.length < 2) {
+    return null;
+  }
+
+  let typicalDurations = durations;
+  if (durations.length >= 4) {
+    const quarter = Math.floor(durations.length / 4);
+    typicalDurations = durations.slice(quarter, durations.length - quarter);
+  }
+
+  const roundToFive = (minutes) => Math.round(minutes / 5) * 5;
+  return {
+    lowMinutes: roundToFive(typicalDurations[0]),
+    highMinutes: roundToFive(typicalDurations[typicalDurations.length - 1])
+  };
+}
+
+// "70–80 min", or "~75 min" when the range has collapsed to one value.
+function describeDurationEstimate(estimate) {
+  if (estimate.lowMinutes === estimate.highMinutes) {
+    return `~${estimate.lowMinutes} min`;
+  }
+  return `${estimate.lowMinutes}–${estimate.highMinutes} min`;
+}
+
+function updateWorkoutTimers() {
+  updateWorkoutClock();
+  updateRestTimer();
 }
 
 // Runs for the lifetime of the page rather than being started/stopped
-// around each workout — simpler, and updateRestTimer() already no-ops
-// cleanly when there's nothing to show.
-setInterval(updateRestTimer, 1000);
-updateRestTimer();
+// around each workout — simpler, and both updates already no-op cleanly
+// when there's nothing to show.
+setInterval(updateWorkoutTimers, 1000);
+updateWorkoutTimers();
 
 
 // ---------------------------------------------------------------------------
@@ -1153,6 +1407,25 @@ function closeDayStatusPanel() {
 }
 
 dayStatusButton.addEventListener("click", () => openDayStatusPanel(getActiveSession().id));
+
+
+// ---------------------------------------------------------------------------
+// Bodyweight from the workout screen — a shortcut to the Bodyweight screen,
+// for weighing in at the gym without leaving the workout via Home.
+// ---------------------------------------------------------------------------
+
+const workoutBodyweightButton = document.getElementById("workoutBodyweightButton");
+
+// Shows today's weight once it's logged, so a glance tells whether the
+// weigh-in is already done.
+function renderWorkoutBodyweightButton() {
+  const todaysEntry = findTodaysBodyweightEntry();
+  workoutBodyweightButton.textContent = todaysEntry
+    ? `Bodyweight: ${todaysEntry.weightKg.toFixed(1)} kg`
+    : "Log bodyweight";
+}
+
+workoutBodyweightButton.addEventListener("click", () => showBodyweightScreen(true));
 
 dayStatusNotesInput.addEventListener("input", () => {
   appState.dayStatusDraft.notes = dayStatusNotesInput.value;
@@ -1343,7 +1616,7 @@ function openSetEntryPanel(exerciseId, planTarget = null) {
   previousPerformance.textContent = describeLastSession(exerciseId);
 
   renderSetDraft();
-  setEntryPanel.hidden = false;
+  showSetEntryPanel();
 }
 
 // Where the load stepper starts: the progression suggestion if there is
@@ -1409,13 +1682,84 @@ function openSetEntryPanelForEdit(setId) {
   deleteSetButton.hidden = false;
 
   renderSetDraft();
+  showSetEntryPanel();
+}
+
+// ---------------------------------------------------------------------------
+// Where the set panel appears
+//
+// During a workout the panel opens inside the exercise's card, right under
+// its pills, so what you tapped and the steppers stay next to each other.
+// Anywhere else (editing a past set from History) there are no pills to sit
+// under, so it stays a bottom sheet. It is one and the same element either
+// way: it is moved around the page rather than duplicated, so all the
+// stepper and button code above works unchanged wherever it sits.
+// ---------------------------------------------------------------------------
+
+// A comment node is invisible on the page, but marks the panel's original
+// spot in index.html so it can be put back exactly there.
+const setEntryPanelHomeMarker = document.createComment("set entry panel home");
+setEntryPanel.before(setEntryPanelHomeMarker);
+
+function showSetEntryPanel() {
   setEntryPanel.hidden = false;
+  positionSetEntryPanel();
+  // "nearest" scrolls only as far as needed to bring the whole panel on
+  // screen, and not at all when it already is, so the pills just tapped
+  // stay in view above it.
+  setEntryPanel.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+function positionSetEntryPanel() {
+  const anchor = findSetEntryPanelAnchor();
+  if (anchor === null) {
+    returnSetEntryPanelHome();
+    return;
+  }
+  anchor.after(setEntryPanel);
+  setEntryPanel.classList.remove("bottom-sheet");
+  setEntryPanel.classList.add("inline-set-panel");
+}
+
+function returnSetEntryPanelHome() {
+  setEntryPanelHomeMarker.after(setEntryPanel);
+  setEntryPanel.classList.remove("inline-set-panel");
+  setEntryPanel.classList.add("bottom-sheet");
+}
+
+// The element the panel should sit directly after, or null for "use the
+// bottom sheet". Looked up fresh every time from the data-set-panel-anchor
+// markers, rather than remembering the tapped element, because the cards
+// are redrawn from scratch after almost every change and the old element
+// would no longer be on the page.
+function findSetEntryPanelAnchor() {
+  if (activeWorkoutScreen.hidden) {
+    return null;
+  }
+  const exerciseId = appState.setDraft.exerciseId;
+  // Correcting a set from a free-form workout's review card: open under
+  // that card's pills, where the tap came from.
+  const isEditingFromReviewCard =
+    appState.editingSetId !== null && appState.freeformReviewExerciseId === exerciseId;
+  if (isEditingFromReviewCard) {
+    return freeformReviewCardElement.querySelector(".set-pills");
+  }
+  // Only look inside whichever of the two layouts is in use: the other one
+  // is hidden but can still hold leftover buttons from before, which would
+  // otherwise match first and swallow the panel out of sight.
+  const visibleExerciseArea = getActiveTemplate() ? templateWorkoutCardsElement : exerciseListElement;
+  // CSS.escape makes any exercise id safe to put inside a selector, even
+  // one with characters that would otherwise mean something to CSS.
+  return visibleExerciseArea.querySelector(`[data-set-panel-anchor="${CSS.escape(exerciseId)}"]`);
 }
 
 function closeSetEntryPanel() {
   appState.setDraft = null;
   appState.editingSetId = null;
   setEntryPanel.hidden = true;
+  // Back to its spot in index.html first, so the redraw below doesn't throw
+  // it away along with the old cards.
+  returnSetEntryPanelHome();
   // The cards' pills depend on which sets exist, so refresh them too. Safe
   // to call even while browsing History with no active workout — it just
   // redraws the (currently hidden) main-screen exercise area.
@@ -1754,7 +2098,12 @@ function isExerciseUnused(exerciseId) {
   const usedInWorkoutTemplates = appState.database.workoutTemplates.some((template) =>
     template.plannedExercises.some((planned) => planned.exerciseId === exerciseId)
   );
-  return !usedInSets && !usedInWorkoutTemplates;
+  // An exercise added to one workout only, even with no sets logged yet,
+  // still has that workout's card pointing at it.
+  const usedInSessions = appState.database.sessions.some((session) =>
+    isAddedForThisWorkoutOnly(session, exerciseId)
+  );
+  return !usedInSets && !usedInWorkoutTemplates && !usedInSessions;
 }
 
 function renderArchivedExercisesList() {
@@ -2438,20 +2787,27 @@ function renderBodyweightChart() {
   chartAreaElement.hidden = false;
   emptyMessageElement.hidden = true;
 
-  // Capped to the most recent 30 entries so the chart stays readable years
-  // into logging — same reasoning the exercise stats charts cap to 8 weeks.
+  renderChartRangePicker(document.getElementById("bodyweightRangePicker"), renderBodyweightChart);
+
   const recentEntries = appState.database.bodyweightEntries
-    .slice()
-    .sort((a, b) => a.loggedAt.localeCompare(b.loggedAt))
-    .slice(-30);
+    .filter((entry) => isWithinChartRange(entry.loggedAt))
+    .sort((a, b) => a.loggedAt.localeCompare(b.loggedAt));
+
+  // Unlike the other two screens, the range buttons live inside the chart
+  // area here, so they stay visible with the "nothing in range" note below
+  // them instead of the whole area disappearing.
+  const chartElement = document.getElementById("bodyweightChart");
+  if (recentEntries.length === 0) {
+    chartElement.textContent = describeEmptyChartRange();
+    return;
+  }
 
   const dataPoints = recentEntries.map((entry) => ({
     label: formatSessionDate(entry.loggedAt),
     value: entry.weightKg
   }));
 
-  document.getElementById("bodyweightChart").innerHTML =
-    buildLineChartSVG(dataPoints, (value) => `${value} kg`);
+  chartElement.innerHTML = buildLineChartSVG(dataPoints, (value) => `${value} kg`);
 }
 
 function renderBodyweightList() {
@@ -2526,8 +2882,16 @@ saveBodyweightButton.addEventListener("click", () => {
       });
     }
   }
+  // A weigh-in mid-workout is a quick detour: once today's weight is
+  // saved, go straight back to the workout. Correcting a past entry stays
+  // on this screen, since that's a deliberate visit to the list.
+  const wasLoggingToday = appState.editingBodyweightEntryId === null;
   saveDatabase(appState.database);
   resetBodyweightEntryToToday();
+  if (wasLoggingToday && appState.isBodyweightOpenedFromWorkout) {
+    showActiveWorkoutScreen();
+    return;
+  }
   renderBodyweightScreen();
 });
 
@@ -2578,6 +2942,63 @@ function getWeekKey(date) {
 
 
 // ---------------------------------------------------------------------------
+// Chart time range — the "6 wk / 12 wk / 24 wk / All" buttons above every
+// trend chart (exercise, muscle, bodyweight). One shared setting, so
+// choosing a range on one chart carries over to the next one you open.
+// ---------------------------------------------------------------------------
+
+const CHART_RANGES = [
+  { label: "6 wk", weeks: 6 },
+  { label: "12 wk", weeks: 12 },
+  { label: "24 wk", weeks: 24 },
+  { label: "All", weeks: null }
+];
+
+// The earliest moment the selected range includes, or null for all-time.
+// Counted in whole Monday-to-Monday weeks with this week as the last one, so
+// "6 wk" means this week plus the five before it — the same weeks the chart
+// points are grouped into.
+function getChartRangeStart() {
+  if (appState.chartRangeWeeks === null) {
+    return null;
+  }
+  const start = getCurrentWeekRange().start;
+  start.setDate(start.getDate() - (appState.chartRangeWeeks - 1) * 7);
+  return start;
+}
+
+function isWithinChartRange(isoString) {
+  const rangeStart = getChartRangeStart();
+  return rangeStart === null || new Date(isoString) >= rangeStart;
+}
+
+// Fills `containerElement` with one toggle button per range. `onChange` is
+// the screen's own render function, called after the choice is saved in
+// appState so the screen can redraw its charts (and these buttons) with it.
+function renderChartRangePicker(containerElement, onChange) {
+  containerElement.innerHTML = "";
+  for (const range of CHART_RANGES) {
+    const rangeButton = document.createElement("button");
+    rangeButton.type = "button";
+    rangeButton.className = "day-status-option";
+    rangeButton.textContent = range.label;
+    rangeButton.classList.toggle("day-status-option-selected", range.weeks === appState.chartRangeWeeks);
+    rangeButton.addEventListener("click", () => {
+      appState.chartRangeWeeks = range.weeks;
+      onChange();
+    });
+    containerElement.appendChild(rangeButton);
+  }
+}
+
+// What an empty chart says when there is older data, just none in the
+// chosen range — so it doesn't look as if the history has vanished.
+function describeEmptyChartRange() {
+  return `Nothing logged in the last ${appState.chartRangeWeeks} weeks. Try a longer range.`;
+}
+
+
+// ---------------------------------------------------------------------------
 // Weekly workout template completion summary (main screen, only when idle)
 //
 // Completion % for a workout template this week = total reps actually logged across
@@ -2594,7 +3015,9 @@ function computeWorkoutTemplateCompletionPercent(template, session) {
   let plannedReps = 0;
   let actualReps = 0;
 
-  for (const planned of template.plannedExercises) {
+  // That session's own exercise list, so skipping an exercise for the day
+  // doesn't count against it, and an added one counts towards it.
+  for (const planned of getSessionPlannedExercises(session, template)) {
     plannedReps += ((planned.targetRepsMin + planned.targetRepsMax) / 2) * planned.targetSets;
     for (const set of sessionWorkingSets) {
       if (set.exerciseId === planned.exerciseId) {
@@ -3046,14 +3469,15 @@ function getGymsUsedForExercise(exerciseId) {
   return appState.database.gyms.filter((gym) => gymIds.has(gym.id));
 }
 
-// One point per week that has data (most recent `weekCount` such weeks),
-// each the heaviest non-warmup set logged that week for this exercise.
+// One point per week that has data within the selected chart range (see
+// getChartRangeStart), each the heaviest non-warmup set logged that week
+// for this exercise.
 // `gymId` (optional) restricts this to sets from sessions at that gym —
 // used for a gym-specific exercise, so the chart doesn't mix load numbers
 // that aren't comparable between locations.
-function getWeeklyBestSets(exerciseId, weekCount, gymId = null) {
+function getWeeklyBestSets(exerciseId, gymId = null) {
   let workingSets = appState.database.sets.filter(
-    (set) => set.exerciseId === exerciseId && !set.isWarmup
+    (set) => set.exerciseId === exerciseId && !set.isWarmup && isWithinChartRange(set.performedAt)
   );
 
   if (gymId !== null) {
@@ -3075,7 +3499,26 @@ function getWeeklyBestSets(exerciseId, weekCount, gymId = null) {
   // Week keys are ISO dates (Monday of that week), so sorting the strings
   // sorts them chronologically too.
   const sortedWeekKeys = Array.from(bestByWeekKey.keys()).sort();
-  return sortedWeekKeys.slice(-weekCount).map((weekKey) => bestByWeekKey.get(weekKey));
+  return sortedWeekKeys.map((weekKey) => bestByWeekKey.get(weekKey));
+}
+
+// Which points get a value and date written next to them. At most
+// `maximumLabels`: always the first and last, plus others spread evenly in
+// between. A long range can have dozens of points, and a label on every one
+// would pile up into an unreadable smear on a phone-width chart.
+function chooseLabelledPointIndexes(pointCount, maximumLabels) {
+  const labelledIndexes = new Set();
+  if (pointCount <= maximumLabels) {
+    for (let index = 0; index < pointCount; index++) {
+      labelledIndexes.add(index);
+    }
+    return labelledIndexes;
+  }
+  const spacing = (pointCount - 1) / (maximumLabels - 1);
+  for (let labelNumber = 0; labelNumber < maximumLabels; labelNumber++) {
+    labelledIndexes.add(Math.round(labelNumber * spacing));
+  }
+  return labelledIndexes;
 }
 
 // Builds a small hand-drawn line chart as an SVG string (no charting
@@ -3098,16 +3541,23 @@ function buildLineChartSVG(dataPoints, valueFormatter) {
   const points = dataPoints.map((point, index) => {
     const x = padding.left + index * xStep;
     const y = padding.top + plotHeight - ((point.value - minValue) / valueRange) * plotHeight;
-    return { x, y, point };
+    return { x, y, point, index };
   });
 
   const pathData = points
     .map((p, index) => `${index === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
     .join(" ");
 
+  // Smaller dots once there are many, so they don't merge into a solid bar.
+  const dotRadius = points.length > 30 ? 2 : 3.5;
   const circlesSVG = points
-    .map((p) => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.5" fill="#2a6df4" />`)
+    .map((p) => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${dotRadius}" fill="#2a6df4" />`)
     .join("");
+
+  // Four fit: a full date like "19.4.2026" is wide enough that a fifth
+  // would start touching its neighbours on a phone-width chart.
+  const labelledIndexes = chooseLabelledPointIndexes(points.length, 4);
+  const labelledPoints = points.filter((p) => labelledIndexes.has(p.index));
 
   // A label centered ("middle") on the first or last point would extend
   // past the chart's left/right edge and get clipped by the viewBox — so
@@ -3119,17 +3569,17 @@ function buildLineChartSVG(dataPoints, valueFormatter) {
     return "middle";
   }
 
-  const valueLabelsSVG = points
-    .map((p, index) => {
+  const valueLabelsSVG = labelledPoints
+    .map((p) => {
       // Clamps the label near the top of the chart instead of letting it
       // run off the edge when the point itself is close to the top.
       const labelY = Math.max(p.y - 8, 12);
-      return `<text x="${p.x.toFixed(1)}" y="${labelY.toFixed(1)}" font-size="11" fill="#f0f0f0" text-anchor="${anchorFor(index)}">${valueFormatter(p.point.value)}</text>`;
+      return `<text x="${p.x.toFixed(1)}" y="${labelY.toFixed(1)}" font-size="11" fill="#f0f0f0" text-anchor="${anchorFor(p.index)}">${valueFormatter(p.point.value)}</text>`;
     })
     .join("");
 
-  const axisLabelsSVG = points
-    .map((p, index) => `<text x="${p.x.toFixed(1)}" y="${height - 6}" font-size="10" fill="#9a9a9a" text-anchor="${anchorFor(index)}">${p.point.label}</text>`)
+  const axisLabelsSVG = labelledPoints
+    .map((p) => `<text x="${p.x.toFixed(1)}" y="${height - 6}" font-size="10" fill="#9a9a9a" text-anchor="${anchorFor(p.index)}">${p.point.label}</text>`)
     .join("");
 
   return `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">` +
@@ -3199,11 +3649,19 @@ function renderExerciseStatsDetail(exerciseId) {
     appState.exerciseStatsSelectedGymId = gymsUsed[0] ? gymsUsed[0].id : null;
   }
 
-  const weeklyBestSets = getWeeklyBestSets(exerciseId, 8, appState.exerciseStatsSelectedGymId);
+  renderChartRangePicker(
+    document.getElementById("exerciseStatsRangePicker"),
+    () => renderExerciseStatsDetail(exerciseId)
+  );
+
+  const weeklyBestSets = getWeeklyBestSets(exerciseId, appState.exerciseStatsSelectedGymId);
   const emptyMessage = document.getElementById("exerciseStatsEmptyMessage");
   const chartsContainer = document.getElementById("exerciseStatsCharts");
 
   if (weeklyBestSets.length === 0) {
+    // This screen is only reachable for an exercise with logged sets, so
+    // an empty chart here always means "none in this range".
+    emptyMessage.textContent = describeEmptyChartRange();
     emptyMessage.hidden = false;
     chartsContainer.hidden = true;
     return;
@@ -3331,11 +3789,11 @@ document.getElementById("backFromPersonalBestsButton").addEventListener("click",
 // One point per week that has data (most recent `weekCount` such weeks):
 // the total weighted sets for `muscle` across every exercise that has it,
 // summed from that week's non-warmup sets.
-function getWeeklyMuscleSetCounts(muscle, weekCount) {
+function getWeeklyMuscleSetCounts(muscle) {
   const countsByWeekKey = new Map();
 
   for (const set of appState.database.sets) {
-    if (set.isWarmup) {
+    if (set.isWarmup || !isWithinChartRange(set.performedAt)) {
       continue;
     }
     const exercise = appState.database.exercises.find((candidate) => candidate.id === set.exerciseId);
@@ -3350,7 +3808,7 @@ function getWeeklyMuscleSetCounts(muscle, weekCount) {
   // Week keys are ISO dates (Monday of that week), so sorting the strings
   // sorts them chronologically too — same trick getWeeklyBestSets() uses.
   const sortedWeekKeys = Array.from(countsByWeekKey.keys()).sort();
-  return sortedWeekKeys.slice(-weekCount).map((weekKey) => ({
+  return sortedWeekKeys.map((weekKey) => ({
     weekKey,
     value: countsByWeekKey.get(weekKey)
   }));
@@ -3392,11 +3850,19 @@ function renderMuscleStatsList() {
 function renderMuscleStatsDetail(muscle) {
   document.getElementById("muscleStatsDetailName").textContent = MUSCLE_GROUP_LABELS[muscle];
 
-  const weeklyCounts = getWeeklyMuscleSetCounts(muscle, 8);
+  renderChartRangePicker(
+    document.getElementById("muscleStatsRangePicker"),
+    () => renderMuscleStatsDetail(muscle)
+  );
+
+  const weeklyCounts = getWeeklyMuscleSetCounts(muscle);
   const emptyMessage = document.getElementById("muscleStatsEmptyMessage");
   const chartContainer = document.getElementById("muscleStatsChartContainer");
 
   if (weeklyCounts.length === 0) {
+    // Only muscles with logged sets are listed, so empty means "none in
+    // this range".
+    emptyMessage.textContent = describeEmptyChartRange();
     emptyMessage.hidden = false;
     chartContainer.hidden = true;
     return;
@@ -3610,6 +4076,7 @@ workoutTemplateNameInput.addEventListener("input", () => {
 });
 
 document.getElementById("addPlannedExerciseButton").addEventListener("click", () => {
+  appState.exercisePickerPurpose = "workoutTemplate";
   exercisePickerScreen.hidden = false;
   workoutTemplateEditorScreen.hidden = true;
   renderExercisePicker();
@@ -3650,44 +4117,110 @@ document.getElementById("cancelWorkoutTemplateEditButton").addEventListener("cli
 // Exercise picker (for adding an exercise to the workout template being edited)
 // ---------------------------------------------------------------------------
 
-function renderExercisePicker() {
-  const listElement = document.getElementById("exercisePickerList");
-  listElement.innerHTML = "";
-
-  for (const exercise of appState.database.exercises.filter((candidate) => !candidate.isArchived)) {
-    const itemElement = document.createElement("li");
-    const buttonElement = document.createElement("button");
-    buttonElement.type = "button";
-    buttonElement.className = "exercise-item";
-    buttonElement.textContent = exercise.name;
-    buttonElement.addEventListener("click", () => {
-      appState.plannedExerciseDraft = {
-        exerciseId: exercise.id,
-        targetSets: 3,
-        targetRepsMin: 8,
-        targetRepsMax: 10,
-        targetLoad: 20,
-        // A workout template's first target is a starting point, not a goal set by
-        // hand, so it never overrides a progression suggestion.
-        targetLoadSetAt: null
-      };
-      document.getElementById("plannedExerciseEntryName").textContent = exercise.name;
-      renderPlannedExerciseDraft();
-      exercisePickerScreen.hidden = true;
-      // The panel is a bottom sheet (style.css), so it needs a screen
-      // behind it: the workout being edited, where the exercise is about
-      // to land.
-      workoutTemplateEditorScreen.hidden = false;
-      plannedExerciseEntryPanel.hidden = false;
-    });
-    itemElement.appendChild(buttonElement);
-    listElement.appendChild(itemElement);
+// Sorts exercises into groups by their main muscle (the one weighted 1.0),
+// in the fixed MUSCLE_GROUPS order from schema.js so the groups always
+// appear in the same place. Exercises with no main muscle set yet go in a
+// last group of their own rather than disappearing from the picker.
+// Muscles with no exercises are left out, so no group is ever empty.
+function groupExercisesByMainMuscle(exercises) {
+  const groups = [];
+  for (const muscle of MUSCLE_GROUPS) {
+    const exercisesForMuscle = exercises.filter((exercise) => exercise.muscles[muscle] === 1.0);
+    if (exercisesForMuscle.length > 0) {
+      groups.push({ label: MUSCLE_GROUP_LABELS[muscle], exercises: exercisesForMuscle });
+    }
   }
+
+  const exercisesWithoutMainMuscle = exercises.filter(
+    (exercise) => !Object.values(exercise.muscles).includes(1.0)
+  );
+  if (exercisesWithoutMainMuscle.length > 0) {
+    groups.push({ label: "No main muscle set", exercises: exercisesWithoutMainMuscle });
+  }
+  return groups;
+}
+
+// One collapsible group in the picker. <details> is the browser's own
+// open/close box: tapping its <summary> line toggles the list underneath,
+// with no JavaScript needed. Every group starts closed, so the whole list
+// of muscles fits on one screen and one tap opens the one you want.
+function buildExercisePickerGroup(group) {
+  const groupElement = document.createElement("details");
+  groupElement.className = "picker-group";
+
+  const summaryElement = document.createElement("summary");
+  summaryElement.textContent = `${group.label} (${group.exercises.length})`;
+  groupElement.appendChild(summaryElement);
+
+  const listElement = document.createElement("ul");
+  for (const exercise of group.exercises) {
+    listElement.appendChild(buildExercisePickerItem(exercise));
+  }
+  groupElement.appendChild(listElement);
+  return groupElement;
+}
+
+function renderExercisePicker() {
+  const pickerElement = document.getElementById("exercisePickerGroups");
+  pickerElement.innerHTML = "";
+
+  let activeExercises = appState.database.exercises.filter((candidate) => !candidate.isArchived);
+  // Adding to a workout in progress: leave out what's already in it, so the
+  // same exercise can't end up with two cards.
+  if (appState.exercisePickerPurpose === "activeWorkout") {
+    const exerciseIdsInWorkout = getSessionPlannedExercises(getActiveSession(), getActiveTemplate())
+      .map((planned) => planned.exerciseId);
+    activeExercises = activeExercises.filter((exercise) => !exerciseIdsInWorkout.includes(exercise.id));
+  }
+  for (const group of groupExercisesByMainMuscle(activeExercises)) {
+    pickerElement.appendChild(buildExercisePickerGroup(group));
+  }
+}
+
+// One exercise inside a group. Tapping it moves on to setting that
+// exercise's target sets, reps and load for the workout being edited.
+function buildExercisePickerItem(exercise) {
+  const itemElement = document.createElement("li");
+  const buttonElement = document.createElement("button");
+  buttonElement.type = "button";
+  buttonElement.className = "exercise-item";
+  buttonElement.textContent = exercise.name;
+  buttonElement.addEventListener("click", () => {
+    if (appState.exercisePickerPurpose === "activeWorkout") {
+      openTargetPanelForAddingToWorkout(exercise);
+      return;
+    }
+    appState.plannedExerciseDraft = {
+      exerciseId: exercise.id,
+      targetSets: 3,
+      targetRepsMin: 8,
+      targetRepsMax: 10,
+      targetLoad: 20,
+      // A workout template's first target is a starting point, not a goal set by
+      // hand, so it never overrides a progression suggestion.
+      targetLoadSetAt: null
+    };
+    document.getElementById("plannedExerciseEntryName").textContent = exercise.name;
+    renderPlannedExerciseDraft();
+    exercisePickerScreen.hidden = true;
+    // The panel is a bottom sheet (style.css), so it needs a screen
+    // behind it: the workout being edited, where the exercise is about
+    // to land.
+    workoutTemplateEditorScreen.hidden = false;
+    plannedExerciseEntryPanel.hidden = false;
+  });
+  itemElement.appendChild(buttonElement);
+  return itemElement;
 }
 
 document.getElementById("cancelExercisePickerButton").addEventListener("click", () => {
   exercisePickerScreen.hidden = true;
-  workoutTemplateEditorScreen.hidden = false;
+  if (appState.exercisePickerPurpose === "activeWorkout") {
+    activeWorkoutScreen.hidden = false;
+  } else {
+    workoutTemplateEditorScreen.hidden = false;
+  }
+  appState.exercisePickerPurpose = null;
 });
 
 
@@ -3796,9 +4329,14 @@ makeStepperValueEditable(
 function resetPlannedExerciseEntryPanelToAddMode() {
   plannedExerciseEntryHint.hidden = true;
   document.getElementById("savePlannedExerciseButton").textContent = "Add to workout";
+  savePlannedExerciseToTemplateButton.hidden = true;
 }
 
 document.getElementById("savePlannedExerciseButton").addEventListener("click", () => {
+  if (appState.isAddingExerciseToWorkout) {
+    addDraftExerciseToActiveWorkout(false);
+    return;
+  }
   if (appState.nextGoalTarget) {
     const { templateId, exerciseId, startingLoad } = appState.nextGoalTarget;
     const template = appState.database.workoutTemplates.find((candidate) => candidate.id === templateId);
@@ -3834,6 +4372,10 @@ document.getElementById("savePlannedExerciseButton").addEventListener("click", (
 });
 
 document.getElementById("cancelPlannedExerciseButton").addEventListener("click", () => {
+  if (appState.isAddingExerciseToWorkout) {
+    closeTargetPanelForAddingToWorkout();
+    return;
+  }
   if (appState.nextGoalTarget) {
     appState.nextGoalTarget = null;
     appState.plannedExerciseDraft = null;
@@ -3922,6 +4464,198 @@ function countCalendarDaysSince(isoString) {
   const millisecondsPerDay = 24 * 60 * 60 * 1000;
   return Math.round((today - thenDay) / millisecondsPerDay);
 }
+
+
+// ---------------------------------------------------------------------------
+// Changing the exercises of the workout in progress
+//
+// Adding reuses the exercise picker and the target panel above; removing
+// has a small panel of its own. Either can apply to this workout only
+// (stored on the session, see Session in schema.js) or to the template as
+// well, so it's there next time too.
+// ---------------------------------------------------------------------------
+
+const savePlannedExerciseToTemplateButton = document.getElementById("savePlannedExerciseToTemplateButton");
+
+function openExercisePickerForActiveWorkout() {
+  appState.exercisePickerPurpose = "activeWorkout";
+  activeWorkoutScreen.hidden = true;
+  exercisePickerScreen.hidden = false;
+  renderExercisePicker();
+  window.scrollTo(0, 0);
+}
+
+// Starting targets: the template's own, when it still lists this exercise
+// (it was only skipped for today). Otherwise 3 × 8-10 at the load last used
+// for this exercise, if any, so the load stepper needs a few taps at most;
+// 20 kg (an empty bar) when it's never been done.
+function chooseTargetsForAddingToWorkout(exercise, template) {
+  const plannedInTemplate = template.plannedExercises.find((planned) => planned.exerciseId === exercise.id);
+  if (plannedInTemplate) {
+    return { ...plannedInTemplate };
+  }
+  const previous = findMostRecentWorkingSet(exercise.id);
+  return {
+    exerciseId: exercise.id,
+    targetSets: 3,
+    targetRepsMin: 8,
+    targetRepsMax: 10,
+    targetLoad: previous ? previous.load : 20,
+    targetLoadSetAt: null
+  };
+}
+
+function openTargetPanelForAddingToWorkout(exercise) {
+  const template = getActiveTemplate();
+  appState.isAddingExerciseToWorkout = true;
+  appState.plannedExerciseDraft = chooseTargetsForAddingToWorkout(exercise, template);
+
+  document.getElementById("plannedExerciseEntryName").textContent = exercise.name;
+  plannedExerciseEntryHint.textContent =
+    `Add it to today's workout only, or to "${template.name}" as well so it's there next time too.`;
+  plannedExerciseEntryHint.hidden = false;
+  // The two save buttons are the "only today, or the template too?"
+  // question, so choosing is one tap with no extra dialog afterwards.
+  document.getElementById("savePlannedExerciseButton").textContent = "Only today";
+  savePlannedExerciseToTemplateButton.textContent = "Today + template";
+  savePlannedExerciseToTemplateButton.hidden = false;
+
+  renderPlannedExerciseDraft();
+  exercisePickerScreen.hidden = true;
+  activeWorkoutScreen.hidden = false;
+  plannedExerciseEntryPanel.hidden = false;
+}
+
+function closeTargetPanelForAddingToWorkout() {
+  appState.isAddingExerciseToWorkout = false;
+  appState.exercisePickerPurpose = null;
+  appState.plannedExerciseDraft = null;
+  plannedExerciseEntryPanel.hidden = true;
+  resetPlannedExerciseEntryPanelToAddMode();
+  renderExerciseArea();
+}
+
+function addDraftExerciseToActiveWorkout(isAlsoAddedToTemplate) {
+  const session = getActiveSession();
+  const template = getActiveTemplate();
+  const draft = appState.plannedExerciseDraft;
+
+  // The exercise might have been skipped for today earlier; adding it back
+  // undoes that skip, whichever button was used.
+  session.removedExerciseIds = session.removedExerciseIds.filter((id) => id !== draft.exerciseId);
+
+  if (isAlsoAddedToTemplate) {
+    // If the template still lists it (it was only skipped for today), its
+    // targets are updated rather than listing it twice.
+    const existingPlanned = template.plannedExercises.find((planned) => planned.exerciseId === draft.exerciseId);
+    if (existingPlanned) {
+      Object.assign(existingPlanned, draft);
+    } else {
+      template.plannedExercises.push(draft);
+    }
+  } else {
+    session.addedExercises.push(draft);
+  }
+
+  saveDatabase(appState.database);
+  closeTargetPanelForAddingToWorkout();
+}
+
+savePlannedExerciseToTemplateButton.addEventListener("click", () => addDraftExerciseToActiveWorkout(true));
+
+const removeExerciseHeading = document.getElementById("removeExerciseHeading");
+const removeExerciseHint = document.getElementById("removeExerciseHint");
+const removeExerciseTodayButton = document.getElementById("removeExerciseTodayButton");
+const removeExerciseFromTemplateButton = document.getElementById("removeExerciseFromTemplateButton");
+
+function hasSetsInActiveWorkout(exerciseId) {
+  return appState.database.sets.some(
+    (set) => set.sessionId === appState.activeSessionId && set.exerciseId === exerciseId
+  );
+}
+
+// Which of the two remove buttons make sense depends on where the exercise
+// came from and whether it already has sets today. Logged sets are never
+// deleted from here: an exercise with sets today keeps its card today.
+function openRemoveExercisePanel(exerciseId) {
+  const session = getActiveSession();
+  const template = getActiveTemplate();
+  const exercise = appState.database.exercises.find((candidate) => candidate.id === exerciseId);
+  const hasSetsToday = hasSetsInActiveWorkout(exerciseId);
+  const isTodayOnly = isAddedForThisWorkoutOnly(session, exerciseId);
+  // A template has to keep at least one exercise, same rule as the
+  // template editor's Save button.
+  const isLastInTemplate = template.plannedExercises.length === 1;
+
+  appState.removeExerciseTargetId = exerciseId;
+  removeExerciseHeading.textContent = `Remove ${exercise.name}?`;
+  removeExerciseTodayButton.hidden = hasSetsToday;
+  removeExerciseTodayButton.textContent = isTodayOnly ? "Remove" : "Skip it today only";
+  removeExerciseFromTemplateButton.hidden = isTodayOnly || isLastInTemplate;
+  removeExerciseFromTemplateButton.textContent = hasSetsToday
+    ? `Remove from "${template.name}" from next time`
+    : `Remove today and from "${template.name}"`;
+
+  if (isTodayOnly && hasSetsToday) {
+    removeExerciseHint.textContent =
+      "It already has sets logged today. Delete those sets first (long-press a pill) to remove it.";
+  } else if (isTodayOnly) {
+    removeExerciseHint.textContent = "It was added for today only, so the template isn't affected.";
+  } else if (hasSetsToday) {
+    removeExerciseHint.textContent = "It already has sets logged today, so it stays in today's workout.";
+  } else {
+    removeExerciseHint.textContent = "";
+  }
+  if (!isTodayOnly && isLastInTemplate) {
+    removeExerciseHint.textContent += " It's the only exercise in the template, so it can't be removed from there.";
+  }
+
+  removeExercisePanel.hidden = false;
+}
+
+function closeRemoveExercisePanel() {
+  appState.removeExerciseTargetId = null;
+  removeExercisePanel.hidden = true;
+  renderExerciseArea();
+}
+
+function removeExerciseFromActiveWorkoutOnly(exerciseId) {
+  const session = getActiveSession();
+  if (isAddedForThisWorkoutOnly(session, exerciseId)) {
+    session.addedExercises = session.addedExercises.filter((planned) => planned.exerciseId !== exerciseId);
+  } else {
+    session.removedExerciseIds.push(exerciseId);
+  }
+}
+
+// With sets already logged today, a copy of its targets moves to this
+// workout's own list, so today's card (and its logged sets) stays put
+// while the template drops it from next time on.
+function removeExerciseFromTemplate(exerciseId) {
+  const session = getActiveSession();
+  const template = getActiveTemplate();
+  const planned = template.plannedExercises.find((candidate) => candidate.exerciseId === exerciseId);
+  template.plannedExercises = template.plannedExercises.filter((candidate) => candidate !== planned);
+  if (hasSetsInActiveWorkout(exerciseId)) {
+    // `{ ...planned }` makes a separate copy of the object, so the two
+    // lists never share (and accidentally co-edit) one object.
+    session.addedExercises.push({ ...planned });
+  }
+}
+
+removeExerciseTodayButton.addEventListener("click", () => {
+  removeExerciseFromActiveWorkoutOnly(appState.removeExerciseTargetId);
+  saveDatabase(appState.database);
+  closeRemoveExercisePanel();
+});
+
+removeExerciseFromTemplateButton.addEventListener("click", () => {
+  removeExerciseFromTemplate(appState.removeExerciseTargetId);
+  saveDatabase(appState.database);
+  closeRemoveExercisePanel();
+});
+
+document.getElementById("cancelRemoveExerciseButton").addEventListener("click", closeRemoveExercisePanel);
 
 
 // ---------------------------------------------------------------------------
