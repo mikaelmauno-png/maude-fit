@@ -505,7 +505,9 @@ function renderFreeformReview() {
 // progression.js), or null. When there is one, a not-yet-logged pill shows
 // the suggested load instead of the workout template's fixed target load, unless a
 // goal set by hand overrides it (see isGoalOverride).
-function buildSetPill(loggedSet, planned, suggestion) {
+// `setIndex` is this pill's position on the card, counting from 0, which
+// picks that set's own rep target out of the suggestion.
+function buildSetPill(loggedSet, planned, suggestion, setIndex) {
   const pill = document.createElement("button");
   pill.type = "button";
   pill.className = loggedSet ? "set-pill set-pill-done" : "set-pill set-pill-pending";
@@ -516,10 +518,14 @@ function buildSetPill(loggedSet, planned, suggestion) {
   const pendingLoad = suggestion && !goalOverrides ? suggestion.load : planned.targetLoad;
   weightSpan.textContent = `${loggedSet ? loggedSet.load : pendingLoad} kg`;
 
+  // This set's own target from the suggestion ("7"), or the template's rep
+  // range ("6-8") when there's no suggestion to follow.
   const repsSpan = document.createElement("span");
   repsSpan.className = "set-pill-reps";
-  const repRange = formatRepRange(planned.targetRepsMin, planned.targetRepsMax);
-  repsSpan.textContent = loggedSet ? `${loggedSet.reps}/${repRange}` : repRange;
+  const repTarget = suggestion && !goalOverrides
+    ? `${targetRepsForSet(suggestion, setIndex)}`
+    : formatRepRange(planned.targetRepsMin, planned.targetRepsMax);
+  repsSpan.textContent = loggedSet ? `${loggedSet.reps}/${repTarget}` : repTarget;
 
   pill.append(weightSpan, repsSpan);
 
@@ -540,7 +546,8 @@ function buildSetPill(loggedSet, planned, suggestion) {
         repsMin: planned.targetRepsMin,
         repsMax: planned.targetRepsMax,
         suggestion,
-        isGoalOverride: goalOverrides
+        isGoalOverride: goalOverrides,
+        setIndex
       });
     });
   }
@@ -632,10 +639,17 @@ function isGoalOverride(planned, suggestion) {
 // suggestion is still mentioned, so it's visible what the rules would
 // have said.
 function describeProgression(suggestion, goalLoad, goalOverrides) {
+  const repsText = describeSuggestedReps(suggestion);
   if (goalOverrides) {
-    return `Your goal: ${goalLoad} kg (suggestion was ${suggestion.load} kg × ${suggestion.reps}).`;
+    return `Your goal: ${goalLoad} kg (suggestion was ${suggestion.load} kg × ${repsText}).`;
   }
-  return `Suggested: ${suggestion.load} kg × ${suggestion.reps}. ${suggestion.reason}`;
+  return `Suggested: ${suggestion.load} kg × ${repsText}. ${suggestion.reason}`;
+}
+
+// "8" when every set has the same target, "8 · 7 · 7" when they differ.
+function describeSuggestedReps(suggestion) {
+  const isSameForEverySet = suggestion.repsPerSet.every((reps) => reps === suggestion.repsPerSet[0]);
+  return isSameForEverySet ? `${suggestion.reps}` : suggestion.repsPerSet.join(" · ");
 }
 
 // The green suggestion line on a workout card, with the reason included so
@@ -692,13 +706,13 @@ function renderTemplateWorkoutCards(template) {
     // One pill per planned set, filled in from whatever's actually been
     // logged so far for it.
     for (let setIndex = 0; setIndex < planned.targetSets; setIndex++) {
-      pillRowElement.appendChild(buildSetPill(loggedSets[setIndex], planned, suggestion));
+      pillRowElement.appendChild(buildSetPill(loggedSets[setIndex], planned, suggestion, setIndex));
     }
 
     // Any sets logged beyond the planned count (via the "+" pill below) get
     // their own pills too, rather than being invisible here.
     for (let setIndex = planned.targetSets; setIndex < loggedSets.length; setIndex++) {
-      pillRowElement.appendChild(buildSetPill(loggedSets[setIndex], planned, suggestion));
+      pillRowElement.appendChild(buildSetPill(loggedSets[setIndex], planned, suggestion, setIndex));
     }
 
     const addPill = document.createElement("button");
@@ -1708,13 +1722,14 @@ function chooseStartingLoad(planTarget, suggestion, previous) {
   return previous ? previous.load : 20;
 }
 
-// Reps deliberately don't carry forward the same way load does: the target
-// (whatever a set falls short of it) is still what every set of the
-// exercise should keep aiming for today, not just what the first set
-// happened to hit.
+// Reps deliberately don't carry forward the same way load does: each set
+// has its own target today (see targetRepsForSet in progression.js), which
+// doesn't change just because an earlier set fell short of its own.
+// A suggestion only ever arrives together with a planTarget, which says
+// which set on the card was tapped.
 function chooseStartingReps(planTarget, suggestion, previous) {
   if (suggestion) {
-    return suggestion.reps;
+    return targetRepsForSet(suggestion, planTarget.setIndex);
   }
   if (planTarget) {
     return planTarget.repsMax;

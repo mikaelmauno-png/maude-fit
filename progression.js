@@ -133,10 +133,13 @@ function missedTwiceAtSameLoad(recentSessions, repsMin, repsMax) {
 
 // Works out today's suggested load and reps for one planned exercise.
 //
-// Returns `{ load, reps, reason, basedOnSessionStartedAt }`, where `reason`
-// is one short sentence for the screen and `basedOnSessionStartedAt` is the
-// start time of the session the suggestion was worked out from. Returns
-// null when there's no past data to base it on.
+// Returns `{ load, reps, repsPerSet, reason, basedOnSessionStartedAt }`:
+// - `repsPerSet` is a target for each set, in order (see targetRepsForSet
+//   for sets beyond the end of the list), and `reps` is the lowest of them
+// - `reason` is one short sentence for the screen
+// - `basedOnSessionStartedAt` is the start time of the session the
+//   suggestion was worked out from
+// Returns null when there's no past data to base it on.
 function suggestNextTarget(database, exerciseId, repsMin, repsMax, activeSession) {
   const exercise = database.exercises.find((candidate) => candidate.id === exerciseId);
 
@@ -154,50 +157,82 @@ function suggestNextTarget(database, exerciseId, repsMin, repsMax, activeSession
 
 
 // Applies the double-progression rules to the latest session's results.
-// Returns `{ load, reps, reason }`.
+// Returns `{ load, reps, repsPerSet, reason }`.
 function chooseSuggestion(recentSessions, increment, repsMin, repsMax) {
-  const topLoadSets = findTopLoadSets(recentSessions[0].workingSets);
+  // In the order they were done, so "set 3" in the targets means the
+  // third set, same as on the workout card.
+  const topLoadSets = findTopLoadSets(recentSessions[0].workingSets).sort((a, b) => a.order - b.order);
   const lastLoad = topLoadSets[0].load;
+  const setCount = topLoadSets.length;
   const outcome = classifySessionOutcome(topLoadSets, repsMin, repsMax);
 
   if (outcome === "readyToProgress") {
-    return {
-      load: roundLoad(lastLoad + increment),
-      reps: repsMin,
-      reason: `All sets reached ${repsMax} reps last time, so add ${increment} kg.`
-    };
+    return buildUniformSuggestion(
+      roundLoad(lastLoad + increment), repsMin, setCount,
+      `All sets reached ${repsMax} reps last time, so add ${increment} kg.`
+    );
   }
 
   if (outcome === "topOfRangeAtFailure") {
-    return {
-      load: lastLoad,
-      reps: repsMax,
-      reason: `Reached ${repsMax} reps but at RIR 0. Repeat ${lastLoad} kg before adding weight.`
-    };
+    return buildUniformSuggestion(
+      lastLoad, repsMax, setCount,
+      `Reached ${repsMax} reps but at RIR 0. Repeat ${lastLoad} kg before adding weight.`
+    );
   }
 
   if (outcome === "missedRange") {
     if (missedTwiceAtSameLoad(recentSessions, repsMin, repsMax)) {
-      return {
-        load: Math.max(roundLoad(lastLoad - increment), 0),
-        reps: repsMin,
-        reason: `Fell short of ${repsMin} reps twice in a row, so drop ${increment} kg.`
-      };
+      return buildUniformSuggestion(
+        Math.max(roundLoad(lastLoad - increment), 0), repsMin, setCount,
+        `Fell short of ${repsMin} reps twice in a row, so drop ${increment} kg.`
+      );
     }
-    return {
-      load: lastLoad,
-      reps: repsMin,
-      reason: `Fell short of ${repsMin} reps last time. Stay at ${lastLoad} kg.`
-    };
+    return buildUniformSuggestion(
+      lastLoad, repsMin, setCount,
+      `Fell short of ${repsMin} reps last time. Stay at ${lastLoad} kg.`
+    );
   }
 
-  // "withinRange": keep the weight and aim for one more rep than the
-  // weakest set managed, so every set creeps towards the top of the range.
-  const fewestReps = Math.min(...topLoadSets.map((set) => set.reps));
-  const targetReps = Math.min(fewestReps + 1, repsMax);
+  return buildOneMoreRepSuggestion(topLoadSets, repsMax);
+}
+
+// The same rep target on every set: after a weight change, or when last
+// time's reps aren't a useful starting point (a missed range).
+function buildUniformSuggestion(load, reps, setCount, reason) {
+  return { load, reps, repsPerSet: new Array(setCount).fill(reps), reason };
+}
+
+// "withinRange": keep the weight, repeat last time's reps set by set, and
+// add one rep to the weakest set only. One rep at a time is a step that's
+// actually achievable next session, and lifting the weakest set first
+// evens the sets out before the strongest pulls further ahead:
+// 8·7·6 → 8·7·7 → 8·8·7 → 8·8·8, and then the weight goes up.
+function buildOneMoreRepSuggestion(topLoadSets, repsMax) {
+  // A set that went past the top of the range still only needs the top
+  // next time; the range is what decides when the weight goes up.
+  const repsPerSet = topLoadSets.map((set) => Math.min(set.reps, repsMax));
+  const fewestReps = Math.min(...repsPerSet);
+  // indexOf finds the *first* set with the fewest reps, so with a tie the
+  // earlier set goes first.
+  const weakestSetIndex = repsPerSet.indexOf(fewestReps);
+  repsPerSet[weakestSetIndex] = fewestReps + 1;
+
+  const lastLoad = topLoadSets[0].load;
   return {
     load: lastLoad,
-    reps: targetReps,
-    reason: `Stay at ${lastLoad} kg and aim for ${targetReps} reps on every set.`
+    reps: Math.min(...repsPerSet),
+    repsPerSet,
+    reason: `Stay at ${lastLoad} kg, one more rep on set ${weakestSetIndex + 1} than last time.`
   };
+}
+
+
+// The suggested reps for one set, counting from 0. A set beyond those done
+// last time (the plan has more sets now, or it's an extra set) gets the
+// lowest target, the safe choice for a set with nothing to compare to.
+function targetRepsForSet(suggestion, setIndex) {
+  if (setIndex < suggestion.repsPerSet.length) {
+    return suggestion.repsPerSet[setIndex];
+  }
+  return suggestion.reps;
 }
