@@ -455,9 +455,8 @@ function buildSetPill(loggedSet, planned, suggestion) {
 
   const repsSpan = document.createElement("span");
   repsSpan.className = "set-pill-reps";
-  repsSpan.textContent = loggedSet
-    ? `${loggedSet.reps}/${planned.targetRepsMin}-${planned.targetRepsMax}`
-    : `${planned.targetRepsMin}-${planned.targetRepsMax}`;
+  const repRange = formatRepRange(planned.targetRepsMin, planned.targetRepsMax);
+  repsSpan.textContent = loggedSet ? `${loggedSet.reps}/${repRange}` : repRange;
 
   pill.append(weightSpan, repsSpan);
 
@@ -846,10 +845,13 @@ function buildPlannedExerciseRow(planned, position) {
   return row;
 }
 
+// A fixed target (min equals max) reads as "6", not "6-6".
+function formatRepRange(repsMin, repsMax) {
+  return repsMin === repsMax ? `${repsMin}` : `${repsMin}-${repsMax}`;
+}
+
 function formatPlannedTarget(planned) {
-  const repRange = planned.targetRepsMin === planned.targetRepsMax
-    ? `${planned.targetRepsMin}`
-    : `${planned.targetRepsMin}-${planned.targetRepsMax}`;
+  const repRange = formatRepRange(planned.targetRepsMin, planned.targetRepsMax);
   const loadText = typeof planned.targetLoad === "number" ? ` (${planned.targetLoad} kg)` : "";
   return `${planned.targetSets} × ${repRange}${loadText}`;
 }
@@ -1305,7 +1307,7 @@ function openSetEntryPanel(exerciseId, planTarget = null) {
   deleteSetButton.hidden = true;
 
   if (planTarget) {
-    plannedTarget.textContent = `Planned: ${planTarget.repsMin}-${planTarget.repsMax} reps @ ${planTarget.load} kg`;
+    plannedTarget.textContent = `Planned: ${formatRepRange(planTarget.repsMin, planTarget.repsMax)} reps @ ${planTarget.load} kg`;
     plannedTarget.hidden = false;
   } else {
     plannedTarget.hidden = true;
@@ -3543,7 +3545,7 @@ function renderWorkoutTemplateEditor() {
 
     const detailSpan = document.createElement("span");
     detailSpan.textContent =
-      `${exercise.name}: ${planned.targetSets} × ${planned.targetRepsMin}-${planned.targetRepsMax} @ ${planned.targetLoad} kg`;
+      `${exercise.name}: ${planned.targetSets} × ${formatRepRange(planned.targetRepsMin, planned.targetRepsMax)} @ ${planned.targetLoad} kg`;
 
     // Swaps this entry with its neighbor in the array — order in
     // plannedExercises is display order, nothing more, so a swap is enough.
