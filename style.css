@@ -897,3 +897,29 @@ h1 {
 .workout-tile-start-button:active {
   background-color: #cfcfcf;
 }
+
+/* One muscle group in the exercise picker (a <details> box). The <summary>
+   line is the part you tap to open and close it, so it gets the same big
+   card-sized tap target as the exercise buttons inside it. */
+.picker-group {
+  margin-bottom: 8px;
+}
+
+.picker-group summary {
+  padding: 16px;
+  background-color: #262626;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.picker-group[open] summary {
+  margin-bottom: 8px;
+}
+
+/* The exercises inside an open group, nudged in from the left so it's clear
+   which heading they belong to. */
+.picker-group ul {
+  margin: 0 0 16px 12px;
+}

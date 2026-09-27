@@ -610,11 +610,13 @@
 
     <!-- ===================================================================
          EXERCISE PICKER: choose which exercise to add to the workout template being
-         edited. Reuses the same exercise-item button style as the main list.
+         edited. Grouped by main muscle into collapsible sections (filled in
+         by renderExercisePicker in app.js), each holding the same
+         exercise-item buttons as the main list.
          =================================================================== -->
     <section id="exercisePickerScreen" hidden>
       <h1>Choose exercise</h1>
-      <ul id="exercisePickerList"></ul>
+      <div id="exercisePickerGroups"></div>
       <div class="button-row">
         <button id="cancelExercisePickerButton">Cancel</button>
       </div>

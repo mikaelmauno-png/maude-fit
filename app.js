@@ -3713,39 +3713,89 @@ document.getElementById("cancelWorkoutTemplateEditButton").addEventListener("cli
 // Exercise picker (for adding an exercise to the workout template being edited)
 // ---------------------------------------------------------------------------
 
-function renderExercisePicker() {
-  const listElement = document.getElementById("exercisePickerList");
-  listElement.innerHTML = "";
-
-  for (const exercise of appState.database.exercises.filter((candidate) => !candidate.isArchived)) {
-    const itemElement = document.createElement("li");
-    const buttonElement = document.createElement("button");
-    buttonElement.type = "button";
-    buttonElement.className = "exercise-item";
-    buttonElement.textContent = exercise.name;
-    buttonElement.addEventListener("click", () => {
-      appState.plannedExerciseDraft = {
-        exerciseId: exercise.id,
-        targetSets: 3,
-        targetRepsMin: 8,
-        targetRepsMax: 10,
-        targetLoad: 20,
-        // A workout template's first target is a starting point, not a goal set by
-        // hand, so it never overrides a progression suggestion.
-        targetLoadSetAt: null
-      };
-      document.getElementById("plannedExerciseEntryName").textContent = exercise.name;
-      renderPlannedExerciseDraft();
-      exercisePickerScreen.hidden = true;
-      // The panel is a bottom sheet (style.css), so it needs a screen
-      // behind it: the workout being edited, where the exercise is about
-      // to land.
-      workoutTemplateEditorScreen.hidden = false;
-      plannedExerciseEntryPanel.hidden = false;
-    });
-    itemElement.appendChild(buttonElement);
-    listElement.appendChild(itemElement);
+// Sorts exercises into groups by their main muscle (the one weighted 1.0),
+// in the fixed MUSCLE_GROUPS order from schema.js so the groups always
+// appear in the same place. Exercises with no main muscle set yet go in a
+// last group of their own rather than disappearing from the picker.
+// Muscles with no exercises are left out, so no group is ever empty.
+function groupExercisesByMainMuscle(exercises) {
+  const groups = [];
+  for (const muscle of MUSCLE_GROUPS) {
+    const exercisesForMuscle = exercises.filter((exercise) => exercise.muscles[muscle] === 1.0);
+    if (exercisesForMuscle.length > 0) {
+      groups.push({ label: MUSCLE_GROUP_LABELS[muscle], exercises: exercisesForMuscle });
+    }
   }
+
+  const exercisesWithoutMainMuscle = exercises.filter(
+    (exercise) => !Object.values(exercise.muscles).includes(1.0)
+  );
+  if (exercisesWithoutMainMuscle.length > 0) {
+    groups.push({ label: "No main muscle set", exercises: exercisesWithoutMainMuscle });
+  }
+  return groups;
+}
+
+// One collapsible group in the picker. <details> is the browser's own
+// open/close box: tapping its <summary> line toggles the list underneath,
+// with no JavaScript needed. Every group starts closed, so the whole list
+// of muscles fits on one screen and one tap opens the one you want.
+function buildExercisePickerGroup(group) {
+  const groupElement = document.createElement("details");
+  groupElement.className = "picker-group";
+
+  const summaryElement = document.createElement("summary");
+  summaryElement.textContent = `${group.label} (${group.exercises.length})`;
+  groupElement.appendChild(summaryElement);
+
+  const listElement = document.createElement("ul");
+  for (const exercise of group.exercises) {
+    listElement.appendChild(buildExercisePickerItem(exercise));
+  }
+  groupElement.appendChild(listElement);
+  return groupElement;
+}
+
+function renderExercisePicker() {
+  const pickerElement = document.getElementById("exercisePickerGroups");
+  pickerElement.innerHTML = "";
+
+  const activeExercises = appState.database.exercises.filter((candidate) => !candidate.isArchived);
+  for (const group of groupExercisesByMainMuscle(activeExercises)) {
+    pickerElement.appendChild(buildExercisePickerGroup(group));
+  }
+}
+
+// One exercise inside a group. Tapping it moves on to setting that
+// exercise's target sets, reps and load for the workout being edited.
+function buildExercisePickerItem(exercise) {
+  const itemElement = document.createElement("li");
+  const buttonElement = document.createElement("button");
+  buttonElement.type = "button";
+  buttonElement.className = "exercise-item";
+  buttonElement.textContent = exercise.name;
+  buttonElement.addEventListener("click", () => {
+    appState.plannedExerciseDraft = {
+      exerciseId: exercise.id,
+      targetSets: 3,
+      targetRepsMin: 8,
+      targetRepsMax: 10,
+      targetLoad: 20,
+      // A workout template's first target is a starting point, not a goal set by
+      // hand, so it never overrides a progression suggestion.
+      targetLoadSetAt: null
+    };
+    document.getElementById("plannedExerciseEntryName").textContent = exercise.name;
+    renderPlannedExerciseDraft();
+    exercisePickerScreen.hidden = true;
+    // The panel is a bottom sheet (style.css), so it needs a screen
+    // behind it: the workout being edited, where the exercise is about
+    // to land.
+    workoutTemplateEditorScreen.hidden = false;
+    plannedExerciseEntryPanel.hidden = false;
+  });
+  itemElement.appendChild(buttonElement);
+  return itemElement;
 }
 
 document.getElementById("cancelExercisePickerButton").addEventListener("click", () => {
