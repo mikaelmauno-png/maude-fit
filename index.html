@@ -452,8 +452,29 @@
         <button id="viewExerciseStatsButton">Exercise stats</button>
         <button id="viewPersonalBestsButton">Personal bests</button>
         <button id="viewMuscleStatsButton">Muscle stats</button>
+        <button id="viewMonthlyRecapButton">Monthly recap</button>
       </div>
       <ul id="historyList"></ul>
+    </section>
+
+
+    <!-- ===================================================================
+         MONTHLY RECAP: one calendar month summed up (workouts, time, sets,
+         muscles, weight records, bodyweight, day statuses), with arrows to
+         step back through earlier months. Cards filled in by
+         renderMonthlyRecap in app.js; a card with nothing to say is left out.
+         =================================================================== -->
+    <section id="monthlyRecapScreen" hidden>
+      <h1>Monthly recap</h1>
+      <div class="button-row">
+        <button id="backFromMonthlyRecapButton">Back</button>
+      </div>
+      <div class="recap-month-picker">
+        <button type="button" id="previousRecapMonthButton" aria-label="Previous month">&lsaquo;</button>
+        <h2 id="recapMonthName"></h2>
+        <button type="button" id="nextRecapMonthButton" aria-label="Next month">&rsaquo;</button>
+      </div>
+      <div id="monthlyRecapCards"></div>
     </section>
 
 

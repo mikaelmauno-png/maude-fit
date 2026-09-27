@@ -9,7 +9,7 @@
 // without bumping it, "install" below sees the old cache already exists and
 // never re-fetches anything, so a code change would never actually reach a
 // phone that already has the app installed.
-const CACHE_NAME = "treeniappi-v32";
+const CACHE_NAME = "treeniappi-v33";
 
 const APP_SHELL_FILES = [
   "./",

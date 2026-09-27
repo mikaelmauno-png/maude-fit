@@ -1015,3 +1015,36 @@ h1 {
   color: #7ddc8a;
   box-shadow: inset 0 0 0 1px #3f7a48;
 }
+
+/* "‹  September 2026  ›" above the monthly recap: two big arrow buttons
+   with the month name between them. */
+.recap-month-picker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.recap-month-picker h2 {
+  flex: 1;
+  margin: 0;
+  text-align: center;
+}
+
+.recap-month-picker button {
+  flex: 0 0 64px;
+  font-size: 1.6rem;
+  padding: 8px;
+}
+
+.recap-month-picker button:disabled {
+  background-color: #2a2a2a;
+  color: #555555;
+}
+
+/* The one big number at the top of a recap card ("12 workouts"). */
+.recap-headline {
+  font-size: 1.4rem;
+  font-weight: bold;
+  margin-bottom: 8px;
+}

@@ -104,6 +104,7 @@ const appState = {
   isFinishingWorkout: false,      // true while the day-status panel is open because End workout was tapped with no status set
   muscleEditorExerciseId: null,   // which exercise's muscle editor is open; null otherwise
   muscleDraft: null,              // { mainMuscle, secondaryMuscles } while the muscle editor is open; null otherwise
+  recapMonth: null,                 // { year, monthIndex } the monthly recap is showing (monthIndex 0 = January); null until it's first opened
   chartRangeWeeks: 12,              // how many weeks back every trend chart shows (6, 12 or 24), or null for all-time; one setting shared by all charts
   exerciseStatsSelectedGymId: null, // which gym's data the stats charts are scoped to, when the exercise is gym-specific and used at more than one gym
   bodyweightDraftWeightKg: null,    // value shown on the bodyweight stepper; null only before the Bodyweight screen has been opened once
@@ -145,6 +146,7 @@ const exerciseStatsListScreen = document.getElementById("exerciseStatsListScreen
 const exerciseStatsDetailScreen = document.getElementById("exerciseStatsDetailScreen");
 const muscleEditorPanel = document.getElementById("muscleEditorPanel");
 const personalBestsScreen = document.getElementById("personalBestsScreen");
+const monthlyRecapScreen = document.getElementById("monthlyRecapScreen");
 const muscleStatsListScreen = document.getElementById("muscleStatsListScreen");
 const muscleStatsDetailScreen = document.getElementById("muscleStatsDetailScreen");
 const bodyweightScreen = document.getElementById("bodyweightScreen");
@@ -167,7 +169,7 @@ const allScreens = [
   exercisePickerScreen, plannedExerciseEntryPanel, exercisesScreen, historyScreen, gymsScreen,
   gymPickerScreen, setEntryPanel, exerciseStatsListScreen, exerciseStatsDetailScreen, muscleEditorPanel,
   personalBestsScreen, muscleStatsListScreen, muscleStatsDetailScreen, dayStatusPanel,
-  bodyweightScreen, removeExercisePanel
+  bodyweightScreen, removeExercisePanel, monthlyRecapScreen
 ];
 
 function hideAllScreens() {
@@ -3861,6 +3863,299 @@ function renderPersonalBestsList() {
 
 document.getElementById("viewPersonalBestsButton").addEventListener("click", showPersonalBestsScreen);
 document.getElementById("backFromPersonalBestsButton").addEventListener("click", showHistoryScreen);
+
+
+// ---------------------------------------------------------------------------
+// Monthly recap — one calendar month summed up, a card per topic. Everything
+// is worked out from data already stored; nothing new is saved.
+// ---------------------------------------------------------------------------
+
+function showMonthlyRecapScreen() {
+  hideAllScreens();
+  // Opens on the current month the first time, then remembers whichever
+  // month was last looked at while the app stays open.
+  if (appState.recapMonth === null) {
+    const today = new Date();
+    appState.recapMonth = { year: today.getFullYear(), monthIndex: today.getMonth() };
+  }
+  monthlyRecapScreen.hidden = false;
+  renderMonthlyRecap();
+}
+
+// `start` is the first moment of the month (local time) and `end` the first
+// moment of the next, so "in the month" is `start <= x && x < end`. new Date()
+// rolls a monthIndex of 12 over into January of the next year by itself.
+function getMonthRange(year, monthIndex) {
+  return { start: new Date(year, monthIndex, 1), end: new Date(year, monthIndex + 1, 1) };
+}
+
+function isInRange(isoString, range) {
+  const moment = new Date(isoString);
+  return range.start <= moment && moment < range.end;
+}
+
+function findFinishedSessionsInRange(range) {
+  return appState.database.sessions.filter(
+    (session) => session.endedAt !== null && isInRange(session.startedAt, range)
+  );
+}
+
+function findWorkingSetsOfSessions(sessions) {
+  const sessionIds = new Set(sessions.map((session) => session.id));
+  return appState.database.sets.filter((set) => sessionIds.has(set.sessionId) && !set.isWarmup);
+}
+
+// "+2 vs Aug", "−1 vs Aug", "same as Aug". Uses a real minus sign (−)
+// rather than a hyphen, which reads better next to a number.
+function describeChangeFromPreviousMonth(current, previous, previousMonthName) {
+  const difference = current - previous;
+  if (difference === 0) {
+    return `same as ${previousMonthName}`;
+  }
+  const sign = difference > 0 ? "+" : "−";
+  return `${sign}${formatSetCount(Math.abs(difference))} vs ${previousMonthName}`;
+}
+
+// "1 h 25 min" or "45 min".
+function formatMinutes(totalMinutes) {
+  const roundedMinutes = Math.round(totalMinutes);
+  const hours = Math.floor(roundedMinutes / 60);
+  const minutes = roundedMinutes % 60;
+  return hours > 0 ? `${hours} h ${minutes} min` : `${minutes} min`;
+}
+
+// Session length the same way the duration estimate measures it (start to
+// last logged set), so ending a workout late doesn't count as training.
+function getSessionMinutes(session) {
+  return (new Date(findLastActivityTime(session)) - new Date(session.startedAt)) / 60000;
+}
+
+// One card: a title, an optional big headline, then plain lines of text.
+function buildRecapCard(title, headline, lines) {
+  const cardElement = document.createElement("div");
+  cardElement.className = "history-card";
+
+  const titleElement = document.createElement("div");
+  titleElement.className = "history-card-header";
+  titleElement.textContent = title;
+  cardElement.appendChild(titleElement);
+
+  if (headline) {
+    const headlineElement = document.createElement("div");
+    headlineElement.className = "recap-headline";
+    headlineElement.textContent = headline;
+    cardElement.appendChild(headlineElement);
+  }
+
+  for (const line of lines) {
+    const lineElement = document.createElement("div");
+    lineElement.className = "history-card-line";
+    lineElement.textContent = line;
+    cardElement.appendChild(lineElement);
+  }
+  return cardElement;
+}
+
+// How many times each workout template was done: ["Weekly workout 1 × 4", ...].
+function describeWorkoutsByTemplate(sessions) {
+  const countByName = new Map();
+  for (const session of sessions) {
+    const template = appState.database.workoutTemplates.find((candidate) => candidate.id === session.templateId);
+    const name = template ? template.name : "Free-form";
+    countByName.set(name, (countByName.get(name) || 0) + 1);
+  }
+  return Array.from(countByName.entries()).map(([name, count]) => `${name} × ${count}`);
+}
+
+function buildWorkoutsRecapCard(sessions, previousSessions, previousMonthName) {
+  const headline = `${sessions.length} workout${sessions.length === 1 ? "" : "s"}`;
+  const lines = [describeChangeFromPreviousMonth(sessions.length, previousSessions.length, previousMonthName)];
+  return buildRecapCard("Workouts", headline, lines.concat(describeWorkoutsByTemplate(sessions)));
+}
+
+function buildTimeRecapCard(sessions) {
+  const totalMinutes = sessions.reduce((sum, session) => sum + getSessionMinutes(session), 0);
+  return buildRecapCard("Time training", formatMinutes(totalMinutes), [
+    `${formatMinutes(totalMinutes / sessions.length)} per workout on average`
+  ]);
+}
+
+function buildSetsRecapCard(workingSets, previousWorkingSets, previousMonthName) {
+  return buildRecapCard("Working sets", `${workingSets.length} sets`, [
+    describeChangeFromPreviousMonth(workingSets.length, previousWorkingSets.length, previousMonthName)
+  ]);
+}
+
+// Weighted the same way as the muscle counters: 1 set for the main muscle,
+// 0.5 for each secondary one. Busiest muscle first.
+function buildMusclesRecapCard(workingSets) {
+  const setsByMuscle = {};
+  for (const set of workingSets) {
+    const exercise = appState.database.exercises.find((candidate) => candidate.id === set.exerciseId);
+    for (const [muscle, weight] of Object.entries(exercise.muscles)) {
+      setsByMuscle[muscle] = (setsByMuscle[muscle] || 0) + weight;
+    }
+  }
+  const lines = Object.entries(setsByMuscle)
+    .sort((a, b) => b[1] - a[1])
+    .map(([muscle, count]) => `${MUSCLE_GROUP_LABELS[muscle]}: ${formatSetCount(count)}`);
+  return lines.length > 0 ? buildRecapCard("Sets per muscle", null, lines) : null;
+}
+
+// Exercises whose heaviest-ever working load was beaten during the month,
+// as "Barbell bench press: 85 kg (was 82.5 kg)". Walks each exercise's sets
+// in the order they happened, keeping the best load seen so far, so "was"
+// is the record as it stood when the month began. The very first time an
+// exercise is ever done isn't a record: there was nothing to beat. A
+// gym-specific exercise keeps a separate best per gym, for the same reason
+// as its stats charts: machine numbers aren't comparable between gyms.
+function findWeightRecordsInRange(range) {
+  const gymIdBySessionId = new Map(appState.database.sessions.map((session) => [session.id, session.gymId]));
+  const records = [];
+
+  for (const exercise of appState.database.exercises) {
+    const exerciseSets = appState.database.sets
+      .filter((set) => set.exerciseId === exercise.id && !set.isWarmup)
+      .sort((a, b) => a.performedAt.localeCompare(b.performedAt));
+
+    const bestLoadByGym = new Map();
+    let monthRecord = null;
+    for (const set of exerciseSets) {
+      const gymKey = exercise.isGymSpecific ? gymIdBySessionId.get(set.sessionId) : "anyGym";
+      const bestSoFar = bestLoadByGym.get(gymKey);
+      const beatsRecord = bestSoFar !== undefined && set.load > bestSoFar;
+      if (beatsRecord && isInRange(set.performedAt, range)) {
+        // Several records in one month: keep the heaviest, but remember
+        // the record from before the first of them.
+        const previousRecord = monthRecord ? monthRecord.previousRecord : bestSoFar;
+        if (!monthRecord || set.load > monthRecord.load) {
+          monthRecord = { exerciseName: exercise.name, load: set.load, previousRecord };
+        }
+      }
+      if (bestSoFar === undefined || set.load > bestSoFar) {
+        bestLoadByGym.set(gymKey, set.load);
+      }
+    }
+    if (monthRecord) {
+      records.push(monthRecord);
+    }
+  }
+  return records;
+}
+
+function buildWeightRecordsRecapCard(range) {
+  const records = findWeightRecordsInRange(range);
+  if (records.length === 0) {
+    return null;
+  }
+  const lines = records.map(
+    (record) => `${record.exerciseName}: ${record.load} kg (was ${record.previousRecord} kg)`
+  );
+  return buildRecapCard("Weight records", `${records.length} new`, lines);
+}
+
+function buildBodyweightRecapCard(range) {
+  const entries = appState.database.bodyweightEntries
+    .filter((entry) => isInRange(entry.loggedAt, range))
+    .sort((a, b) => a.loggedAt.localeCompare(b.loggedAt));
+  if (entries.length === 0) {
+    return null;
+  }
+  const first = entries[0].weightKg;
+  const last = entries[entries.length - 1].weightKg;
+  if (entries.length === 1) {
+    return buildRecapCard("Bodyweight", `${last.toFixed(1)} kg`, ["One weigh-in this month"]);
+  }
+  // toFixed(1) also tidies floating-point leftovers like 0.29999999.
+  const change = last - first;
+  const changeText = change === 0 ? "no change" : `${change > 0 ? "+" : "−"}${Math.abs(change).toFixed(1)} kg`;
+  return buildRecapCard("Bodyweight", `${first.toFixed(1)} → ${last.toFixed(1)} kg`, [
+    `${changeText} over ${entries.length} weigh-ins`
+  ]);
+}
+
+// Only the statuses that say something (not "Normal"), plus how many
+// workouts never got a status, so a quiet card isn't mistaken for "all fine".
+function buildDayStatusRecapCard(sessions) {
+  const lines = [];
+  for (const status of DAY_STATUSES) {
+    if (status === "normal") {
+      continue;
+    }
+    const count = sessions.filter((session) => session.dayStatus === status).length;
+    if (count > 0) {
+      lines.push(`${DAY_STATUS_LABELS[status]}: ${count}`);
+    }
+  }
+  const unsetCount = sessions.filter((session) => session.dayStatus === null).length;
+  if (unsetCount > 0) {
+    lines.push(`No status set: ${unsetCount}`);
+  }
+  if (lines.length === 0) {
+    lines.push("No poor-sleep, ill or stressed days logged");
+  }
+  return buildRecapCard("Day status", null, lines);
+}
+
+function renderMonthlyRecapMonthPicker() {
+  const { year, monthIndex } = appState.recapMonth;
+  document.getElementById("recapMonthName").textContent =
+    new Date(year, monthIndex, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  // No stepping into the future: there's nothing to recap there yet.
+  const today = new Date();
+  const isCurrentMonth = year === today.getFullYear() && monthIndex === today.getMonth();
+  document.getElementById("nextRecapMonthButton").disabled = isCurrentMonth;
+}
+
+function renderMonthlyRecap() {
+  renderMonthlyRecapMonthPicker();
+  const cardsElement = document.getElementById("monthlyRecapCards");
+  cardsElement.innerHTML = "";
+
+  const { year, monthIndex } = appState.recapMonth;
+  const range = getMonthRange(year, monthIndex);
+  const previousRange = getMonthRange(year, monthIndex - 1);
+  const previousMonthName = previousRange.start.toLocaleDateString(undefined, { month: "short" });
+
+  const sessions = findFinishedSessionsInRange(range);
+  const previousSessions = findFinishedSessionsInRange(previousRange);
+  const workingSets = findWorkingSetsOfSessions(sessions);
+  const previousWorkingSets = findWorkingSetsOfSessions(previousSessions);
+
+  const cards = [];
+  if (sessions.length === 0) {
+    cards.push(buildRecapCard("Workouts", "No workouts", [
+      describeChangeFromPreviousMonth(0, previousSessions.length, previousMonthName)
+    ]));
+  } else {
+    cards.push(buildWorkoutsRecapCard(sessions, previousSessions, previousMonthName));
+    cards.push(buildTimeRecapCard(sessions));
+    cards.push(buildSetsRecapCard(workingSets, previousWorkingSets, previousMonthName));
+    cards.push(buildMusclesRecapCard(workingSets));
+    cards.push(buildWeightRecordsRecapCard(range));
+    cards.push(buildDayStatusRecapCard(sessions));
+  }
+  cards.push(buildBodyweightRecapCard(range));
+
+  // Builders return null for a card with nothing to show.
+  for (const card of cards.filter((candidate) => candidate !== null)) {
+    cardsElement.appendChild(card);
+  }
+}
+
+// Steps the recap one month back (-1) or forward (+1). Going through a Date
+// lets it handle the year boundary (January back to December) by itself.
+function stepRecapMonth(monthStep) {
+  const { year, monthIndex } = appState.recapMonth;
+  const steppedMonth = new Date(year, monthIndex + monthStep, 1);
+  appState.recapMonth = { year: steppedMonth.getFullYear(), monthIndex: steppedMonth.getMonth() };
+  renderMonthlyRecap();
+}
+
+document.getElementById("viewMonthlyRecapButton").addEventListener("click", showMonthlyRecapScreen);
+document.getElementById("backFromMonthlyRecapButton").addEventListener("click", showHistoryScreen);
+document.getElementById("previousRecapMonthButton").addEventListener("click", () => stepRecapMonth(-1));
+document.getElementById("nextRecapMonthButton").addEventListener("click", () => stepRecapMonth(1));
 
 
 // ---------------------------------------------------------------------------
