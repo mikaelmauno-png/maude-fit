@@ -388,6 +388,59 @@ function importDatabase(jsonText) {
 
 
 // ---------------------------------------------------------------------------
+// Automatic copy
+//
+// One extra copy of the whole database, kept on the phone and replaced each
+// time a new one is taken (see app.js for when). It's there for when the
+// app itself damages the data (a bug, or importing the wrong file), and can
+// be restored from the Export / Import screen.
+//
+// It lives under its own key, the one deliberate exception to "everything
+// under one key": a copy stored *inside* the main data would be damaged
+// along with it. It also lives in the same browser storage, so it does
+// nothing if that storage is cleared or the phone is lost. Only a backup
+// file saved elsewhere covers that.
+// ---------------------------------------------------------------------------
+
+const AUTO_COPY_KEY = `${STORAGE_KEY}-autoCopy`;
+
+// Shape stored under AUTO_COPY_KEY:
+//
+// {
+//   takenAt:  "2026-09-27T16:40:00.000Z",
+//   database: { schemaVersion: 7, exercises: [...], ... }   // whole database
+// }
+
+function saveAutoCopy(database) {
+  const autoCopy = { takenAt: new Date().toISOString(), database: database };
+  try {
+    localStorage.setItem(AUTO_COPY_KEY, JSON.stringify(autoCopy));
+  } catch (error) {
+    // Usually a full storage quota: the copy doubles how much is stored.
+    // Unlike a failed save, nothing is lost here (the real data is
+    // untouched, and a failed write leaves the previous copy as it was),
+    // so the app carries on rather than stopping.
+    console.error("Could not save the automatic copy.", error);
+  }
+}
+
+// Returns the stored copy in the shape above, or null if there isn't a
+// usable one.
+function loadAutoCopy() {
+  const raw = localStorage.getItem(AUTO_COPY_KEY);
+  if (raw === null) {
+    return null;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    console.error("The automatic copy could not be read.", error);
+    return null;
+  }
+}
+
+
+// ---------------------------------------------------------------------------
 // Starter exercise library
 //
 // A new install starts with all of these. An existing install can pull in

@@ -31,12 +31,27 @@ function backUpUnloadableData() {
   return backupKey;
 }
 
+// Data that has just loaded without errors is a known-good state, so this
+// is when the automatic copy (see schema.js) is refreshed: if something
+// then goes wrong while the app is open, the copy from before it is intact.
+//
+// Data without a single workout is never copied. Otherwise a fresh start
+// (a first run, or after the data couldn't be loaded below) would replace
+// a copy full of real history with a near-empty one on the next opening.
+function takeStartupAutoCopy(database) {
+  if (database.sessions.length === 0) {
+    return;
+  }
+  saveAutoCopy(database);
+}
+
 // Loading fails if the stored data is corrupt, or was saved under a schema
 // version that has no migration in schema.js. Starting on a blank database
 // keeps the app usable, but only once the old data is safely backed up.
 let initialDatabase;
 try {
   initialDatabase = loadDatabase();
+  takeStartupAutoCopy(initialDatabase);
 } catch (error) {
   console.error("Could not load saved data.", error);
 
@@ -59,7 +74,10 @@ try {
   alert(
     "Your saved data could not be loaded (" + error.message + ").\n\n" +
     "Nothing was deleted: a copy was kept under \"" + backupKey + "\". " +
-    "Starting with a blank database."
+    "Starting with a blank database." +
+    (loadAutoCopy() !== null
+      ? "\n\nAn earlier automatic copy can be restored from Settings → Export / Import."
+      : "")
   );
   initialDatabase = createEmptyDatabase();
 }
@@ -178,6 +196,7 @@ function showSettingsScreen() {
 function showDataScreen() {
   hideAllScreens();
   dataScreen.hidden = false;
+  renderAutoCopyStatus();
 }
 
 function showWorkoutTemplatesScreen() {
@@ -3993,19 +4012,10 @@ importFileInput.addEventListener("change", () => {
     }
 
     try {
-      closeSetEntryPanel();
-      closeFreeformReview();
-      hidePersonalBestBanner();
-      closeDayStatusPanel();
-
-      appState.database = importDatabase(fileText);
-      // An import can bring in a database with no session in progress, so
-      // treat any active workout as no longer valid rather than pointing at
-      // a session that may not exist in the freshly imported data.
-      appState.activeSessionId = null;
-      showMainScreen();
-      updateWorkoutControls();
-      renderExerciseArea();
+      // Import replaces everything, so keep what's here as the automatic
+      // copy first: importing the wrong file can then be undone.
+      saveAutoCopy(appState.database);
+      replaceDatabase(fileText);
       alert("Import complete.");
     } catch (error) {
       alert(error.message);
@@ -4016,6 +4026,87 @@ importFileInput.addEventListener("change", () => {
     importFileInput.value = "";
   };
   reader.readAsText(chosenFile);
+});
+
+
+// Swaps in a whole new database (from an import or the automatic copy).
+// importDatabase does the checking and saving; this resets the screen to
+// match.
+function replaceDatabase(jsonText) {
+  closeSetEntryPanel();
+  closeFreeformReview();
+  hidePersonalBestBanner();
+  closeDayStatusPanel();
+
+  appState.database = importDatabase(jsonText);
+  // The new data may not have a session in progress, so treat any active
+  // workout as no longer valid rather than pointing at a session that may
+  // not exist in it.
+  appState.activeSessionId = null;
+  showMainScreen();
+  updateWorkoutControls();
+  renderExerciseArea();
+}
+
+
+// ---------------------------------------------------------------------------
+// Restoring the automatic copy
+// ---------------------------------------------------------------------------
+
+const autoCopyStatus = document.getElementById("autoCopyStatus");
+const restoreAutoCopyButton = document.getElementById("restoreAutoCopyButton");
+
+function renderAutoCopyStatus() {
+  const autoCopy = loadAutoCopy();
+  if (autoCopy === null) {
+    autoCopyStatus.textContent = "No automatic copy yet.";
+    restoreAutoCopyButton.hidden = true;
+    return;
+  }
+  autoCopyStatus.textContent = `Automatic copy from ${formatDateAndTime(autoCopy.takenAt)}`;
+  restoreAutoCopyButton.hidden = false;
+}
+
+// "27 Sep, 18:40" — the time matters here, since a copy is taken every
+// time the app opens and there may be several on one day.
+function formatDateAndTime(isoString) {
+  return new Date(isoString).toLocaleString(undefined, {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+restoreAutoCopyButton.addEventListener("click", () => {
+  const autoCopy = loadAutoCopy();
+  if (autoCopy === null) {
+    return;
+  }
+
+  // Replaces everything, and is never part of the common path, so it asks.
+  const userConfirmed = confirm(
+    `Replace all your current data with the automatic copy from ` +
+    `${formatDateAndTime(autoCopy.takenAt)}?\n\n` +
+    "Your current data becomes the new automatic copy, so restoring it " +
+    "again undoes this."
+  );
+  if (!userConfirmed) {
+    return;
+  }
+
+  try {
+    // The copy was already read into autoCopy above, so it's safe to
+    // overwrite the stored one with the current data. This is what makes
+    // the restore undoable.
+    saveAutoCopy(appState.database);
+    // Through importDatabase, so a copy saved by an older app version is
+    // upgraded and a damaged one is refused, exactly like an import.
+    replaceDatabase(JSON.stringify(autoCopy.database));
+    alert("Automatic copy restored.");
+  } catch (error) {
+    alert(error.message);
+  }
 });
 
 

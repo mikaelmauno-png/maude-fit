@@ -216,6 +216,14 @@
       <!-- A real file picker can't be styled to match the other buttons, so
            it stays hidden and the Import button above triggers it instead. -->
       <input type="file" id="importFileInput" accept="application/json" hidden>
+
+      <!-- The automatic copy: taken each time the app opens and before an
+           import, replacing the previous one. Kept on this phone only, so
+           it covers mistakes inside the app, not a lost phone. See
+           "Automatic copy" in schema.js. -->
+      <h2>Automatic copy</h2>
+      <p id="autoCopyStatus"></p>
+      <button id="restoreAutoCopyButton" hidden>Restore automatic copy</button>
     </section>
 
 
