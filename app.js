@@ -104,6 +104,8 @@ const appState = {
   isFinishingWorkout: false,      // true while the day-status panel is open because End workout was tapped with no status set
   muscleEditorExerciseId: null,   // which exercise's muscle editor is open; null otherwise
   muscleDraft: null,              // { mainMuscle, secondaryMuscles } while the muscle editor is open; null otherwise
+  checkInDraft: null,               // { weekStart, fatigue, stress, motivation, recovery, notes } while the weekly check-in screen is open; a rating is null until answered
+  isCheckInOpenedFromHistory: false, // true when the check-in screen was opened from History, so saving stays there instead of going home
   recapMonth: null,                 // { year, monthIndex } the monthly recap is showing (monthIndex 0 = January); null until it's first opened
   chartRangeWeeks: 12,              // how many weeks back every trend chart shows (6, 12 or 24), or null for all-time; one setting shared by all charts
   exerciseStatsSelectedGymId: null, // which gym's data the stats charts are scoped to, when the exercise is gym-specific and used at more than one gym
@@ -147,6 +149,7 @@ const exerciseStatsDetailScreen = document.getElementById("exerciseStatsDetailSc
 const muscleEditorPanel = document.getElementById("muscleEditorPanel");
 const personalBestsScreen = document.getElementById("personalBestsScreen");
 const monthlyRecapScreen = document.getElementById("monthlyRecapScreen");
+const weeklyCheckInScreen = document.getElementById("weeklyCheckInScreen");
 const muscleStatsListScreen = document.getElementById("muscleStatsListScreen");
 const muscleStatsDetailScreen = document.getElementById("muscleStatsDetailScreen");
 const bodyweightScreen = document.getElementById("bodyweightScreen");
@@ -169,7 +172,7 @@ const allScreens = [
   exercisePickerScreen, plannedExerciseEntryPanel, exercisesScreen, historyScreen, gymsScreen,
   gymPickerScreen, setEntryPanel, exerciseStatsListScreen, exerciseStatsDetailScreen, muscleEditorPanel,
   personalBestsScreen, muscleStatsListScreen, muscleStatsDetailScreen, dayStatusPanel,
-  bodyweightScreen, removeExercisePanel, monthlyRecapScreen
+  bodyweightScreen, removeExercisePanel, monthlyRecapScreen, weeklyCheckInScreen
 ];
 
 function hideAllScreens() {
@@ -182,6 +185,7 @@ function showMainScreen() {
   hideAllScreens();
   mainScreen.hidden = false;
   renderStartWorkoutChoices();
+  renderWeeklyCheckInPrompt();
   renderBackupStatus();
   renderWeeklyWorkoutTemplateSummary();
   renderMuscleCounters();
@@ -4135,6 +4139,7 @@ function renderMonthlyRecap() {
     cards.push(buildWeightRecordsRecapCard(range));
     cards.push(buildDayStatusRecapCard(sessions));
   }
+  cards.push(buildCheckInRecapCard(range));
   cards.push(buildBodyweightRecapCard(range));
 
   // Builders return null for a card with nothing to show.
@@ -4152,10 +4157,254 @@ function stepRecapMonth(monthStep) {
   renderMonthlyRecap();
 }
 
+// The average of each rating over the check-ins for weeks starting in this
+// month. "Fatigue 3.2" means more to the eye than a list of weeks.
+function buildCheckInRecapCard(range) {
+  const checkIns = appState.database.weeklyCheckIns.filter((checkIn) => {
+    const weekStart = parseLocalDateKey(checkIn.weekStart);
+    return range.start <= weekStart && weekStart < range.end;
+  });
+  if (checkIns.length === 0) {
+    return null;
+  }
+  const lines = CHECK_IN_RATINGS.map((rating) => {
+    const total = checkIns.reduce((sum, checkIn) => sum + checkIn[rating], 0);
+    return `${CHECK_IN_RATING_LABELS[rating]}: ${(total / checkIns.length).toFixed(1)} on average`;
+  });
+  const headline = `${checkIns.length} check-in${checkIns.length === 1 ? "" : "s"}`;
+  return buildRecapCard("Weekly check-ins", headline, lines);
+}
+
 document.getElementById("viewMonthlyRecapButton").addEventListener("click", showMonthlyRecapScreen);
 document.getElementById("backFromMonthlyRecapButton").addEventListener("click", showHistoryScreen);
 document.getElementById("previousRecapMonthButton").addEventListener("click", () => stepRecapMonth(-1));
 document.getElementById("nextRecapMonthButton").addEventListener("click", () => stepRecapMonth(1));
+
+
+// ---------------------------------------------------------------------------
+// Weekly check-in — fatigue, stress, motivation and recovery, 1 to 5, once
+// a week (see WeeklyCheckIn in schema.js). The home screen shows a reminder
+// every day until this week's is answered.
+// ---------------------------------------------------------------------------
+
+const CHECK_IN_RATING_LABELS = {
+  fatigue: "Fatigue",
+  stress: "Stress",
+  motivation: "Motivation",
+  recovery: "Recovery"
+};
+
+const weeklyCheckInHeading = document.getElementById("weeklyCheckInHeading");
+const checkInRatingRowsElement = document.getElementById("checkInRatingRows");
+const checkInNotesInput = document.getElementById("checkInNotesInput");
+const saveWeeklyCheckInButton = document.getElementById("saveWeeklyCheckInButton");
+const cancelCheckInEditButton = document.getElementById("cancelCheckInEditButton");
+
+// This week's Monday as "YYYY-MM-DD" in local time. getLocalDateKey rather
+// than getWeekKey: getWeekKey goes through UTC, which in Finland turns
+// Monday midnight into Sunday's date. Fine as an internal key, but this one
+// is saved in the data and should say the actual Monday.
+function getCurrentWeekStartKey() {
+  return getLocalDateKey(getCurrentWeekRange().start);
+}
+
+// The reverse of getLocalDateKey. Splitting the string by hand instead of
+// new Date("2026-09-21"), which JavaScript reads as UTC midnight and can
+// land on the previous day in local time.
+function parseLocalDateKey(dateKey) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+// "21.9.–27.9." (in the phone's own date style).
+function describeWeek(weekStart) {
+  const monday = parseLocalDateKey(weekStart);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const format = (date) => date.toLocaleDateString(undefined, { day: "numeric", month: "numeric" });
+  return `${format(monday)}–${format(sunday)}`;
+}
+
+function findCheckInForWeek(weekStart) {
+  return appState.database.weeklyCheckIns.find((checkIn) => checkIn.weekStart === weekStart);
+}
+
+function renderWeeklyCheckInPrompt() {
+  document.getElementById("weeklyCheckInPrompt").hidden = findCheckInForWeek(getCurrentWeekStartKey()) !== undefined;
+}
+
+// Loads a week into the form: its saved answers if it has a check-in
+// already, otherwise blank ratings waiting to be tapped.
+function startCheckInDraft(weekStart) {
+  const existing = findCheckInForWeek(weekStart);
+  appState.checkInDraft = { weekStart, notes: existing ? existing.notes : "" };
+  for (const rating of CHECK_IN_RATINGS) {
+    appState.checkInDraft[rating] = existing ? existing[rating] : null;
+  }
+}
+
+function showWeeklyCheckInScreen(isOpenedFromHistory) {
+  hideAllScreens();
+  appState.isCheckInOpenedFromHistory = isOpenedFromHistory;
+  startCheckInDraft(getCurrentWeekStartKey());
+  weeklyCheckInScreen.hidden = false;
+  renderWeeklyCheckInScreen();
+}
+
+function leaveWeeklyCheckInScreen() {
+  appState.checkInDraft = null;
+  if (appState.isCheckInOpenedFromHistory) {
+    showHistoryScreen();
+  } else {
+    showMainScreen();
+  }
+}
+
+// Built once from CHECK_IN_RATINGS (schema.js), same reasoning as the
+// day-status options: the screen can't drift from the schema's own list.
+for (const rating of CHECK_IN_RATINGS) {
+  const rowElement = document.createElement("div");
+  rowElement.className = "check-in-rating-row";
+
+  const labelElement = document.createElement("span");
+  labelElement.className = "check-in-rating-label";
+  labelElement.textContent = CHECK_IN_RATING_LABELS[rating];
+  rowElement.appendChild(labelElement);
+
+  const buttonsElement = document.createElement("div");
+  buttonsElement.className = "check-in-rating-buttons";
+  for (let value = CHECK_IN_SCALE_MIN; value <= CHECK_IN_SCALE_MAX; value++) {
+    const valueButton = document.createElement("button");
+    valueButton.type = "button";
+    valueButton.className = "day-status-option";
+    valueButton.textContent = value;
+    valueButton.dataset.rating = rating;
+    valueButton.dataset.value = value;
+    valueButton.addEventListener("click", () => {
+      appState.checkInDraft[rating] = value;
+      renderWeeklyCheckInScreen();
+    });
+    buttonsElement.appendChild(valueButton);
+  }
+  rowElement.appendChild(buttonsElement);
+  checkInRatingRowsElement.appendChild(rowElement);
+}
+
+function isCheckInDraftComplete() {
+  return CHECK_IN_RATINGS.every((rating) => appState.checkInDraft[rating] !== null);
+}
+
+function renderWeeklyCheckInScreen() {
+  const draft = appState.checkInDraft;
+  const isThisWeek = draft.weekStart === getCurrentWeekStartKey();
+  weeklyCheckInHeading.textContent = isThisWeek
+    ? `This week · ${describeWeek(draft.weekStart)}`
+    : `Week of ${describeWeek(draft.weekStart)}`;
+
+  for (const valueButton of checkInRatingRowsElement.querySelectorAll("button")) {
+    // dataset values are always strings, hence Number() before comparing.
+    const isSelected = draft[valueButton.dataset.rating] === Number(valueButton.dataset.value);
+    valueButton.classList.toggle("day-status-option-selected", isSelected);
+  }
+
+  checkInNotesInput.value = draft.notes;
+  saveWeeklyCheckInButton.disabled = !isCheckInDraftComplete();
+  cancelCheckInEditButton.hidden = isThisWeek;
+  renderWeeklyCheckInList();
+}
+
+// "Fatigue 3 · Stress 2 · Motivation 4 · Recovery 3"
+function describeCheckInRatings(checkIn) {
+  return CHECK_IN_RATINGS.map((rating) => `${CHECK_IN_RATING_LABELS[rating]} ${checkIn[rating]}`).join(" · ");
+}
+
+function renderWeeklyCheckInList() {
+  const listElement = document.getElementById("weeklyCheckInList");
+  listElement.innerHTML = "";
+
+  if (appState.database.weeklyCheckIns.length === 0) {
+    const emptyMessage = document.createElement("p");
+    emptyMessage.textContent = "No check-ins yet.";
+    listElement.appendChild(emptyMessage);
+    return;
+  }
+
+  // "YYYY-MM-DD" strings sort by date as plain text; reversed for newest first.
+  const newestFirst = appState.database.weeklyCheckIns
+    .slice()
+    .sort((a, b) => b.weekStart.localeCompare(a.weekStart));
+
+  for (const checkIn of newestFirst) {
+    const itemElement = document.createElement("li");
+    const buttonElement = document.createElement("button");
+    buttonElement.type = "button";
+    buttonElement.className = "check-in-list-item";
+    buttonElement.textContent = describeWeek(checkIn.weekStart);
+
+    const detailElement = document.createElement("span");
+    detailElement.textContent = describeCheckInRatings(checkIn) + (checkIn.notes ? ` — ${checkIn.notes}` : "");
+    buttonElement.appendChild(detailElement);
+
+    // Tapping loads that week into the form above, to correct it.
+    buttonElement.addEventListener("click", () => {
+      startCheckInDraft(checkIn.weekStart);
+      renderWeeklyCheckInScreen();
+      window.scrollTo(0, 0);
+    });
+    itemElement.appendChild(buttonElement);
+    listElement.appendChild(itemElement);
+  }
+}
+
+// One check-in per week: saving over a week that already has one updates
+// it in place (keeping its id), rather than adding a second.
+function saveCheckInDraft() {
+  const draft = appState.checkInDraft;
+  const ratings = {};
+  for (const rating of CHECK_IN_RATINGS) {
+    ratings[rating] = draft[rating];
+  }
+
+  const existing = findCheckInForWeek(draft.weekStart);
+  if (existing) {
+    Object.assign(existing, ratings, { notes: draft.notes, loggedAt: new Date().toISOString() });
+  } else {
+    appState.database.weeklyCheckIns.push({
+      id: crypto.randomUUID(),
+      weekStart: draft.weekStart,
+      loggedAt: new Date().toISOString(),
+      ...ratings,
+      notes: draft.notes
+    });
+  }
+  saveDatabase(appState.database);
+}
+
+checkInNotesInput.addEventListener("input", () => {
+  appState.checkInDraft.notes = checkInNotesInput.value;
+});
+
+// From the home screen's reminder, saving is the end of the errand, so it
+// goes straight back home (where the reminder is now gone). From History,
+// it stays here with the list updated, back on this week's form.
+saveWeeklyCheckInButton.addEventListener("click", () => {
+  saveCheckInDraft();
+  if (!appState.isCheckInOpenedFromHistory) {
+    leaveWeeklyCheckInScreen();
+    return;
+  }
+  startCheckInDraft(getCurrentWeekStartKey());
+  renderWeeklyCheckInScreen();
+});
+
+cancelCheckInEditButton.addEventListener("click", () => {
+  startCheckInDraft(getCurrentWeekStartKey());
+  renderWeeklyCheckInScreen();
+});
+
+document.getElementById("openWeeklyCheckInButton").addEventListener("click", () => showWeeklyCheckInScreen(false));
+document.getElementById("viewWeeklyCheckInsButton").addEventListener("click", () => showWeeklyCheckInScreen(true));
+document.getElementById("backFromWeeklyCheckInButton").addEventListener("click", leaveWeeklyCheckInScreen);
 
 
 // ---------------------------------------------------------------------------

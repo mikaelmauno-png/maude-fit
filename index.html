@@ -44,6 +44,14 @@
            app.js. -->
       <div id="startWorkoutChoices" class="button-stack"></div>
 
+      <!-- Shown until this week's check-in is answered (see
+           renderWeeklyCheckInPrompt in app.js), then hidden until next
+           Monday. -->
+      <section id="weeklyCheckInPrompt" hidden>
+        <p>How has this week been? A quick check-in on fatigue, stress, motivation and recovery.</p>
+        <button id="openWeeklyCheckInButton">Weekly check-in</button>
+      </section>
+
       <!-- Idle only, once at least one workout is finished: how long since
            the last backup (in a warning colour after a week), plus a
            "Back up now" button whenever a workout has been finished since
@@ -453,8 +461,39 @@
         <button id="viewPersonalBestsButton">Personal bests</button>
         <button id="viewMuscleStatsButton">Muscle stats</button>
         <button id="viewMonthlyRecapButton">Monthly recap</button>
+        <button id="viewWeeklyCheckInsButton">Weekly check-ins</button>
       </div>
       <ul id="historyList"></ul>
+    </section>
+
+
+    <!-- ===================================================================
+         WEEKLY CHECK-IN: four 1-5 ratings plus an optional note for this
+         week (or an earlier week, tapped from the list below). The rating
+         buttons are built from CHECK_IN_RATINGS in schema.js. See
+         WeeklyCheckIn in schema.js for the stored shape.
+         =================================================================== -->
+    <section id="weeklyCheckInScreen" hidden>
+      <h1>Weekly check-in</h1>
+      <div class="button-row">
+        <button id="backFromWeeklyCheckInButton">Back</button>
+      </div>
+      <h2 id="weeklyCheckInHeading"></h2>
+      <p class="check-in-scale-hint">1 = low · 5 = high</p>
+      <div id="checkInRatingRows"></div>
+      <label class="text-field">
+        Notes (optional)
+        <input type="text" id="checkInNotesInput" placeholder="e.g. busy week at work">
+      </label>
+      <div class="button-row">
+        <!-- Disabled until all four are answered: a half-filled check-in
+             would look like data but say little. -->
+        <button id="saveWeeklyCheckInButton">Save</button>
+        <!-- Only while editing an earlier week, to go back to this one. -->
+        <button id="cancelCheckInEditButton" hidden>Cancel</button>
+      </div>
+      <h2>All check-ins</h2>
+      <ul id="weeklyCheckInList"></ul>
     </section>
 
 

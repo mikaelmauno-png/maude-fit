@@ -34,7 +34,9 @@
 // (see createEmptyDatabase).
 //
 // Bumped to 9 because Session.dayStatus may now be null ("not set yet").
-const SCHEMA_VERSION = 9;
+//
+// Bumped to 10 for the addition of WeeklyCheckIn below.
+const SCHEMA_VERSION = 10;
 
 // Every piece of app data lives under this one localStorage key, as a single
 // JSON string. One key is simpler to export, import, and reason about than
@@ -197,6 +199,34 @@ const DAY_STATUSES = ["normal", "poorSleep", "ill", "stressed"];
 //   weightKg:  78.4
 // }
 
+// WeeklyCheckIn — how the week felt overall, answered once a week. The
+// engine will later read it next to the training data, so a hard week of
+// sleep or stress isn't mistaken for a training problem, same reasoning as
+// Session.dayStatus but on a weekly scale. At most one per week: answering
+// again in the same week replaces it, same idea as BodyweightEntry.
+//
+// {
+//   id:         "9f8c...",                  // crypto.randomUUID()
+//   weekStart:  "2026-09-21",               // that week's Monday, as a
+//                                           // local calendar date — which
+//                                           // week it's about, not when it
+//                                           // was answered
+//   loggedAt:   "2026-09-27T18:02:00.000Z", // when it was answered
+//   fatigue:    3,                          // each a whole number from
+//   stress:     2,                          // CHECK_IN_SCALE_MIN to
+//   motivation: 4,                          // CHECK_IN_SCALE_MAX, where
+//   recovery:   3,                          // 1 = low and 5 = high
+//   notes:      ""
+// }
+//
+// For fatigue and stress high is bad; for motivation and recovery high is
+// good. Each is stored exactly as answered rather than flipped into one
+// "higher is better" direction, so the raw answers survive and any
+// combining is left to whatever reads them later.
+const CHECK_IN_RATINGS = ["fatigue", "stress", "motivation", "recovery"];
+const CHECK_IN_SCALE_MIN = 1;
+const CHECK_IN_SCALE_MAX = 5;
+
 
 // The complete saved payload. This is the object that gets serialised into
 // localStorage and written out by the export button.
@@ -212,6 +242,7 @@ function createEmptyDatabase() {
     workoutTemplates: [],  // WorkoutTemplate objects
     gyms: [],                // Gym objects
     bodyweightEntries: [],     // BodyweightEntry objects
+    weeklyCheckIns: [],        // WeeklyCheckIn objects
     lastBackedUpAt: null       // ISO timestamp of the last backup file that
                                // was actually saved or shared; null if never.
                                // Drives the home screen's backup reminder.
@@ -276,6 +307,12 @@ function migrateFrom8To9(database) {
   database.schemaVersion = 9;
 }
 
+// Version 9 data has no weekly check-ins; an empty list is exactly right.
+function migrateFrom9To10(database) {
+  database.weeklyCheckIns = [];
+  database.schemaVersion = 10;
+}
+
 // Keyed by the version each migration upgrades *from*. Versions with no
 // entry here (1-3) are too old to migrate and are still refused.
 const MIGRATIONS = {
@@ -283,7 +320,8 @@ const MIGRATIONS = {
   5: migrateFrom5To6,
   6: migrateFrom6To7,
   7: migrateFrom7To8,
-  8: migrateFrom8To9
+  8: migrateFrom8To9,
+  9: migrateFrom9To10
 };
 
 // Applies migrations one step at a time until the data reaches
@@ -421,7 +459,8 @@ function importDatabase(jsonText) {
       !Array.isArray(parsed.sets) ||
       !Array.isArray(parsed.workoutTemplates) ||
       !Array.isArray(parsed.gyms) ||
-      !Array.isArray(parsed.bodyweightEntries)) {
+      !Array.isArray(parsed.bodyweightEntries) ||
+      !Array.isArray(parsed.weeklyCheckIns)) {
     throw new Error("That file is not a workout log export.");
   }
 
