@@ -822,6 +822,11 @@ function buildWorkoutTilePanel(template, sessionThisWeek) {
   } else {
     statusLine.textContent = "Not done this week";
   }
+  // Handy before starting: "do I have time for this one today?"
+  const estimate = estimateWorkoutDuration(template.id);
+  if (estimate) {
+    statusLine.textContent += ` · usually ${describeDurationEstimate(estimate)}`;
+  }
   panel.appendChild(statusLine);
 
   const exerciseList = document.createElement("ol");
@@ -1006,11 +1011,104 @@ function updateRestTimer() {
   restTimerElement.textContent = `Rest: ${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
+
+// ---------------------------------------------------------------------------
+// Workout clock and duration estimate
+//
+// "Workout 32:10 · usually 70–80 min": time since the workout started, and
+// how long the same workout template has taken before. Like the rest timer,
+// computed from timestamps already stored, so nothing new is saved.
+// ---------------------------------------------------------------------------
+
+const workoutClockElement = document.getElementById("workoutClock");
+
+// "1:05:09" past an hour, "32:10" before that.
+function formatElapsedTime(totalSeconds) {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const paddedSeconds = String(seconds).padStart(2, "0");
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${paddedSeconds}`;
+  }
+  return `${minutes}:${paddedSeconds}`;
+}
+
+function updateWorkoutClock() {
+  const session = getActiveSession();
+  if (!session) {
+    workoutClockElement.textContent = "";
+    return;
+  }
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - new Date(session.startedAt).getTime()) / 1000));
+  let clockText = `Workout ${formatElapsedTime(elapsedSeconds)}`;
+
+  const estimate = session.templateId ? estimateWorkoutDuration(session.templateId) : null;
+  if (estimate) {
+    clockText += ` · usually ${describeDurationEstimate(estimate)}`;
+  }
+  workoutClockElement.textContent = clockText;
+}
+
+// How many minutes each recent finished session of this workout template
+// took, newest first. Measured from start to the last logged set rather
+// than to endedAt: tapping "End workout" late (in the car, or the next
+// morning) would otherwise make the workout look far longer than it was.
+function findRecentWorkoutDurationsInMinutes(templateId, sessionCount) {
+  return appState.database.sessions
+    .filter((session) => session.templateId === templateId && session.endedAt !== null)
+    .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+    .slice(0, sessionCount)
+    .map((session) => {
+      const durationMilliseconds = new Date(findLastActivityTime(session)) - new Date(session.startedAt);
+      return durationMilliseconds / 60000;
+    })
+    // A session with a single set (or none) has no meaningful length.
+    .filter((minutes) => minutes > 0);
+}
+
+// A typical range for this workout's length, as { lowMinutes, highMinutes }
+// rounded to 5 minutes, or null with fewer than two past sessions to go on.
+// With four or more, the quickest and slowest quarter are left out, so one
+// unusually short or long day doesn't stretch the range. Uses the last ten
+// sessions, so the estimate follows the workout as it changes over months.
+function estimateWorkoutDuration(templateId) {
+  const durations = findRecentWorkoutDurationsInMinutes(templateId, 10).sort((a, b) => a - b);
+  if (durations.length < 2) {
+    return null;
+  }
+
+  let typicalDurations = durations;
+  if (durations.length >= 4) {
+    const quarter = Math.floor(durations.length / 4);
+    typicalDurations = durations.slice(quarter, durations.length - quarter);
+  }
+
+  const roundToFive = (minutes) => Math.round(minutes / 5) * 5;
+  return {
+    lowMinutes: roundToFive(typicalDurations[0]),
+    highMinutes: roundToFive(typicalDurations[typicalDurations.length - 1])
+  };
+}
+
+// "70–80 min", or "~75 min" when the range has collapsed to one value.
+function describeDurationEstimate(estimate) {
+  if (estimate.lowMinutes === estimate.highMinutes) {
+    return `~${estimate.lowMinutes} min`;
+  }
+  return `${estimate.lowMinutes}–${estimate.highMinutes} min`;
+}
+
+function updateWorkoutTimers() {
+  updateWorkoutClock();
+  updateRestTimer();
+}
+
 // Runs for the lifetime of the page rather than being started/stopped
-// around each workout — simpler, and updateRestTimer() already no-ops
-// cleanly when there's nothing to show.
-setInterval(updateRestTimer, 1000);
-updateRestTimer();
+// around each workout — simpler, and both updates already no-op cleanly
+// when there's nothing to show.
+setInterval(updateWorkoutTimers, 1000);
+updateWorkoutTimers();
 
 
 // ---------------------------------------------------------------------------

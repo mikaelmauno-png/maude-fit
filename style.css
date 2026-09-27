@@ -60,30 +60,36 @@ ul li {
   font-size: 0.95rem;
 }
 
-/* Large and bold: meant to be glanced at from arm's length while resting
-   between sets, same reasoning as the "large tap targets" rule.
-   `position: sticky` keeps it pinned to the top of the screen once the
-   exercise cards below scroll past it. It needs its own background (the
-   same colour as the page) and a z-index, otherwise the cards would show
-   through it and draw on top of it while scrolling underneath. */
-#restTimer {
+/* The clock and rest timer block. `position: sticky` keeps it pinned to
+   the top of the screen once the exercise cards below scroll past it. It
+   needs its own background (the same colour as the page) and a z-index,
+   otherwise the cards would show through it and draw on top of it while
+   scrolling underneath. */
+#workoutTimers {
   position: sticky;
   top: 0;
   z-index: 5;
   background-color: #121212;
-  min-height: 1.4em;
   margin: 8px 0 16px;
   padding: 8px 0;
+}
+
+/* Smaller and grey: the whole-workout clock is context, the rest timer
+   below it is the number that matters between sets. */
+#workoutClock {
+  margin: 0 0 4px;
+  color: #b0b0b0;
+  font-size: 0.95rem;
+}
+
+/* Large and bold: meant to be glanced at from arm's length while resting
+   between sets, same reasoning as the "large tap targets" rule. */
+#restTimer {
+  min-height: 1.4em;
+  margin: 0;
   color: #f0f0f0;
   font-size: 1.8rem;
   font-weight: bold;
-}
-
-/* Before the first set of a workout the timer has no text. Pinned, it would
-   be an empty strip covering the top of the cards, so it only sticks once
-   there is a time to show. */
-#restTimer:empty {
-  position: static;
 }
 
 /* Amber/gold rather than the app's usual blue or green, so a personal best

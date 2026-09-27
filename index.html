@@ -134,9 +134,15 @@
         <button id="endWorkoutButton" hidden>End workout</button>
       </div>
       <p id="workoutStatus"></p>
-      <!-- Counts up from whenever the most recently logged set (in the
-           current workout) was saved, so rest time is visible at a glance. -->
-      <p id="restTimer"></p>
+      <!-- Pinned to the top of the screen while scrolling (see style.css).
+           workoutClock: time since the workout started, plus how long this
+           workout usually takes. restTimer: counts up from whenever the most
+           recently logged set was saved, so rest time is visible at a
+           glance. -->
+      <div id="workoutTimers">
+        <p id="workoutClock"></p>
+        <p id="restTimer"></p>
+      </div>
 
       <!-- Shown briefly after saving a new set that beats every previous
            set for that exercise on weight or on load×reps ("volume"). -->
