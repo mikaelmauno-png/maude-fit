@@ -92,6 +92,28 @@ ul li {
   font-weight: bold;
 }
 
+/* Superset mode: one line per unfinished exercise (see updateRestTimer
+   in app.js). Smaller than the single timer, but still large enough to
+   read at arm's length, with the name on the left and its time on the
+   right. */
+#restTimer.rest-timer-superset {
+  font-size: 1.3rem;
+}
+
+.rest-timer-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* A long exercise name is cut off with "…" rather than wrapping, which
+   would push the timers onto extra lines. */
+.rest-timer-exercise {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 /* Amber/gold rather than the app's usual blue or green, so a personal best
    reads as a distinct, celebratory moment rather than routine status text. */
 #prBanner {

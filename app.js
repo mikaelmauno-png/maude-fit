@@ -978,37 +978,96 @@ endWorkoutButton.addEventListener("click", () => {
 // ---------------------------------------------------------------------------
 // Rest timer
 //
-// Counts up from whenever the most recently logged set (in the current
-// workout, any exercise, warmups included — this is about physical
-// exertion, not performance context) was saved. Purely computed from
-// existing Set.performedAt timestamps, so there's no new stored state.
+// Normally one timer, counting up from whenever the most recently logged set
+// (in the current workout, any exercise, warmups included — this is about
+// physical exertion, not performance context) was saved.
+//
+// During a superset — two or more exercises each part-way through their
+// planned sets — it shows one timer per exercise instead, each counting from
+// that exercise's own last set, since that's the rest that matters when you
+// go back to it. Purely computed from existing Set.performedAt timestamps,
+// so there's no new stored state.
 // ---------------------------------------------------------------------------
 
 const restTimerElement = document.getElementById("restTimer");
 
+// An exercise left unfinished longer than this is treated as abandoned, not
+// as part of a superset, so its timer doesn't sit there counting up forever.
+const SUPERSET_TIMER_CUTOFF_MINUTES = 15;
+
+function secondsSince(isoString) {
+  return Math.max(0, Math.floor((Date.now() - new Date(isoString).getTime()) / 1000));
+}
+
+function findMostRecentSet(sets) {
+  return sets.reduce((latest, set) => (set.performedAt > latest.performedAt ? set : latest));
+}
+
+// The exercises currently part-way through their planned sets, each as
+// { exerciseName, lastSetAt }, newest first. Only template workouts have a
+// planned set count to be "part-way" through, so a free-form workout always
+// gets an empty list (and with it the single timer).
+function findUnfinishedExerciseTimers(sessionSets) {
+  const template = getActiveTemplate();
+  if (!template) {
+    return [];
+  }
+
+  const timers = [];
+  for (const planned of template.plannedExercises) {
+    const exerciseSets = sessionSets.filter((set) => set.exerciseId === planned.exerciseId);
+    const workingSetCount = exerciseSets.filter((set) => !set.isWarmup).length;
+    const isStartedButUnfinished = exerciseSets.length > 0 && workingSetCount < planned.targetSets;
+    if (!isStartedButUnfinished) {
+      continue;
+    }
+
+    const lastSetAt = findMostRecentSet(exerciseSets).performedAt;
+    if (secondsSince(lastSetAt) > SUPERSET_TIMER_CUTOFF_MINUTES * 60) {
+      continue;
+    }
+    const exercise = appState.database.exercises.find((candidate) => candidate.id === planned.exerciseId);
+    timers.push({ exerciseName: exercise.name, lastSetAt });
+  }
+  return timers.sort((a, b) => b.lastSetAt.localeCompare(a.lastSetAt));
+}
+
 function updateRestTimer() {
+  restTimerElement.innerHTML = "";
+  restTimerElement.classList.remove("rest-timer-superset");
   if (appState.activeSessionId === null) {
-    restTimerElement.textContent = "";
     return;
   }
 
   const sessionSets = appState.database.sets.filter((set) => set.sessionId === appState.activeSessionId);
   if (sessionSets.length === 0) {
-    restTimerElement.textContent = "";
     return;
   }
 
-  const mostRecentSet = sessionSets.reduce((latest, set) =>
-    set.performedAt > latest.performedAt ? set : latest
-  );
+  const unfinishedExerciseTimers = findUnfinishedExerciseTimers(sessionSets);
+  if (unfinishedExerciseTimers.length < 2) {
+    const mostRecentSet = findMostRecentSet(sessionSets);
+    restTimerElement.textContent = `Rest: ${formatElapsedTime(secondsSince(mostRecentSet.performedAt))}`;
+    return;
+  }
 
-  const elapsedSeconds = Math.max(
-    0,
-    Math.floor((Date.now() - new Date(mostRecentSet.performedAt).getTime()) / 1000)
-  );
-  const minutes = Math.floor(elapsedSeconds / 60);
-  const seconds = elapsedSeconds % 60;
-  restTimerElement.textContent = `Rest: ${minutes}:${String(seconds).padStart(2, "0")}`;
+  // One line per exercise. The class switches to a smaller font so two or
+  // three lines still fit in the pinned block without covering the screen.
+  restTimerElement.classList.add("rest-timer-superset");
+  for (const timer of unfinishedExerciseTimers) {
+    const lineElement = document.createElement("span");
+    lineElement.className = "rest-timer-line";
+
+    const nameElement = document.createElement("span");
+    nameElement.className = "rest-timer-exercise";
+    nameElement.textContent = timer.exerciseName;
+
+    const timeElement = document.createElement("span");
+    timeElement.textContent = formatElapsedTime(secondsSince(timer.lastSetAt));
+
+    lineElement.append(nameElement, timeElement);
+    restTimerElement.appendChild(lineElement);
+  }
 }
 
 
