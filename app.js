@@ -326,6 +326,12 @@ function renderExerciseArea() {
     templateWorkoutCardsElement.hidden = true;
     renderFreeformExerciseList();
   }
+  // Redrawing the cards throws away the old ones, and an open set panel
+  // sitting inside one of them goes with it, so put it back under the
+  // freshly drawn pills.
+  if (!setEntryPanel.hidden) {
+    positionSetEntryPanel();
+  }
 }
 
 function renderFreeformExerciseList() {
@@ -345,6 +351,9 @@ function renderFreeformExerciseList() {
     buttonElement.addEventListener("click", () => {
       openSetEntryPanel(exercise.id);
     });
+    // Marks where the set panel opens for this exercise (see
+    // findSetEntryPanelAnchor).
+    buttonElement.dataset.setPanelAnchor = exercise.id;
     itemElement.appendChild(buttonElement);
 
     const loggedCount = appState.database.sets.filter(
@@ -621,6 +630,9 @@ function renderTemplateWorkoutCards(template) {
 
     const pillRowElement = document.createElement("div");
     pillRowElement.className = "set-pills";
+    // Marks where the set panel opens for this exercise (see
+    // findSetEntryPanelAnchor).
+    pillRowElement.dataset.setPanelAnchor = planned.exerciseId;
 
     // One pill per planned set, filled in from whatever's actually been
     // logged so far for it.
@@ -1323,7 +1335,7 @@ function openSetEntryPanel(exerciseId, planTarget = null) {
   previousPerformance.textContent = describeLastSession(exerciseId);
 
   renderSetDraft();
-  setEntryPanel.hidden = false;
+  showSetEntryPanel();
 }
 
 // Where the load stepper starts: the progression suggestion if there is
@@ -1389,13 +1401,84 @@ function openSetEntryPanelForEdit(setId) {
   deleteSetButton.hidden = false;
 
   renderSetDraft();
+  showSetEntryPanel();
+}
+
+// ---------------------------------------------------------------------------
+// Where the set panel appears
+//
+// During a workout the panel opens inside the exercise's card, right under
+// its pills, so what you tapped and the steppers stay next to each other.
+// Anywhere else (editing a past set from History) there are no pills to sit
+// under, so it stays a bottom sheet. It is one and the same element either
+// way: it is moved around the page rather than duplicated, so all the
+// stepper and button code above works unchanged wherever it sits.
+// ---------------------------------------------------------------------------
+
+// A comment node is invisible on the page, but marks the panel's original
+// spot in index.html so it can be put back exactly there.
+const setEntryPanelHomeMarker = document.createComment("set entry panel home");
+setEntryPanel.before(setEntryPanelHomeMarker);
+
+function showSetEntryPanel() {
   setEntryPanel.hidden = false;
+  positionSetEntryPanel();
+  // "nearest" scrolls only as far as needed to bring the whole panel on
+  // screen, and not at all when it already is, so the pills just tapped
+  // stay in view above it.
+  setEntryPanel.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+function positionSetEntryPanel() {
+  const anchor = findSetEntryPanelAnchor();
+  if (anchor === null) {
+    returnSetEntryPanelHome();
+    return;
+  }
+  anchor.after(setEntryPanel);
+  setEntryPanel.classList.remove("bottom-sheet");
+  setEntryPanel.classList.add("inline-set-panel");
+}
+
+function returnSetEntryPanelHome() {
+  setEntryPanelHomeMarker.after(setEntryPanel);
+  setEntryPanel.classList.remove("inline-set-panel");
+  setEntryPanel.classList.add("bottom-sheet");
+}
+
+// The element the panel should sit directly after, or null for "use the
+// bottom sheet". Looked up fresh every time from the data-set-panel-anchor
+// markers, rather than remembering the tapped element, because the cards
+// are redrawn from scratch after almost every change and the old element
+// would no longer be on the page.
+function findSetEntryPanelAnchor() {
+  if (activeWorkoutScreen.hidden) {
+    return null;
+  }
+  const exerciseId = appState.setDraft.exerciseId;
+  // Correcting a set from a free-form workout's review card: open under
+  // that card's pills, where the tap came from.
+  const isEditingFromReviewCard =
+    appState.editingSetId !== null && appState.freeformReviewExerciseId === exerciseId;
+  if (isEditingFromReviewCard) {
+    return freeformReviewCardElement.querySelector(".set-pills");
+  }
+  // Only look inside whichever of the two layouts is in use: the other one
+  // is hidden but can still hold leftover buttons from before, which would
+  // otherwise match first and swallow the panel out of sight.
+  const visibleExerciseArea = getActiveTemplate() ? templateWorkoutCardsElement : exerciseListElement;
+  // CSS.escape makes any exercise id safe to put inside a selector, even
+  // one with characters that would otherwise mean something to CSS.
+  return visibleExerciseArea.querySelector(`[data-set-panel-anchor="${CSS.escape(exerciseId)}"]`);
 }
 
 function closeSetEntryPanel() {
   appState.setDraft = null;
   appState.editingSetId = null;
   setEntryPanel.hidden = true;
+  // Back to its spot in index.html first, so the redraw below doesn't throw
+  // it away along with the old cards.
+  returnSetEntryPanelHome();
   // The cards' pills depend on which sets exist, so refresh them too. Safe
   // to call even while browsing History with no active workout — it just
   // redraws the (currently hidden) main-screen exercise area.

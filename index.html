@@ -210,13 +210,12 @@
 
 
     <!-- ===================================================================
-         SET ENTRY PANEL: a top-level section, not nested in another screen,
-         so it can be shown over activeWorkoutScreen (workout template cards /
-         free-form list) or over historyScreen (editing a past set) without
-         needing either screen hidden underneath it. Whichever screen opened
-         it stays visible underneath; class="bottom-sheet" pins this one to
-         the bottom of the screen on top of it (see style.css), same pattern
-         as the other panels with that class.
+         SET ENTRY PANEL: during a workout, app.js moves this element into
+         the tapped exercise's card, right under its pills (see
+         positionSetEntryPanel). This spot is its home for everywhere else:
+         editing a past set from History, where class="bottom-sheet" pins it
+         to the bottom of the screen over the list (see style.css), same
+         pattern as the other panels with that class.
          =================================================================== -->
     <section id="setEntryPanel" class="bottom-sheet" hidden>
       <h2 id="setEntryExerciseName"></h2>

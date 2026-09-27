@@ -211,6 +211,34 @@ body:has(.bottom-sheet:not([hidden]))::before {
   background-color: rgba(0, 0, 0, 0.6);
 }
 
+/* The set panel when it opens inside a workout card, under the pills (see
+   positionSetEntryPanel in app.js). A slightly lighter box than the card
+   around it, so it reads as "the thing being filled in now".
+   scroll-margin-top leaves room for the pinned rest timer, so scrolling
+   the panel into view never tucks its top edge under the timer. */
+.inline-set-panel {
+  margin: 12px 0;
+  padding: 4px 16px 16px;
+  background-color: #2a2a2a;
+  border: 1px solid #3d3d3d;
+  border-radius: 12px;
+  scroll-margin-top: 80px;
+}
+
+/* The card's own heading already names the exercise right above. */
+.inline-set-panel h2 {
+  display: none;
+}
+
+/* Inside a workout template card, the suggestion and "Last time" lines are
+   already on the card just above the pills, so repeating them would only
+   push the Save button further down the screen. A free-form workout has no
+   such card, so there they stay. */
+#templateWorkoutCards .inline-set-panel #progressionSuggestion,
+#templateWorkoutCards .inline-set-panel #previousPerformance {
+  display: none;
+}
+
 #previousPerformance {
   color: #b0b0b0;
   font-size: 0.95rem;
