@@ -869,3 +869,27 @@ h1 {
 .workout-tile-start-button:active {
   background-color: #cfcfcf;
 }
+
+/* ---------------------------------------------------------------------------
+   Backup reminder (home screen)
+   --------------------------------------------------------------------------- */
+
+#backupStatus {
+  margin-bottom: 16px;
+}
+
+#backupStatus p {
+  margin: 0 0 12px 0;
+  color: #b0b0b0;
+}
+
+/* Orange rather than the personal-best amber, so "you should do something"
+   never gets mistaken for a celebration. */
+#backupStatus p.backup-overdue {
+  color: #ff9a5c;
+  font-weight: bold;
+}
+
+#backUpNowButton {
+  width: 100%;
+}

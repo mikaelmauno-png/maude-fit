@@ -2,7 +2,7 @@
 // App logic for the workout logger.
 //
 // All reading and writing of saved data happens through the functions in
-// schema.js (loadDatabase, saveDatabase, exportDatabase, importDatabase).
+// schema.js (loadDatabase, saveDatabase, buildBackupFile, importDatabase).
 // This file only holds UI behaviour: what's on screen and what happens when
 // the user taps something.
 // ---------------------------------------------------------------------------
@@ -154,6 +154,7 @@ function showMainScreen() {
   hideAllScreens();
   mainScreen.hidden = false;
   renderStartWorkoutChoices();
+  renderBackupStatus();
   renderWeeklyWorkoutTemplateSummary();
   renderMuscleCounters();
   // Coming back home (e.g. after ending a workout) is the moment a waiting
@@ -3829,14 +3830,136 @@ document.getElementById("cancelPlannedExerciseButton").addEventListener("click",
 
 
 // ---------------------------------------------------------------------------
+// Backup reminder (home screen, only when idle)
+//
+// All data lives only in this phone's browser storage, so a backup file
+// saved somewhere else is the only protection against losing the phone or
+// the browser clearing its storage. Nothing can do that automatically (a
+// web page can't save files without a tap), so this keeps the tap close:
+// how long it's been, and a button right after each finished workout.
+// ---------------------------------------------------------------------------
+
+// After this many days without a backup the reminder turns a warning colour.
+const BACKUP_WARNING_AGE_DAYS = 7;
+
+const backupStatusElement = document.getElementById("backupStatus");
+const backupStatusText = document.getElementById("backupStatusText");
+const backUpNowButton = document.getElementById("backUpNowButton");
+
+backUpNowButton.addEventListener("click", backUpData);
+
+function renderBackupStatus() {
+  const isIdle = appState.activeSessionId === null;
+  const hasFinishedWorkouts = appState.database.sessions.some((session) => session.endedAt !== null);
+  // Before the first finished workout there's nothing yet worth nagging about.
+  if (!isIdle || !hasFinishedWorkouts) {
+    backupStatusElement.hidden = true;
+    return;
+  }
+  backupStatusElement.hidden = false;
+
+  const lastBackedUpAt = appState.database.lastBackedUpAt;
+  backupStatusText.textContent = describeLastBackup(lastBackedUpAt);
+  backupStatusText.classList.toggle("backup-overdue", isBackupOverdue(lastBackedUpAt));
+  backUpNowButton.hidden = !hasWorkoutSinceLastBackup(lastBackedUpAt);
+}
+
+function describeLastBackup(lastBackedUpAt) {
+  if (lastBackedUpAt === null) {
+    return "Never backed up";
+  }
+  const daysAgo = countCalendarDaysSince(lastBackedUpAt);
+  if (daysAgo === 0) {
+    return "Last backup: today";
+  }
+  if (daysAgo === 1) {
+    return "Last backup: yesterday";
+  }
+  return `Last backup: ${daysAgo} days ago`;
+}
+
+function isBackupOverdue(lastBackedUpAt) {
+  return lastBackedUpAt === null || countCalendarDaysSince(lastBackedUpAt) >= BACKUP_WARNING_AGE_DAYS;
+}
+
+// A workout finished after the last backup is one the backup doesn't have.
+function hasWorkoutSinceLastBackup(lastBackedUpAt) {
+  return appState.database.sessions.some((session) =>
+    session.endedAt !== null &&
+    (lastBackedUpAt === null || new Date(session.endedAt) > new Date(lastBackedUpAt))
+  );
+}
+
+// Counts midnights passed, not 24-hour periods, so a backup made late last
+// night reads as "yesterday" this morning rather than "today".
+function countCalendarDaysSince(isoString) {
+  const then = new Date(isoString);
+  const now = new Date();
+  // Local midnight of each day. Date.UTC is used only as a way to turn a
+  // year/month/day into a plain number of milliseconds, which sidesteps
+  // days that are 23 or 25 hours long when the clocks change.
+  const thenDay = Date.UTC(then.getFullYear(), then.getMonth(), then.getDate());
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const millisecondsPerDay = 24 * 60 * 60 * 1000;
+  return Math.round((today - thenDay) / millisecondsPerDay);
+}
+
+
+// ---------------------------------------------------------------------------
 // Export and import
 // ---------------------------------------------------------------------------
 
-// Export: schema.js already does all the work (reading storage, building
-// the file, triggering the download), so this just wires the click.
-document.getElementById("exportButton").addEventListener("click", () => {
-  exportDatabase();
-});
+// Export is the same backup as the home screen's "Back up now" button.
+document.getElementById("exportButton").addEventListener("click", backUpData);
+
+// Save a backup file off the phone, and remember that it happened, which is
+// what the home screen's backup reminder counts from.
+//
+// "async" lets this wait for the share sheet to close (the "await" below)
+// without freezing the page in the meantime.
+async function backUpData() {
+  const backedUpAt = new Date().toISOString();
+  const backupFile = buildBackupFile(appState.database, backedUpAt);
+
+  const wasSaved = await shareOrDownloadFile(backupFile);
+  if (!wasSaved) {
+    return;
+  }
+  appState.database.lastBackedUpAt = backedUpAt;
+  saveDatabase(appState.database);
+  renderBackupStatus();
+}
+
+// Hands the file to the phone's share sheet, where it can go straight to
+// iCloud Drive, Mail or AirDrop. A download would land in the phone's own
+// Downloads folder instead, which is lost along with the phone. Browsers
+// that can't share files (most desktop ones) still get the download.
+//
+// Returns false only when the share sheet was closed without picking
+// anywhere, so that doesn't count as a backup.
+async function shareOrDownloadFile(file) {
+  // canShare is missing entirely on some browsers, hence the first check.
+  const canShareFiles = navigator.canShare !== undefined && navigator.canShare({ files: [file] });
+  if (!canShareFiles) {
+    downloadFile(file);
+    return true;
+  }
+
+  try {
+    await navigator.share({ files: [file] });
+    return true;
+  } catch (error) {
+    // AbortError is what share() reports when the sheet is dismissed.
+    if (error.name === "AbortError") {
+      return false;
+    }
+    // Anything else means sharing itself broke, so a download is still
+    // better than no backup at all.
+    console.error("Sharing the backup failed, downloading it instead.", error);
+    downloadFile(file);
+    return true;
+  }
+}
 
 // Import is a two-step interaction: clicking the visible "Import" button
 // clicks the hidden real file input on its behalf, which opens the phone's

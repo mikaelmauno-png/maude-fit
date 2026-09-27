@@ -322,20 +322,30 @@ function saveDatabase(database) {
 // site data is cleared, and there is no way to get it back.
 // ---------------------------------------------------------------------------
 
-// Trigger a download of the whole database as a JSON file.
-function exportDatabase() {
-  const database = loadDatabase();
-  const json = JSON.stringify(database, null, 2);
+// Turn the whole database into a backup file, ready to be shared or
+// downloaded.
+//
+// The copy inside the file has lastBackedUpAt set to the moment it was made,
+// so a phone that later imports it knows everything in it is already backed
+// up. The live database is deliberately left untouched here: app.js only
+// records the backup once the file has actually been saved somewhere, since
+// closing the share sheet without choosing a place isn't a backup.
+function buildBackupFile(database, backedUpAt) {
+  const databaseForFile = { ...database, lastBackedUpAt: backedUpAt };
+  const json = JSON.stringify(databaseForFile, null, 2);
+  const backupDate = backedUpAt.slice(0, 10); // "2026-08-31"
+  return new File([json], `workout-log-${backupDate}.json`, { type: "application/json" });
+}
 
-  // A Blob is an in-memory file. createObjectURL gives it a temporary URL,
-  // which a hidden link can then "download".
-  const blob = new Blob([json], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
+// Trigger a download of a file, for browsers that can't share files.
+function downloadFile(file) {
+  // createObjectURL gives the in-memory file a temporary URL, which a
+  // hidden link can then "download".
+  const url = URL.createObjectURL(file);
 
-  const today = new Date().toISOString().slice(0, 10); // "2026-08-31"
   const link = document.createElement("a");
   link.href = url;
-  link.download = `workout-log-${today}.json`;
+  link.download = file.name;
   link.click();
 
   // Release the temporary URL so the browser can reclaim the memory.

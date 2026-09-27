@@ -44,6 +44,16 @@
            app.js. -->
       <div id="startWorkoutChoices" class="button-stack"></div>
 
+      <!-- Idle only, once at least one workout is finished: how long since
+           the last backup (in a warning colour after a week), plus a
+           "Back up now" button whenever a workout has been finished since
+           then — so right after ending one, it's waiting here. See
+           renderBackupStatus() in app.js. -->
+      <section id="backupStatus" hidden>
+        <p id="backupStatusText"></p>
+        <button id="backUpNowButton" hidden>Back up now</button>
+      </section>
+
       <!-- Only shown when idle (no active workout) and at least one active
            workout template exists — a bar per workout template, grey if not done this week,
            green with a completion % and date if it has been. Completion %
