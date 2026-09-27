@@ -57,8 +57,13 @@ loses information that cannot be recovered afterwards.
 ## Storage
 
 - `localStorage` only. No backend, no accounts, no login, no cloud sync.
-- All app data lives under a single key.
+- All app data lives under a single key. The only exceptions are safety
+  copies that must survive damage to that key: the single automatic copy
+  (`workoutLog-autoCopy`) and the copies kept when stored data can't be
+  loaded (`workoutLog-backup-<timestamp>`).
 - JSON export must work before any feature that creates data worth losing.
+- Backups leave the phone through the share sheet (falling back to a
+  download). That is saving a file, not the "sharing" ruled out below.
 - Import must validate `schemaVersion` and refuse mismatches loudly.
 
 ## UI rules
