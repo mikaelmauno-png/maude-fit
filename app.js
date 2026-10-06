@@ -2074,116 +2074,143 @@ function describeMuscles(muscles) {
   return parts.join(" · ");
 }
 
+// The library, in the same collapsible main-muscle groups as the exercise
+// picker (see groupExercisesByMainMuscle). Every button below redraws the
+// whole list, which would snap every open group shut each time, so the
+// groups open before the redraw are found first and opened again after.
 function renderExercisesManageList() {
   const listElement = document.getElementById("exercisesManageList");
+  const openGroupLabels = new Set(
+    Array.from(listElement.querySelectorAll("details[open]")).map((groupElement) => groupElement.dataset.groupLabel)
+  );
   listElement.innerHTML = "";
 
-  for (const exercise of appState.database.exercises.filter((candidate) => !candidate.isArchived)) {
-    // Stacked rather than side by side: the name and details get the full
-    // width on top, with the buttons in their own row underneath. Side by
-    // side, five buttons left the text a narrow column that wrapped
-    // nearly every word onto its own line.
-    const rowElement = document.createElement("li");
-    rowElement.className = "list-row exercise-manage-row";
+  const activeExercises = appState.database.exercises.filter((candidate) => !candidate.isArchived);
+  for (const group of groupExercisesByMainMuscle(activeExercises)) {
+    const groupElement = document.createElement("details");
+    groupElement.className = "picker-group";
+    groupElement.dataset.groupLabel = group.label;
+    groupElement.open = openGroupLabels.has(group.label);
 
-    const infoElement = document.createElement("div");
-    infoElement.className = "list-row-info";
+    const summaryElement = document.createElement("summary");
+    summaryElement.textContent = `${group.label} (${group.exercises.length})`;
+    groupElement.appendChild(summaryElement);
 
-    const nameSpan = document.createElement("span");
-    nameSpan.className = "exercise-manage-name";
-    nameSpan.textContent = exercise.isGymSpecific ? `${exercise.name} (gym-specific)` : exercise.name;
-    infoElement.appendChild(nameSpan);
-
-    const incrementSpan = document.createElement("span");
-    incrementSpan.className = "history-card-line";
-    incrementSpan.textContent = `Min raise: ${exercise.minimumLoadIncrement} kg`;
-    infoElement.appendChild(incrementSpan);
-
-    const musclesDescription = describeMuscles(exercise.muscles);
-    if (musclesDescription) {
-      const muscleSpan = document.createElement("span");
-      muscleSpan.className = "history-card-line";
-      muscleSpan.textContent = musclesDescription;
-      infoElement.appendChild(muscleSpan);
+    const groupListElement = document.createElement("ul");
+    for (const exercise of group.exercises) {
+      groupListElement.appendChild(buildExerciseManageRow(exercise));
     }
-
-    const renameButton = document.createElement("button");
-    renameButton.type = "button";
-    renameButton.className = "small-button";
-    renameButton.textContent = "Rename";
-    renameButton.addEventListener("click", () => {
-      // Only Exercise.name changes here — the id (used by every set and
-      // workout template that references this exercise) is stable per schema.js and
-      // is never touched by a rename.
-      const newName = prompt("Rename exercise", exercise.name);
-      if (newName === null) {
-        return;
-      }
-      const trimmedName = newName.trim();
-      if (trimmedName === "") {
-        alert("Name can't be empty.");
-        return;
-      }
-      exercise.name = trimmedName;
-      saveDatabase(appState.database);
-      renderExercisesManageList();
-    });
-
-    const incrementButton = document.createElement("button");
-    incrementButton.type = "button";
-    incrementButton.className = "small-button";
-    incrementButton.textContent = "Min raise";
-    incrementButton.addEventListener("click", () => {
-      const typedIncrement = prompt("Smallest weight raise for this exercise (kg)", exercise.minimumLoadIncrement);
-      if (typedIncrement === null) {
-        return;
-      }
-      const newIncrement = parseLoadIncrement(typedIncrement);
-      if (newIncrement === null) {
-        alert("Enter a weight above 0, e.g. 2.5.");
-        return;
-      }
-      exercise.minimumLoadIncrement = newIncrement;
-      saveDatabase(appState.database);
-      renderExercisesManageList();
-    });
-
-    const musclesButton = document.createElement("button");
-    musclesButton.type = "button";
-    musclesButton.className = "small-button";
-    musclesButton.textContent = "Set muscles";
-    musclesButton.addEventListener("click", () => openMuscleEditor(exercise.id));
-
-    const gymToggleButton = document.createElement("button");
-    gymToggleButton.type = "button";
-    gymToggleButton.className = "small-button";
-    gymToggleButton.textContent = exercise.isGymSpecific ? "Unmark" : "Mark gym-specific";
-    gymToggleButton.addEventListener("click", () => {
-      exercise.isGymSpecific = !exercise.isGymSpecific;
-      saveDatabase(appState.database);
-      renderExercisesManageList();
-    });
-
-    const archiveButton = document.createElement("button");
-    archiveButton.type = "button";
-    archiveButton.className = "small-button";
-    archiveButton.textContent = "Archive";
-    archiveButton.addEventListener("click", () => {
-      // Archiving instead of deleting keeps past sets and workout templates that
-      // reference this exercise resolvable.
-      exercise.isArchived = true;
-      saveDatabase(appState.database);
-      renderExercisesManageList();
-      renderArchivedExercisesList();
-    });
-
-    const actionsElement = document.createElement("div");
-    actionsElement.className = "exercise-manage-actions";
-    actionsElement.append(musclesButton, renameButton, incrementButton, gymToggleButton, archiveButton);
-
-    rowElement.append(infoElement, actionsElement);
-    listElement.appendChild(rowElement);
+    groupElement.appendChild(groupListElement);
+    listElement.appendChild(groupElement);
   }
+}
+
+// One exercise in the library, with its buttons.
+function buildExerciseManageRow(exercise) {
+  // Stacked rather than side by side: the name and details get the full
+  // width on top, with the buttons in their own row underneath. Side by
+  // side, five buttons left the text a narrow column that wrapped
+  // nearly every word onto its own line.
+  const rowElement = document.createElement("li");
+  rowElement.className = "list-row exercise-manage-row";
+
+  const infoElement = document.createElement("div");
+  infoElement.className = "list-row-info";
+
+  const nameSpan = document.createElement("span");
+  nameSpan.className = "exercise-manage-name";
+  nameSpan.textContent = exercise.isGymSpecific ? `${exercise.name} (gym-specific)` : exercise.name;
+  infoElement.appendChild(nameSpan);
+
+  const incrementSpan = document.createElement("span");
+  incrementSpan.className = "history-card-line";
+  incrementSpan.textContent = `Min raise: ${exercise.minimumLoadIncrement} kg`;
+  infoElement.appendChild(incrementSpan);
+
+  const musclesDescription = describeMuscles(exercise.muscles);
+  if (musclesDescription) {
+    const muscleSpan = document.createElement("span");
+    muscleSpan.className = "history-card-line";
+    muscleSpan.textContent = musclesDescription;
+    infoElement.appendChild(muscleSpan);
+  }
+
+  const renameButton = document.createElement("button");
+  renameButton.type = "button";
+  renameButton.className = "small-button";
+  renameButton.textContent = "Rename";
+  renameButton.addEventListener("click", () => {
+    // Only Exercise.name changes here — the id (used by every set and
+    // workout template that references this exercise) is stable per schema.js and
+    // is never touched by a rename.
+    const newName = prompt("Rename exercise", exercise.name);
+    if (newName === null) {
+      return;
+    }
+    const trimmedName = newName.trim();
+    if (trimmedName === "") {
+      alert("Name can't be empty.");
+      return;
+    }
+    exercise.name = trimmedName;
+    saveDatabase(appState.database);
+    renderExercisesManageList();
+  });
+
+  const incrementButton = document.createElement("button");
+  incrementButton.type = "button";
+  incrementButton.className = "small-button";
+  incrementButton.textContent = "Min raise";
+  incrementButton.addEventListener("click", () => {
+    const typedIncrement = prompt("Smallest weight raise for this exercise (kg)", exercise.minimumLoadIncrement);
+    if (typedIncrement === null) {
+      return;
+    }
+    const newIncrement = parseLoadIncrement(typedIncrement);
+    if (newIncrement === null) {
+      alert("Enter a weight above 0, e.g. 2.5.");
+      return;
+    }
+    exercise.minimumLoadIncrement = newIncrement;
+    saveDatabase(appState.database);
+    renderExercisesManageList();
+  });
+
+  const musclesButton = document.createElement("button");
+  musclesButton.type = "button";
+  musclesButton.className = "small-button";
+  musclesButton.textContent = "Set muscles";
+  musclesButton.addEventListener("click", () => openMuscleEditor(exercise.id));
+
+  const gymToggleButton = document.createElement("button");
+  gymToggleButton.type = "button";
+  gymToggleButton.className = "small-button";
+  gymToggleButton.textContent = exercise.isGymSpecific ? "Unmark" : "Mark gym-specific";
+  gymToggleButton.addEventListener("click", () => {
+    exercise.isGymSpecific = !exercise.isGymSpecific;
+    saveDatabase(appState.database);
+    renderExercisesManageList();
+  });
+
+  const archiveButton = document.createElement("button");
+  archiveButton.type = "button";
+  archiveButton.className = "small-button";
+  archiveButton.textContent = "Archive";
+  archiveButton.addEventListener("click", () => {
+    // Archiving instead of deleting keeps past sets and workout templates that
+    // reference this exercise resolvable.
+    exercise.isArchived = true;
+    saveDatabase(appState.database);
+    renderExercisesManageList();
+    renderArchivedExercisesList();
+  });
+
+  const actionsElement = document.createElement("div");
+  actionsElement.className = "exercise-manage-actions";
+  actionsElement.append(musclesButton, renameButton, incrementButton, gymToggleButton, archiveButton);
+
+  rowElement.append(infoElement, actionsElement);
+  return rowElement;
 }
 
 // Collapsed by default (see the toggle button below) — archiving something
