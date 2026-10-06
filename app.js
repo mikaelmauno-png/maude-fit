@@ -2978,7 +2978,8 @@ function renderBodyweightChart() {
 
   const dataPoints = recentEntries.map((entry) => ({
     label: formatSessionDate(entry.loggedAt),
-    value: entry.weightKg
+    value: entry.weightKg,
+    date: entry.loggedAt
   }));
 
   chartElement.innerHTML = buildLineChartSVG(dataPoints, (value) => `${value} kg`);
@@ -3681,28 +3682,41 @@ function getWeeklyBestSets(exerciseId, gymId = null) {
   return sortedWeekKeys.map((weekKey) => bestByWeekKey.get(weekKey));
 }
 
-// Which points get a value and date written next to them. At most
-// `maximumLabels`: always the first and last, plus others spread evenly in
-// between. A long range can have dozens of points, and a label on every one
-// would pile up into an unreadable smear on a phone-width chart.
-function chooseLabelledPointIndexes(pointCount, maximumLabels) {
-  const labelledIndexes = new Set();
-  if (pointCount <= maximumLabels) {
-    for (let index = 0; index < pointCount; index++) {
-      labelledIndexes.add(index);
+// Which points get a value and date written next to them. Points are now
+// spaced by date, so they can bunch up anywhere; instead of a fixed count,
+// a point is labelled when it's at least MINIMUM_LABEL_GAP away from the
+// last labelled one. 85 is a little more than the widest date, like
+// "30.12.2025", so neighbouring labels never touch. The newest point is always labelled,
+// since it's the one people look at; if it's too close to the label before
+// it, that earlier label makes way.
+const MINIMUM_LABEL_GAP = 85;
+
+function chooseLabelledPoints(points) {
+  const labelledPoints = [points[0]];
+  for (const point of points.slice(1)) {
+    const previousLabelled = labelledPoints[labelledPoints.length - 1];
+    if (point.x - previousLabelled.x >= MINIMUM_LABEL_GAP) {
+      labelledPoints.push(point);
     }
-    return labelledIndexes;
   }
-  const spacing = (pointCount - 1) / (maximumLabels - 1);
-  for (let labelNumber = 0; labelNumber < maximumLabels; labelNumber++) {
-    labelledIndexes.add(Math.round(labelNumber * spacing));
+
+  const newestPoint = points[points.length - 1];
+  const lastLabelled = labelledPoints[labelledPoints.length - 1];
+  if (lastLabelled !== newestPoint) {
+    if (newestPoint.x - lastLabelled.x < MINIMUM_LABEL_GAP && labelledPoints.length > 1) {
+      labelledPoints.pop();
+    }
+    labelledPoints.push(newestPoint);
   }
-  return labelledIndexes;
+  return labelledPoints;
 }
 
 // Builds a small hand-drawn line chart as an SVG string (no charting
 // library — nothing can load from a CDN, per CLAUDE.md). `dataPoints` is
-// `[{ label, value }]` in left-to-right order.
+// `[{ label, value, date }]` from oldest to newest, `date` being an ISO
+// string. Points are placed by date, not one step apart: a month without
+// data shows as a long stretch of line with no dots, instead of looking
+// just like one week.
 function buildLineChartSVG(dataPoints, valueFormatter) {
   const width = 320;
   const height = 160;
@@ -3716,9 +3730,14 @@ function buildLineChartSVG(dataPoints, valueFormatter) {
   // Flat data (every point the same) would otherwise divide by zero.
   const valueRange = maxValue - minValue || 1;
 
-  const xStep = dataPoints.length > 1 ? plotWidth / (dataPoints.length - 1) : 0;
+  const firstTime = new Date(dataPoints[0].date).getTime();
+  const lastTime = new Date(dataPoints[dataPoints.length - 1].date).getTime();
+  // A single point (or several on the same moment) has no time span to
+  // spread over, which would divide by zero; they sit at the left edge.
+  const timeSpan = lastTime - firstTime;
   const points = dataPoints.map((point, index) => {
-    const x = padding.left + index * xStep;
+    const timeFraction = timeSpan > 0 ? (new Date(point.date).getTime() - firstTime) / timeSpan : 0;
+    const x = padding.left + timeFraction * plotWidth;
     const y = padding.top + plotHeight - ((point.value - minValue) / valueRange) * plotHeight;
     return { x, y, point, index };
   });
@@ -3733,10 +3752,7 @@ function buildLineChartSVG(dataPoints, valueFormatter) {
     .map((p) => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${dotRadius}" fill="#2a6df4" />`)
     .join("");
 
-  // Four fit: a full date like "19.4.2026" is wide enough that a fifth
-  // would start touching its neighbours on a phone-width chart.
-  const labelledIndexes = chooseLabelledPointIndexes(points.length, 4);
-  const labelledPoints = points.filter((p) => labelledIndexes.has(p.index));
+  const labelledPoints = chooseLabelledPoints(points);
 
   // A label centered ("middle") on the first or last point would extend
   // past the chart's left/right edge and get clipped by the viewBox — so
@@ -3850,11 +3866,13 @@ function renderExerciseStatsDetail(exerciseId) {
 
   const weightPoints = weeklyBestSets.map((set) => ({
     label: formatSessionDate(set.performedAt),
-    value: set.load
+    value: set.load,
+    date: set.performedAt
   }));
   const repsPoints = weeklyBestSets.map((set) => ({
     label: formatSessionDate(set.performedAt),
-    value: set.reps
+    value: set.reps,
+    date: set.performedAt
   }));
 
   document.getElementById("exerciseStatsWeightChart").innerHTML =
@@ -4591,7 +4609,8 @@ function renderMuscleStatsDetail(muscle) {
     // weekKey is already an ISO date (that week's Monday), so it can be
     // formatted the same way a set's performedAt is elsewhere.
     label: formatSessionDate(entry.weekKey),
-    value: entry.value
+    value: entry.value,
+    date: entry.weekKey
   }));
 
   document.getElementById("muscleStatsChart").innerHTML =
