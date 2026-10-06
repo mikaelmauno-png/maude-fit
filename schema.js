@@ -121,14 +121,23 @@ const MUSCLE_GROUPS = [
 //   addedExercises: [],                        // planned exercises added
 //                                              // to this workout only, same
 //                                              // shape as a WorkoutTemplate's
-//                                              // plannedExercises entries
+//                                              // plannedExercises entries,
+//                                              // plus an optional listPosition
+//                                              // (see below)
 //   removedExerciseIds: []                     // exercise ids from the
 //                                              // template skipped in this
 //                                              // workout only
 // }
 //
 // A template workout's exercise list for the day is the template's
-// plannedExercises, minus removedExerciseIds, plus addedExercises. Changes
+// plannedExercises, minus removedExerciseIds, plus addedExercises.
+//
+// An addedExercises entry may carry `listPosition`, a 0-based place in that
+// day's list. It's only set on an exercise taken out of the template
+// mid-workout after sets were logged on it: its card stays in today's list,
+// and listPosition keeps it where it was instead of moving it to the end.
+// Older app versions ignore the field, which only changes the card order,
+// so it didn't need a schema version bump. Changes
 // made "for this workout only" live here rather than in the template, so
 // the template stays as it was for next time, and the record of how this
 // workout differed from its plan is kept. Both stay empty for a free-form

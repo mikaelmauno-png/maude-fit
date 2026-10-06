@@ -351,12 +351,25 @@ function getActiveTemplate() {
 
 // A template workout's exercise list for that day: the template's own
 // list, minus anything skipped for that workout only, plus anything added
-// for that workout only (see Session in schema.js).
+// for that workout only (see Session in schema.js). An added exercise with
+// a listPosition goes back in at that place; the rest go at the end.
 function getSessionPlannedExercises(session, template) {
-  const keptFromTemplate = template.plannedExercises.filter(
+  const dayList = template.plannedExercises.filter(
     (planned) => !session.removedExerciseIds.includes(planned.exerciseId)
   );
-  return keptFromTemplate.concat(session.addedExercises);
+
+  // Put back in ascending order, so each insert lands where it was when
+  // its position was recorded (every earlier one is already in place).
+  const withPosition = session.addedExercises
+    .filter((planned) => typeof planned.listPosition === "number")
+    .sort((a, b) => a.listPosition - b.listPosition);
+  for (const planned of withPosition) {
+    // splice(position, 0, item) inserts without removing anything.
+    dayList.splice(Math.min(planned.listPosition, dayList.length), 0, planned);
+  }
+
+  const withoutPosition = session.addedExercises.filter((planned) => typeof planned.listPosition !== "number");
+  return dayList.concat(withoutPosition);
 }
 
 function isAddedForThisWorkoutOnly(session, exerciseId) {
@@ -5366,16 +5379,19 @@ function removeExerciseFromActiveWorkoutOnly(exerciseId) {
 
 // With sets already logged today, a copy of its targets moves to this
 // workout's own list, so today's card (and its logged sets) stays put
-// while the template drops it from next time on.
+// while the template drops it from next time on. listPosition (see Session
+// in schema.js) keeps the card in the same place in today's list.
 function removeExerciseFromTemplate(exerciseId) {
   const session = getActiveSession();
   const template = getActiveTemplate();
+  const placeInTodaysList = getSessionPlannedExercises(session, template)
+    .findIndex((candidate) => candidate.exerciseId === exerciseId);
   const planned = template.plannedExercises.find((candidate) => candidate.exerciseId === exerciseId);
   template.plannedExercises = template.plannedExercises.filter((candidate) => candidate !== planned);
   if (hasSetsInActiveWorkout(exerciseId)) {
     // `{ ...planned }` makes a separate copy of the object, so the two
     // lists never share (and accidentally co-edit) one object.
-    session.addedExercises.push({ ...planned });
+    session.addedExercises.push({ ...planned, listPosition: placeInTodaysList });
   }
 }
 
