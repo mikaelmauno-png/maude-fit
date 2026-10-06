@@ -2336,9 +2336,8 @@ document.getElementById("addExerciseButton").addEventListener("click", () => {
   appState.database.exercises.push({
     id,
     name,
-    // Empty until set via "Set muscles" in the exercise list below — kept
-    // out of the add-exercise form itself to keep adding an exercise a
-    // single quick step.
+    // Empty for a moment: the muscle editor opens straight after this
+    // (below), and stays empty only if that's skipped.
     muscles: {},
     isArchived: false,
     isGymSpecific: gymSpecificCheckbox.checked,
@@ -2349,6 +2348,10 @@ document.getElementById("addExerciseButton").addEventListener("click", () => {
   gymSpecificCheckbox.checked = false;
   incrementInput.value = "2.5";
   renderExercisesManageList();
+  // Straight on to its muscles, so a new exercise doesn't sit in "No main
+  // muscle set" just because that's a separate button. The same editor as
+  // "Set muscles", rather than more buttons in the add form above.
+  openMuscleEditor(id, true);
 });
 
 
@@ -2508,7 +2511,10 @@ function renderMuscleEditor() {
   );
 }
 
-function openMuscleEditor(exerciseId) {
+// `isNewExercise` is true straight after "Add exercise": the editor then
+// says so, and Cancel becomes "Skip for now", since the exercise is already
+// saved either way and skipping just leaves its muscles to set later.
+function openMuscleEditor(exerciseId, isNewExercise = false) {
   const exercise = appState.database.exercises.find((candidate) => candidate.id === exerciseId);
 
   // Derives main/secondary from the stored weighted object rather than
@@ -2528,7 +2534,10 @@ function openMuscleEditor(exerciseId) {
   };
 
   document.getElementById("muscleEditorExerciseName").textContent = exercise.name;
+  document.getElementById("muscleEditorNewExerciseHint").hidden = !isNewExercise;
+  document.getElementById("cancelMusclesButton").textContent = isNewExercise ? "Skip for now" : "Cancel";
   renderMuscleEditor();
+  muscleEditorPanel.scrollTop = 0;
   // Deliberately not hideAllScreens(): exercisesScreen stays visible
   // underneath, same pattern as the other in-context panels.
   muscleEditorPanel.hidden = false;
