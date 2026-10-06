@@ -2413,59 +2413,99 @@ const MUSCLE_GROUP_LABELS = {
 const mainMuscleOptionsElement = document.getElementById("mainMuscleOptions");
 const secondaryMuscleOptionsElement = document.getElementById("secondaryMuscleOptions");
 
-// Built once from MUSCLE_GROUPS (schema.js), same reasoning as the
-// dayStatus options — the UI can't drift from the schema's own list.
-for (const muscle of MUSCLE_GROUPS) {
-  const optionButton = document.createElement("button");
-  optionButton.type = "button";
-  optionButton.className = "day-status-option";
-  optionButton.textContent = MUSCLE_GROUP_LABELS[muscle];
-  optionButton.dataset.muscle = muscle;
-  optionButton.addEventListener("click", () => {
-    appState.muscleDraft.mainMuscle = muscle;
-    // A muscle can't be both main and secondary at once, so promoting one
-    // to main drops it from the secondary list if it was there.
-    appState.muscleDraft.secondaryMuscles = appState.muscleDraft.secondaryMuscles.filter(
-      (candidate) => candidate !== muscle
-    );
-    renderMuscleEditor();
-  });
-  mainMuscleOptionsElement.appendChild(optionButton);
+// How the muscle buttons are grouped on screen. Purely for finding a
+// button quickly: the stored data still uses the plain muscle names from
+// MUSCLE_GROUPS (schema.js) and knows nothing about these areas.
+const MUSCLE_BODY_AREAS = [
+  { label: "Chest", muscles: ["chest"] },
+  { label: "Back", muscles: ["upperBack", "lats", "lowerBack", "traps"] },
+  { label: "Shoulders", muscles: ["frontDelt", "sideDelt", "rearDelt"] },
+  { label: "Arms", muscles: ["biceps", "triceps", "forearms"] },
+  { label: "Core", muscles: ["abs", "obliques"] },
+  { label: "Legs", muscles: ["glutes", "quads", "hamstrings", "adductors", "calves"] }
+];
+
+// MUSCLE_BODY_AREAS, plus an "Other" area for any muscle in MUSCLE_GROUPS
+// that the list above doesn't mention. A muscle added to schema.js later
+// then still gets a button, instead of silently having none.
+function getMuscleBodyAreas() {
+  const placedMuscles = MUSCLE_BODY_AREAS.flatMap((area) => area.muscles);
+  const unplacedMuscles = MUSCLE_GROUPS.filter((muscle) => !placedMuscles.includes(muscle));
+  if (unplacedMuscles.length === 0) {
+    return MUSCLE_BODY_AREAS;
+  }
+  return MUSCLE_BODY_AREAS.concat([{ label: "Other", muscles: unplacedMuscles }]);
 }
 
-function renderMuscleEditor() {
-  for (const optionButton of mainMuscleOptionsElement.children) {
-    optionButton.classList.toggle(
-      "day-status-option-selected",
-      optionButton.dataset.muscle === appState.muscleDraft.mainMuscle
-    );
-  }
-
-  // Rebuilt each time, since which muscle to exclude (the current main
-  // one) can change — unlike the main list above, which never changes.
-  secondaryMuscleOptionsElement.innerHTML = "";
-  for (const muscle of MUSCLE_GROUPS) {
-    if (muscle === appState.muscleDraft.mainMuscle) {
+// Fills one section of the editor (main or secondary) with a small heading
+// per body area and that area's buttons. `isSelected(muscle)` decides which
+// buttons are highlighted and `onTap(muscle)` what a tap does. Muscles in
+// `excludedMuscles` get no button, and an area left with none is skipped.
+function renderMuscleOptionGroups(containerElement, excludedMuscles, isSelected, onTap) {
+  containerElement.innerHTML = "";
+  for (const area of getMuscleBodyAreas()) {
+    const areaMuscles = area.muscles.filter((muscle) => !excludedMuscles.includes(muscle));
+    if (areaMuscles.length === 0) {
       continue;
     }
-    const optionButton = document.createElement("button");
-    optionButton.type = "button";
-    optionButton.className = "day-status-option";
-    optionButton.textContent = MUSCLE_GROUP_LABELS[muscle];
-    if (appState.muscleDraft.secondaryMuscles.includes(muscle)) {
-      optionButton.classList.add("day-status-option-selected");
+
+    const areaElement = document.createElement("div");
+    areaElement.className = "muscle-area";
+
+    const labelElement = document.createElement("span");
+    labelElement.className = "muscle-area-label";
+    labelElement.textContent = area.label;
+    areaElement.appendChild(labelElement);
+
+    const buttonsElement = document.createElement("div");
+    buttonsElement.className = "button-row";
+    for (const muscle of areaMuscles) {
+      const optionButton = document.createElement("button");
+      optionButton.type = "button";
+      optionButton.className = "day-status-option";
+      optionButton.textContent = MUSCLE_GROUP_LABELS[muscle];
+      optionButton.classList.toggle("day-status-option-selected", isSelected(muscle));
+      optionButton.addEventListener("click", () => onTap(muscle));
+      buttonsElement.appendChild(optionButton);
     }
-    optionButton.addEventListener("click", () => {
-      const index = appState.muscleDraft.secondaryMuscles.indexOf(muscle);
-      if (index === -1) {
-        appState.muscleDraft.secondaryMuscles.push(muscle);
-      } else {
-        appState.muscleDraft.secondaryMuscles.splice(index, 1);
-      }
-      renderMuscleEditor();
-    });
-    secondaryMuscleOptionsElement.appendChild(optionButton);
+    areaElement.appendChild(buttonsElement);
+    containerElement.appendChild(areaElement);
   }
+}
+
+function chooseMainMuscle(muscle) {
+  appState.muscleDraft.mainMuscle = muscle;
+  // A muscle can't be both main and secondary at once, so promoting one
+  // to main drops it from the secondary list if it was there.
+  appState.muscleDraft.secondaryMuscles = appState.muscleDraft.secondaryMuscles.filter(
+    (candidate) => candidate !== muscle
+  );
+  renderMuscleEditor();
+}
+
+function toggleSecondaryMuscle(muscle) {
+  const index = appState.muscleDraft.secondaryMuscles.indexOf(muscle);
+  if (index === -1) {
+    appState.muscleDraft.secondaryMuscles.push(muscle);
+  } else {
+    appState.muscleDraft.secondaryMuscles.splice(index, 1);
+  }
+  renderMuscleEditor();
+}
+
+// Both sections are redrawn on every tap: the current main muscle decides
+// which button the secondary section leaves out.
+function renderMuscleEditor() {
+  const draft = appState.muscleDraft;
+  renderMuscleOptionGroups(
+    mainMuscleOptionsElement, [], (muscle) => muscle === draft.mainMuscle, chooseMainMuscle
+  );
+  renderMuscleOptionGroups(
+    secondaryMuscleOptionsElement,
+    draft.mainMuscle ? [draft.mainMuscle] : [],
+    (muscle) => draft.secondaryMuscles.includes(muscle),
+    toggleSecondaryMuscle
+  );
 }
 
 function openMuscleEditor(exerciseId) {

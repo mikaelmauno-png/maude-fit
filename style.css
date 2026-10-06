@@ -1133,3 +1133,18 @@ h1 {
   font-size: 0.9rem;
   margin-top: 4px;
 }
+
+/* One body area in the muscle editor: a small grey heading ("Back") with
+   that area's muscle buttons under it. */
+.muscle-area-label {
+  display: block;
+  margin-bottom: 6px;
+  color: #9a9a9a;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.muscle-area .button-row {
+  margin-bottom: 12px;
+}
