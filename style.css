@@ -528,6 +528,23 @@ h1 {
   flex: none;
 }
 
+/* An exercise in the library: details on top at full width, buttons in a
+   wrapping row below (see renderExercisesManageList in app.js). */
+.exercise-manage-row {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.exercise-manage-name {
+  font-weight: bold;
+}
+
+.exercise-manage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 /* Overrides button's flex:1/full-padding defaults for the small "Edit" /
    "Archive" / "Remove" actions that sit inside a .list-row, so they
    size to their text instead of stretching. */

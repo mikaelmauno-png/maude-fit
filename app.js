@@ -2079,13 +2079,18 @@ function renderExercisesManageList() {
   listElement.innerHTML = "";
 
   for (const exercise of appState.database.exercises.filter((candidate) => !candidate.isArchived)) {
+    // Stacked rather than side by side: the name and details get the full
+    // width on top, with the buttons in their own row underneath. Side by
+    // side, five buttons left the text a narrow column that wrapped
+    // nearly every word onto its own line.
     const rowElement = document.createElement("li");
-    rowElement.className = "list-row";
+    rowElement.className = "list-row exercise-manage-row";
 
     const infoElement = document.createElement("div");
     infoElement.className = "list-row-info";
 
     const nameSpan = document.createElement("span");
+    nameSpan.className = "exercise-manage-name";
     nameSpan.textContent = exercise.isGymSpecific ? `${exercise.name} (gym-specific)` : exercise.name;
     infoElement.appendChild(nameSpan);
 
@@ -2172,7 +2177,11 @@ function renderExercisesManageList() {
       renderArchivedExercisesList();
     });
 
-    rowElement.append(infoElement, renameButton, incrementButton, musclesButton, gymToggleButton, archiveButton);
+    const actionsElement = document.createElement("div");
+    actionsElement.className = "exercise-manage-actions";
+    actionsElement.append(musclesButton, renameButton, incrementButton, gymToggleButton, archiveButton);
+
+    rowElement.append(infoElement, actionsElement);
     listElement.appendChild(rowElement);
   }
 }
