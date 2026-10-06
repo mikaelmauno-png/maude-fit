@@ -36,7 +36,10 @@
 // Bumped to 9 because Session.dayStatus may now be null ("not set yet").
 //
 // Bumped to 10 for the addition of WeeklyCheckIn below.
-const SCHEMA_VERSION = 10;
+//
+// Bumped to 11 for the addition of preferences on the database itself
+// (see createEmptyDatabase).
+const SCHEMA_VERSION = 11;
 
 // Every piece of app data lives under this one localStorage key, as a single
 // JSON string. One key is simpler to export, import, and reason about than
@@ -243,6 +246,11 @@ function createEmptyDatabase() {
     gyms: [],                // Gym objects
     bodyweightEntries: [],     // BodyweightEntry objects
     weeklyCheckIns: [],        // WeeklyCheckIn objects
+    preferences: {             // choices made in the app's screens, kept so
+                               // they survive closing the app
+      chartRangeWeeks: 12      // how many weeks back the trend charts show
+                               // (6, 12 or 24), or null for all-time
+    },
     lastBackedUpAt: null       // ISO timestamp of the last backup file that
                                // was actually saved or shared; null if never.
                                // Drives the home screen's backup reminder.
@@ -313,6 +321,13 @@ function migrateFrom9To10(database) {
   database.schemaVersion = 10;
 }
 
+// Version 10 data has no preferences. 12 weeks is what the charts showed
+// by default before the setting was remembered.
+function migrateFrom10To11(database) {
+  database.preferences = { chartRangeWeeks: 12 };
+  database.schemaVersion = 11;
+}
+
 // Keyed by the version each migration upgrades *from*. Versions with no
 // entry here (1-3) are too old to migrate and are still refused.
 const MIGRATIONS = {
@@ -321,7 +336,8 @@ const MIGRATIONS = {
   6: migrateFrom6To7,
   7: migrateFrom7To8,
   8: migrateFrom8To9,
-  9: migrateFrom9To10
+  9: migrateFrom9To10,
+  10: migrateFrom10To11
 };
 
 // Applies migrations one step at a time until the data reaches
@@ -460,7 +476,8 @@ function importDatabase(jsonText) {
       !Array.isArray(parsed.workoutTemplates) ||
       !Array.isArray(parsed.gyms) ||
       !Array.isArray(parsed.bodyweightEntries) ||
-      !Array.isArray(parsed.weeklyCheckIns)) {
+      !Array.isArray(parsed.weeklyCheckIns) ||
+      typeof parsed.preferences !== "object" || parsed.preferences === null) {
     throw new Error("That file is not a workout log export.");
   }
 

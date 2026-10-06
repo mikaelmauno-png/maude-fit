@@ -107,7 +107,6 @@ const appState = {
   checkInDraft: null,               // { weekStart, fatigue, stress, motivation, recovery, notes } while the weekly check-in screen is open; a rating is null until answered
   isCheckInOpenedFromHistory: false, // true when the check-in screen was opened from History, so saving stays there instead of going home
   recapMonth: null,                 // { year, monthIndex } the monthly recap is showing (monthIndex 0 = January); null until it's first opened
-  chartRangeWeeks: 12,              // how many weeks back every trend chart shows (6, 12 or 24), or null for all-time; one setting shared by all charts
   exerciseStatsSelectedGymId: null, // which gym's data the stats charts are scoped to, when the exercise is gym-specific and used at more than one gym
   bodyweightDraftWeightKg: null,    // value shown on the bodyweight stepper; null only before the Bodyweight screen has been opened once
   editingBodyweightEntryId: null,   // id of a past entry being corrected, or null while logging today's weight
@@ -3119,7 +3118,9 @@ function getWeekKey(date) {
 // ---------------------------------------------------------------------------
 // Chart time range — the "6 wk / 12 wk / 24 wk / All" buttons above every
 // trend chart (exercise, muscle, bodyweight). One shared setting, so
-// choosing a range on one chart carries over to the next one you open.
+// choosing a range on one chart carries over to the next one you open. It
+// lives in database.preferences (schema.js), so it also survives closing
+// the app.
 // ---------------------------------------------------------------------------
 
 const CHART_RANGES = [
@@ -3134,11 +3135,11 @@ const CHART_RANGES = [
 // "6 wk" means this week plus the five before it — the same weeks the chart
 // points are grouped into.
 function getChartRangeStart() {
-  if (appState.chartRangeWeeks === null) {
+  if (appState.database.preferences.chartRangeWeeks === null) {
     return null;
   }
   const start = getCurrentWeekRange().start;
-  start.setDate(start.getDate() - (appState.chartRangeWeeks - 1) * 7);
+  start.setDate(start.getDate() - (appState.database.preferences.chartRangeWeeks - 1) * 7);
   return start;
 }
 
@@ -3157,9 +3158,12 @@ function renderChartRangePicker(containerElement, onChange) {
     rangeButton.type = "button";
     rangeButton.className = "day-status-option";
     rangeButton.textContent = range.label;
-    rangeButton.classList.toggle("day-status-option-selected", range.weeks === appState.chartRangeWeeks);
+    rangeButton.classList.toggle("day-status-option-selected", range.weeks === appState.database.preferences.chartRangeWeeks);
     rangeButton.addEventListener("click", () => {
-      appState.chartRangeWeeks = range.weeks;
+      // Saved with the rest of the data, so the chosen range is still
+      // there the next time the app is opened.
+      appState.database.preferences.chartRangeWeeks = range.weeks;
+      saveDatabase(appState.database);
       onChange();
     });
     containerElement.appendChild(rangeButton);
@@ -3169,7 +3173,7 @@ function renderChartRangePicker(containerElement, onChange) {
 // What an empty chart says when there is older data, just none in the
 // chosen range — so it doesn't look as if the history has vanished.
 function describeEmptyChartRange() {
-  return `Nothing logged in the last ${appState.chartRangeWeeks} weeks. Try a longer range.`;
+  return `Nothing logged in the last ${appState.database.preferences.chartRangeWeeks} weeks. Try a longer range.`;
 }
 
 
