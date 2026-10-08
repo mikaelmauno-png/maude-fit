@@ -603,6 +603,9 @@ h1 {
 
 /* Space above so it reads as separate from the set pills it sits under. */
 .history-delete-button {
+  /* Its own line, so it never sits right beside another button (like a
+     cardio card's Edit) where a slightly-off tap would hit it instead. */
+  display: block;
   margin-top: 16px;
 }
 

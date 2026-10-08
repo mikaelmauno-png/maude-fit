@@ -2765,130 +2765,206 @@ function formatSessionDate(isoString) {
   });
 }
 
+// Finished workouts and cardio sessions together, newest first, so History
+// reads as one timeline of training. Each kind brings its own date and its
+// own card builder; sorting the mixed list by date interleaves them.
 function renderHistoryList() {
   const listElement = document.getElementById("historyList");
   listElement.innerHTML = "";
 
-  const pastSessions = appState.database.sessions
+  const workoutEntries = appState.database.sessions
     .filter((session) => session.endedAt !== null)
-    .slice()
-    .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+    .map((session) => ({ date: session.startedAt, buildCard: () => buildWorkoutHistoryCard(session) }));
+  const cardioEntries = appState.database.cardioSessions
+    .map((cardioSession) => ({ date: cardioSession.performedAt, buildCard: () => buildCardioHistoryCard(cardioSession) }));
+  const entries = workoutEntries.concat(cardioEntries).sort((a, b) => b.date.localeCompare(a.date));
 
-  if (pastSessions.length === 0) {
+  if (entries.length === 0) {
     const emptyMessage = document.createElement("p");
-    emptyMessage.textContent = "No finished workouts yet.";
+    emptyMessage.textContent = "Nothing logged yet.";
     listElement.appendChild(emptyMessage);
     return;
   }
 
-  for (const session of pastSessions) {
-    const template = session.templateId
-      ? appState.database.workoutTemplates.find((candidate) => candidate.id === session.templateId)
-      : null;
-    const gym = session.gymId
-      ? appState.database.gyms.find((candidate) => candidate.id === session.gymId)
-      : null;
-
-    const cardElement = document.createElement("li");
-    cardElement.className = "history-card";
-
-    const headerElement = document.createElement("div");
-    headerElement.className = "history-card-header";
-    headerElement.textContent =
-      `${formatSessionDate(session.startedAt)} · ${template ? template.name : "Free-form"}${gym ? ` · ${gym.name}` : ""}`;
-    cardElement.appendChild(headerElement);
-
-    // "Normal" and empty notes are the defaults every session starts with,
-    // so only shown when there's actually something to say.
-    const hasStatusWorthShowing = session.dayStatus !== null && session.dayStatus !== "normal";
-    if (hasStatusWorthShowing || session.notes !== "") {
-      const statusLine = document.createElement("div");
-      statusLine.className = "history-card-line";
-      const statusText = hasStatusWorthShowing ? DAY_STATUS_LABELS[session.dayStatus] : null;
-      statusLine.textContent = [statusText, session.notes].filter(Boolean).join(" — ");
-      cardElement.appendChild(statusLine);
-    }
-
-    // Lets a mislogged or forgotten status/note be corrected after the fact —
-    // the dayStatusPanel doesn't care whether the session it's editing is
-    // still active or long finished.
-    const editStatusButton = document.createElement("button");
-    editStatusButton.type = "button";
-    editStatusButton.className = "small-button";
-    editStatusButton.textContent = "Edit status";
-    editStatusButton.addEventListener("click", () => openDayStatusPanel(session.id));
-    cardElement.appendChild(editStatusButton);
-
-    // Group this session's sets by exercise, in the order each exercise was
-    // first worked, so the summary reads like the workout actually went.
-    const setsByExercise = [];
-    const sessionSets = appState.database.sets
-      .filter((set) => set.sessionId === session.id)
-      .sort((a, b) => a.order - b.order);
-
-    for (const set of sessionSets) {
-      let group = setsByExercise.find((candidate) => candidate.exerciseId === set.exerciseId);
-      if (!group) {
-        group = { exerciseId: set.exerciseId, sets: [] };
-        setsByExercise.push(group);
-      }
-      group.sets.push(set);
-    }
-
-    if (setsByExercise.length === 0) {
-      const emptyLine = document.createElement("div");
-      emptyLine.className = "history-card-line";
-      emptyLine.textContent = "No sets logged.";
-      cardElement.appendChild(emptyLine);
-    }
-
-    for (const group of setsByExercise) {
-      const exercise = appState.database.exercises.find((candidate) => candidate.id === group.exerciseId);
-
-      const nameLine = document.createElement("div");
-      nameLine.className = "history-card-line";
-      // Exercise names are never deleted (only archived), so this lookup
-      // always resolves even for a long-retired exercise.
-      nameLine.textContent = exercise.name;
-      cardElement.appendChild(nameLine);
-
-      // Pills rather than plain comma-joined text, same component the
-      // active-workout cards use, so each set is its own tap target for
-      // correcting a past session — text alone isn't tappable in any
-      // reasonably-sized way.
-      const pillRowElement = document.createElement("div");
-      pillRowElement.className = "set-pills";
-      for (const set of group.sets) {
-        const pill = document.createElement("button");
-        pill.type = "button";
-        pill.className = "set-pill set-pill-done";
-
-        const weightSpan = document.createElement("span");
-        weightSpan.className = "set-pill-weight";
-        weightSpan.textContent = `${set.load} kg`;
-
-        const repsSpan = document.createElement("span");
-        repsSpan.className = "set-pill-reps";
-        repsSpan.textContent = set.isWarmup ? `${set.reps} (warmup)` : `${set.reps} reps`;
-
-        pill.append(weightSpan, repsSpan);
-        pill.addEventListener("click", () => openSetEntryPanelForEdit(set.id));
-        pillRowElement.appendChild(pill);
-      }
-      cardElement.appendChild(pillRowElement);
-    }
-
-    // At the very bottom of the card, well away from "Edit status" and the
-    // set pills, so an inaccurate thumb reaching for those can't land on it.
-    const deleteSessionButton = document.createElement("button");
-    deleteSessionButton.type = "button";
-    deleteSessionButton.className = "small-button destructive-button history-delete-button";
-    deleteSessionButton.textContent = "Delete workout";
-    deleteSessionButton.addEventListener("click", () => confirmAndDeleteSession(session, sessionSets.length));
-    cardElement.appendChild(deleteSessionButton);
-
-    listElement.appendChild(cardElement);
+  for (const entry of entries) {
+    listElement.appendChild(entry.buildCard());
   }
+}
+
+// One finished workout: header, status line, then its sets grouped by
+// exercise as tappable pills.
+function buildWorkoutHistoryCard(session) {
+  const template = session.templateId
+    ? appState.database.workoutTemplates.find((candidate) => candidate.id === session.templateId)
+    : null;
+  const gym = session.gymId
+    ? appState.database.gyms.find((candidate) => candidate.id === session.gymId)
+    : null;
+
+  const cardElement = document.createElement("li");
+  cardElement.className = "history-card";
+
+  const headerElement = document.createElement("div");
+  headerElement.className = "history-card-header";
+  headerElement.textContent =
+    `${formatSessionDate(session.startedAt)} · ${template ? template.name : "Free-form"}${gym ? ` · ${gym.name}` : ""}`;
+  cardElement.appendChild(headerElement);
+
+  // "Normal" and empty notes are the defaults every session starts with,
+  // so only shown when there's actually something to say.
+  const hasStatusWorthShowing = session.dayStatus !== null && session.dayStatus !== "normal";
+  if (hasStatusWorthShowing || session.notes !== "") {
+    const statusLine = document.createElement("div");
+    statusLine.className = "history-card-line";
+    const statusText = hasStatusWorthShowing ? DAY_STATUS_LABELS[session.dayStatus] : null;
+    statusLine.textContent = [statusText, session.notes].filter(Boolean).join(" — ");
+    cardElement.appendChild(statusLine);
+  }
+
+  // Lets a mislogged or forgotten status/note be corrected after the fact —
+  // the dayStatusPanel doesn't care whether the session it's editing is
+  // still active or long finished.
+  const editStatusButton = document.createElement("button");
+  editStatusButton.type = "button";
+  editStatusButton.className = "small-button";
+  editStatusButton.textContent = "Edit status";
+  editStatusButton.addEventListener("click", () => openDayStatusPanel(session.id));
+  cardElement.appendChild(editStatusButton);
+
+  // Group this session's sets by exercise, in the order each exercise was
+  // first worked, so the summary reads like the workout actually went.
+  const setsByExercise = [];
+  const sessionSets = appState.database.sets
+    .filter((set) => set.sessionId === session.id)
+    .sort((a, b) => a.order - b.order);
+
+  for (const set of sessionSets) {
+    let group = setsByExercise.find((candidate) => candidate.exerciseId === set.exerciseId);
+    if (!group) {
+      group = { exerciseId: set.exerciseId, sets: [] };
+      setsByExercise.push(group);
+    }
+    group.sets.push(set);
+  }
+
+  if (setsByExercise.length === 0) {
+    const emptyLine = document.createElement("div");
+    emptyLine.className = "history-card-line";
+    emptyLine.textContent = "No sets logged.";
+    cardElement.appendChild(emptyLine);
+  }
+
+  for (const group of setsByExercise) {
+    const exercise = appState.database.exercises.find((candidate) => candidate.id === group.exerciseId);
+
+    const nameLine = document.createElement("div");
+    nameLine.className = "history-card-line";
+    // Exercise names are never deleted (only archived), so this lookup
+    // always resolves even for a long-retired exercise.
+    nameLine.textContent = exercise.name;
+    cardElement.appendChild(nameLine);
+
+    // Pills rather than plain comma-joined text, same component the
+    // active-workout cards use, so each set is its own tap target for
+    // correcting a past session — text alone isn't tappable in any
+    // reasonably-sized way.
+    const pillRowElement = document.createElement("div");
+    pillRowElement.className = "set-pills";
+    for (const set of group.sets) {
+      const pill = document.createElement("button");
+      pill.type = "button";
+      pill.className = "set-pill set-pill-done";
+
+      const weightSpan = document.createElement("span");
+      weightSpan.className = "set-pill-weight";
+      weightSpan.textContent = `${set.load} kg`;
+
+      const repsSpan = document.createElement("span");
+      repsSpan.className = "set-pill-reps";
+      repsSpan.textContent = set.isWarmup ? `${set.reps} (warmup)` : `${set.reps} reps`;
+
+      pill.append(weightSpan, repsSpan);
+      pill.addEventListener("click", () => openSetEntryPanelForEdit(set.id));
+      pillRowElement.appendChild(pill);
+    }
+    cardElement.appendChild(pillRowElement);
+  }
+
+  // At the very bottom of the card, well away from "Edit status" and the
+  // set pills, so an inaccurate thumb reaching for those can't land on it.
+  const deleteSessionButton = document.createElement("button");
+  deleteSessionButton.type = "button";
+  deleteSessionButton.className = "small-button destructive-button history-delete-button";
+  deleteSessionButton.textContent = "Delete workout";
+  deleteSessionButton.addEventListener("click", () => confirmAndDeleteSession(session, sessionSets.length));
+  cardElement.appendChild(deleteSessionButton);
+
+  return cardElement;
+}
+
+// "35 min · 5.3 km · effort 6 · 140 bpm": only what was recorded.
+function describeCardioSession(cardioSession) {
+  const parts = [`${cardioSession.durationMinutes} min`];
+  if (cardioSession.distanceKm !== null) {
+    parts.push(`${cardioSession.distanceKm} km`);
+  }
+  parts.push(`effort ${cardioSession.effort}`);
+  if (cardioSession.averageHeartRate !== null) {
+    parts.push(`${cardioSession.averageHeartRate} bpm`);
+  }
+  return parts.join(" · ");
+}
+
+// One cardio session: date and activity, what was recorded, any notes, and
+// Edit / Delete. Activities are archived rather than deleted once used, so
+// the lookup always finds a name.
+function buildCardioHistoryCard(cardioSession) {
+  const activity = appState.database.cardioActivities.find(
+    (candidate) => candidate.id === cardioSession.activityId
+  );
+
+  const cardElement = document.createElement("li");
+  cardElement.className = "history-card";
+
+  const headerElement = document.createElement("div");
+  headerElement.className = "history-card-header";
+  headerElement.textContent = `${formatSessionDate(cardioSession.performedAt)} · ${activity.name}`;
+  cardElement.appendChild(headerElement);
+
+  const detailLine = document.createElement("div");
+  detailLine.className = "history-card-line";
+  detailLine.textContent = describeCardioSession(cardioSession);
+  cardElement.appendChild(detailLine);
+
+  if (cardioSession.notes !== "") {
+    const notesLine = document.createElement("div");
+    notesLine.className = "history-card-line";
+    notesLine.textContent = cardioSession.notes;
+    cardElement.appendChild(notesLine);
+  }
+
+  cardElement.appendChild(buildSmallButton("Edit", () => showCardioLogScreenForEdit(cardioSession.id)));
+
+  // Same placement as "Delete workout": at the bottom, away from Edit.
+  const deleteButton = buildSmallButton("Delete cardio", () => confirmAndDeleteCardioSession(cardioSession));
+  deleteButton.classList.add("destructive-button", "history-delete-button");
+  cardElement.appendChild(deleteButton);
+
+  return cardElement;
+}
+
+function confirmAndDeleteCardioSession(cardioSession) {
+  const confirmed = confirm(
+    `Delete the cardio session from ${formatSessionDate(cardioSession.performedAt)}? This can't be undone.`
+  );
+  if (!confirmed) {
+    return;
+  }
+  appState.database.cardioSessions = appState.database.cardioSessions.filter(
+    (candidate) => candidate.id !== cardioSession.id
+  );
+  saveDatabase(appState.database);
+  renderHistoryList();
 }
 
 // The confirmation spells out how many sets go with it, since that's the
@@ -5954,6 +6030,26 @@ function showCardioLogScreen() {
   renderCardioLog();
 }
 
+// The same screen, filled in from a saved session so it can be corrected.
+// The date isn't offered for change here: Today/Yesterday only makes sense
+// at the moment of logging.
+function showCardioLogScreenForEdit(cardioSessionId) {
+  const cardioSession = appState.database.cardioSessions.find((candidate) => candidate.id === cardioSessionId);
+  hideAllScreens();
+  appState.cardioDraft = {
+    editingSessionId: cardioSession.id,
+    activityId: cardioSession.activityId,
+    isYesterday: false,
+    durationMinutes: cardioSession.durationMinutes,
+    effort: cardioSession.effort,
+    distanceKm: cardioSession.distanceKm,
+    averageHeartRate: cardioSession.averageHeartRate,
+    notes: cardioSession.notes
+  };
+  cardioLogScreen.hidden = false;
+  renderCardioLog();
+}
+
 // Built fresh on every render: the list of activities can change in
 // Settings between visits, and only active ones are offered. An archived
 // activity still shows when editing a session that used it.
@@ -6112,8 +6208,16 @@ function buildCardioSessionFields(draft) {
   };
 }
 
+// Editing replaces the session's values in place (keeping its id and date),
+// per the data rule that a correction replaces, never duplicates.
 function saveCardioDraft() {
   const draft = appState.cardioDraft;
+  if (draft.editingSessionId !== null) {
+    const existing = appState.database.cardioSessions.find((candidate) => candidate.id === draft.editingSessionId);
+    Object.assign(existing, buildCardioSessionFields(draft));
+    saveDatabase(appState.database);
+    return;
+  }
   appState.database.cardioSessions.push({
     id: crypto.randomUUID(),
     performedAt: chooseCardioPerformedAt(draft.isYesterday),
@@ -6122,9 +6226,16 @@ function saveCardioDraft() {
   saveDatabase(appState.database);
 }
 
+// Back to wherever the screen was opened from: History for an edit, home
+// for a new session.
 function leaveCardioLogScreen() {
+  const wasEditing = appState.cardioDraft.editingSessionId !== null;
   appState.cardioDraft = null;
-  showMainScreen();
+  if (wasEditing) {
+    showHistoryScreen();
+  } else {
+    showMainScreen();
+  }
 }
 
 document.getElementById("saveCardioButton").addEventListener("click", () => {
