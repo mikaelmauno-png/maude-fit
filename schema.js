@@ -41,7 +41,10 @@
 // (see createEmptyDatabase).
 //
 // Bumped to 12 for the addition of CardioActivity and CardioSession below.
-const SCHEMA_VERSION = 12;
+//
+// Bumped to 13 for the addition of Gym.exerciseReplacements and
+// Session.replacedExercises below.
+const SCHEMA_VERSION = 13;
 
 // Every piece of app data lives under this one localStorage key, as a single
 // JSON string. One key is simpler to export, import, and reason about than
@@ -126,9 +129,15 @@ const MUSCLE_GROUPS = [
 //                                              // plannedExercises entries,
 //                                              // plus an optional listPosition
 //                                              // (see below)
-//   removedExerciseIds: []                     // exercise ids from the
+//   removedExerciseIds: [],                    // exercise ids from the
 //                                              // template skipped in this
 //                                              // workout only
+//   replacedExercises: [                       // template exercises swapped
+//     {                                        // for another one in this
+//       exerciseId:            "leg-press",    // workout, because this gym
+//       replacementExerciseId: "hack-squat"    // can't do them (see Gym)
+//     }
+//   ]
 // }
 //
 // A template workout's exercise list for the day is the template's
@@ -142,8 +151,15 @@ const MUSCLE_GROUPS = [
 // so it didn't need a schema version bump. Changes
 // made "for this workout only" live here rather than in the template, so
 // the template stays as it was for next time, and the record of how this
-// workout differed from its plan is kept. Both stay empty for a free-form
-// workout, which has no plan to differ from.
+// workout differed from its plan is kept. All three stay empty for a
+// free-form workout, which has no plan to differ from.
+//
+// A replaced exercise takes the original's place in the day's list, with
+// the original's sets and rep range, but its own load and its own
+// history: 100 kg on a leg press says nothing about a hack squat. The
+// swap is copied onto the session rather than only read from the gym,
+// so the record of what this workout was stays true even after the gym's
+// replacements change later.
 
 // dayStatus records the context that would otherwise be lost. The engine will
 // later use it to avoid mistaking a bad night's sleep for a training problem,
@@ -193,7 +209,13 @@ const DAY_STATUSES = ["normal", "poorSleep", "ill", "stressed"];
 // {
 //   id:         "gym-uuid...",
 //   name:       "PureGym Jyvaskyla",
-//   isArchived: false
+//   isArchived: false,
+//   exerciseReplacements: [            // exercises this gym can't do, and
+//     {                                // what to do there instead. Put
+//       exerciseId:            "leg-press",   // into each workout started
+//       replacementExerciseId: "hack-squat"   // here automatically (see
+//     }                                       // Session.replacedExercises)
+//   ]
 // }
 
 // BodyweightEntry — one weigh-in. At most one per calendar day: logging
@@ -383,6 +405,18 @@ function migrateFrom11To12(database) {
   database.schemaVersion = 12;
 }
 
+// Version 12 data has no replacements: no gym has an exercise it can't
+// do yet, and no past workout swapped one.
+function migrateFrom12To13(database) {
+  for (const gym of database.gyms) {
+    gym.exerciseReplacements = [];
+  }
+  for (const session of database.sessions) {
+    session.replacedExercises = [];
+  }
+  database.schemaVersion = 13;
+}
+
 // Keyed by the version each migration upgrades *from*. Versions with no
 // entry here (1-3) are too old to migrate and are still refused.
 const MIGRATIONS = {
@@ -393,7 +427,8 @@ const MIGRATIONS = {
   8: migrateFrom8To9,
   9: migrateFrom9To10,
   10: migrateFrom10To11,
-  11: migrateFrom11To12
+  11: migrateFrom11To12,
+  12: migrateFrom12To13
 };
 
 // Applies migrations one step at a time until the data reaches

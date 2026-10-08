@@ -907,8 +907,9 @@
     <!-- ===================================================================
          REMOVE EXERCISE PANEL: opened from a workout card's "Remove from
          workout" button (edit mode only). Which buttons show depends on
-         the exercise; see openRemoveExercisePanel in app.js. Nothing here
-         deletes logged sets.
+         the exercise; see openRemoveExercisePanel in app.js. Also where an
+         exercise the gym can't do is swapped for another (see
+         showReplacementButtons). Nothing here deletes logged sets.
          =================================================================== -->
     <section id="removeExercisePanel" class="bottom-sheet" hidden>
       <h2 id="removeExerciseHeading"></h2>
@@ -916,6 +917,8 @@
       <div class="button-stack">
         <button id="removeExerciseTodayButton">Skip it today only</button>
         <button id="removeExerciseFromTemplateButton" class="destructive-button"></button>
+        <button id="replaceExerciseButton"></button>
+        <button id="restoreOriginalExerciseButton"></button>
         <button id="cancelRemoveExerciseButton" class="card-action-button">Cancel</button>
       </div>
     </section>

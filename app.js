@@ -94,9 +94,9 @@ const appState = {
   plannedExerciseDraft: null,  // in-progress values for a planned exercise
   pendingTemplateId: null,     // workout template chosen at Start Workout, held while the gym picker is open
   isEditingWorkoutExercises: false, // true while the active workout shows its "Add exercise" and "Remove" buttons
-  exercisePickerPurpose: null, // "workoutTemplate" (adding to the template being edited) or "activeWorkout" (adding to the workout in progress) while the exercise picker is open
+  exercisePickerPurpose: null, // "workoutTemplate" (adding to the template being edited), "activeWorkout" (adding to the workout in progress) or "replacement" (choosing what replaces removeExerciseTargetId at this gym) while the exercise picker is open
   isAddingExerciseToWorkout: false, // true while the target panel is setting up an exercise being added to the workout in progress
-  removeExerciseTargetId: null, // which exercise the "Remove from workout" panel is about; null when it's closed
+  removeExerciseTargetId: null, // which exercise the "Remove from workout" panel (or the replacement picker opened from it) is about; null when both are closed
   nextGoalTarget: null,        // { templateId, exerciseId } while adjusting an existing planned exercise's target from a workout card; null otherwise
   freeformReviewExerciseId: null, // which exercise's logged-sets review card is open, in a free-form workout; null otherwise
   dayStatusDraft: null,           // { dayStatus, notes } while the today's-status panel is open; null otherwise
@@ -355,12 +355,13 @@ function getActiveTemplate() {
 
 // A template workout's exercise list for that day: the template's own
 // list, minus anything skipped for that workout only, plus anything added
-// for that workout only (see Session in schema.js). An added exercise with
-// a listPosition goes back in at that place; the rest go at the end.
+// for that workout only (see Session in schema.js), with any exercise this
+// gym can't do swapped for its replacement. An added exercise with a
+// listPosition goes back in at that place; the rest go at the end.
 function getSessionPlannedExercises(session, template) {
-  const dayList = template.plannedExercises.filter(
-    (planned) => !session.removedExerciseIds.includes(planned.exerciseId)
-  );
+  const dayList = template.plannedExercises
+    .filter((planned) => !session.removedExerciseIds.includes(planned.exerciseId))
+    .map((planned) => applyReplacement(session, planned));
 
   // Put back in ascending order, so each insert lands where it was when
   // its position was recorded (every earlier one is already in place).
@@ -374,6 +375,43 @@ function getSessionPlannedExercises(session, template) {
 
   const withoutPosition = session.addedExercises.filter((planned) => typeof planned.listPosition !== "number");
   return dayList.concat(withoutPosition);
+}
+
+// The swap for one template exercise in this workout, or null when it
+// isn't swapped.
+function findReplacementOf(session, exerciseId) {
+  return session.replacedExercises.find((replacement) => replacement.exerciseId === exerciseId) || null;
+}
+
+// The other direction: which swap put this exercise into the workout, or
+// null when it's there in its own right. Needed because a replacement's
+// card is about the replacement, while the template only knows the
+// original.
+function findReplacementBy(session, replacementExerciseId) {
+  return session.replacedExercises.find(
+    (replacement) => replacement.replacementExerciseId === replacementExerciseId
+  ) || null;
+}
+
+// The planned entry as it is done today. A swapped exercise keeps the
+// original's sets and rep range, so the workout keeps its shape, but
+// starts from its own last load: the original's target load is for a
+// different movement. replacesExerciseId is only on this day-list copy,
+// never saved, so the card can say what it stands in for.
+function applyReplacement(session, planned) {
+  const replacement = findReplacementOf(session, planned.exerciseId);
+  if (!replacement) {
+    return planned;
+  }
+  const previous = findMostRecentWorkingSet(replacement.replacementExerciseId);
+  return {
+    ...planned,
+    exerciseId: replacement.replacementExerciseId,
+    targetLoad: previous ? previous.load : 20,
+    // Any goal set by hand was for the original, so it doesn't apply.
+    targetLoadSetAt: null,
+    replacesExerciseId: planned.exerciseId
+  };
 }
 
 function isAddedForThisWorkoutOnly(session, exerciseId) {
@@ -707,6 +745,10 @@ function renderTemplateWorkoutCards(template) {
     headingElement.textContent = exercise.name;
     cardElement.appendChild(headingElement);
 
+    if (planned.replacesExerciseId) {
+      cardElement.appendChild(buildReplacementLine(planned.replacesExerciseId));
+    }
+
     const suggestion = getSuggestionForPlanned(planned);
     if (suggestion) {
       cardElement.appendChild(buildSuggestionLine(planned, suggestion));
@@ -751,8 +793,9 @@ function renderTemplateWorkoutCards(template) {
     // today's pills for this exercise not yet logged, since they read the
     // same target).
     // Not for an exercise added for today only: it isn't in the template,
-    // so there's no "next time" for a goal to apply to.
-    if (!isAddedForThisWorkoutOnly(session, planned.exerciseId)) {
+    // so there's no "next time" for a goal to apply to. Nor for a
+    // replacement: the template's goal belongs to the exercise it replaces.
+    if (!isAddedForThisWorkoutOnly(session, planned.exerciseId) && !planned.replacesExerciseId) {
       const nextGoalButton = document.createElement("button");
       nextGoalButton.type = "button";
       nextGoalButton.className = "card-action-button";
@@ -775,6 +818,16 @@ function renderTemplateWorkoutCards(template) {
   }
 
   templateWorkoutCardsElement.appendChild(buildWorkoutEditControls());
+}
+
+// "Instead of Leg press", under a replacement's name, so it's clear why
+// the card isn't what the template says.
+function buildReplacementLine(originalExerciseId) {
+  const original = appState.database.exercises.find((exercise) => exercise.id === originalExerciseId);
+  const lineElement = document.createElement("p");
+  lineElement.className = "last-session-line";
+  lineElement.textContent = `Instead of ${original.name}`;
+  return lineElement;
 }
 
 // Below the last card: "Edit exercises" switches edit mode on, which adds
@@ -1048,6 +1101,32 @@ function beginStartWorkout(templateId) {
   showGymPickerScreen();
 }
 
+// The gym's standing swaps that apply to this workout template, copied so
+// the session keeps its own record (see Session in schema.js). Nothing to
+// swap in a free-form workout, which has no plan, or with no gym chosen.
+//
+// A swap is left out when its replacement is archived, or already planned
+// in this template: two cards for one exercise would mix up its sets.
+// Then the original shows as usual, and can be swapped by hand.
+function chooseReplacementsForNewWorkout(templateId, gymId) {
+  const template = appState.database.workoutTemplates.find((candidate) => candidate.id === templateId);
+  const gym = appState.database.gyms.find((candidate) => candidate.id === gymId);
+  if (!template || !gym) {
+    return [];
+  }
+  const plannedIds = template.plannedExercises.map((planned) => planned.exerciseId);
+  return gym.exerciseReplacements
+    .filter((replacement) => {
+      const replacementExercise = appState.database.exercises.find(
+        (exercise) => exercise.id === replacement.replacementExerciseId
+      );
+      return plannedIds.includes(replacement.exerciseId) &&
+        !plannedIds.includes(replacement.replacementExerciseId) &&
+        replacementExercise && !replacementExercise.isArchived;
+    })
+    .map((replacement) => ({ ...replacement }));
+}
+
 function startWorkout(templateId, gymId) {
   const session = {
     id: crypto.randomUUID(),
@@ -1059,7 +1138,8 @@ function startWorkout(templateId, gymId) {
     templateId: templateId,
     gymId: gymId,
     addedExercises: [],
-    removedExerciseIds: []
+    removedExerciseIds: [],
+    replacedExercises: chooseReplacementsForNewWorkout(templateId, gymId)
   };
   appState.database.sessions.push(session);
   appState.isEditingWorkoutExercises = false;
@@ -2649,7 +2729,39 @@ function renderGymsManageList() {
 
     rowElement.append(nameSpan, renameButton, archiveButton);
     listElement.appendChild(rowElement);
+
+    for (const replacement of gym.exerciseReplacements) {
+      listElement.appendChild(buildGymReplacementRow(gym, replacement));
+    }
   }
+}
+
+// "Leg press → Hack squat" under its gym. Removing it only stops future
+// workouts here from swapping; past workouts keep their own record of the
+// swap (Session.replacedExercises), so no confirmation is needed.
+function buildGymReplacementRow(gym, replacement) {
+  const findName = (exerciseId) =>
+    appState.database.exercises.find((exercise) => exercise.id === exerciseId).name;
+
+  const rowElement = document.createElement("li");
+  rowElement.className = "list-row gym-replacement-row";
+
+  const descriptionSpan = document.createElement("span");
+  descriptionSpan.textContent =
+    `${findName(replacement.exerciseId)} → ${findName(replacement.replacementExerciseId)}`;
+
+  const removeButton = document.createElement("button");
+  removeButton.type = "button";
+  removeButton.className = "small-button";
+  removeButton.textContent = "Remove";
+  removeButton.addEventListener("click", () => {
+    forgetGymReplacement(gym.id, replacement.exerciseId);
+    saveDatabase(appState.database);
+    renderGymsManageList();
+  });
+
+  rowElement.append(descriptionSpan, removeButton);
+  return rowElement;
 }
 
 function isGymUnused(gymId) {
@@ -2721,7 +2833,8 @@ document.getElementById("addGymButton").addEventListener("click", () => {
   appState.database.gyms.push({
     id: crypto.randomUUID(),
     name,
-    isArchived: false
+    isArchived: false,
+    exerciseReplacements: []
   });
   saveDatabase(appState.database);
   nameInput.value = "";
@@ -5046,7 +5159,7 @@ function renderExercisePicker() {
   let activeExercises = appState.database.exercises.filter((candidate) => !candidate.isArchived);
   // Adding to a workout in progress: leave out what's already in it, so the
   // same exercise can't end up with two cards.
-  if (appState.exercisePickerPurpose === "activeWorkout") {
+  if (appState.exercisePickerPurpose === "activeWorkout" || appState.exercisePickerPurpose === "replacement") {
     const exerciseIdsInWorkout = getSessionPlannedExercises(getActiveSession(), getActiveTemplate())
       .map((planned) => planned.exerciseId);
     activeExercises = activeExercises.filter((exercise) => !exerciseIdsInWorkout.includes(exercise.id));
@@ -5067,6 +5180,10 @@ function buildExercisePickerItem(exercise) {
   buttonElement.addEventListener("click", () => {
     if (appState.exercisePickerPurpose === "activeWorkout") {
       openTargetPanelForAddingToWorkout(exercise);
+      return;
+    }
+    if (appState.exercisePickerPurpose === "replacement") {
+      chooseReplacementFromPicker(exercise);
       return;
     }
     appState.plannedExerciseDraft = {
@@ -5094,7 +5211,10 @@ function buildExercisePickerItem(exercise) {
 
 document.getElementById("cancelExercisePickerButton").addEventListener("click", () => {
   exercisePickerScreen.hidden = true;
-  if (appState.exercisePickerPurpose === "activeWorkout") {
+  if (appState.exercisePickerPurpose === "replacement") {
+    activeWorkoutScreen.hidden = false;
+    closeRemoveExercisePanel();
+  } else if (appState.exercisePickerPurpose === "activeWorkout") {
     activeWorkoutScreen.hidden = false;
   } else {
     workoutTemplateEditorScreen.hidden = false;
@@ -5446,6 +5566,8 @@ const removeExerciseHeading = document.getElementById("removeExerciseHeading");
 const removeExerciseHint = document.getElementById("removeExerciseHint");
 const removeExerciseTodayButton = document.getElementById("removeExerciseTodayButton");
 const removeExerciseFromTemplateButton = document.getElementById("removeExerciseFromTemplateButton");
+const replaceExerciseButton = document.getElementById("replaceExerciseButton");
+const restoreOriginalExerciseButton = document.getElementById("restoreOriginalExerciseButton");
 
 function hasSetsInActiveWorkout(exerciseId) {
   return appState.database.sets.some(
@@ -5489,7 +5611,37 @@ function openRemoveExercisePanel(exerciseId) {
     removeExerciseHint.textContent += " It's the only exercise in the template, so it can't be removed from there.";
   }
 
+  showReplacementButtons(session, exerciseId, !hasSetsToday && !isTodayOnly);
   removeExercisePanel.hidden = false;
+}
+
+// The panel's gym buttons: "Not available at <gym>" picks a replacement
+// that this gym then remembers, and on a replacement's card, "Back to
+// <original>" undoes the swap. Both only before any sets are logged on the
+// card, since swapping would leave those sets on a card that's gone. And
+// only for a template exercise at a known gym: an exercise added for today
+// can just be removed, and with no gym there's nowhere to remember it.
+function showReplacementButtons(session, exerciseId, canSwapToday) {
+  const gym = appState.database.gyms.find((candidate) => candidate.id === session.gymId);
+  const replacement = findReplacementBy(session, exerciseId);
+
+  replaceExerciseButton.hidden = !gym || !canSwapToday;
+  if (gym) {
+    replaceExerciseButton.textContent = `Not available at ${gym.name}`;
+  }
+
+  restoreOriginalExerciseButton.hidden = !replacement || !canSwapToday;
+  if (replacement) {
+    const original = appState.database.exercises.find((candidate) => candidate.id === replacement.exerciseId);
+    restoreOriginalExerciseButton.textContent = `Back to ${original.name}`;
+  }
+}
+
+// A replacement's card is about the replacement, but the template (and
+// the skip list) only know the exercise it stands in for.
+function getTemplateExerciseId(session, cardExerciseId) {
+  const replacement = findReplacementBy(session, cardExerciseId);
+  return replacement ? replacement.exerciseId : cardExerciseId;
 }
 
 function closeRemoveExercisePanel() {
@@ -5503,7 +5655,7 @@ function removeExerciseFromActiveWorkoutOnly(exerciseId) {
   if (isAddedForThisWorkoutOnly(session, exerciseId)) {
     session.addedExercises = session.addedExercises.filter((planned) => planned.exerciseId !== exerciseId);
   } else {
-    session.removedExerciseIds.push(exerciseId);
+    session.removedExerciseIds.push(getTemplateExerciseId(session, exerciseId));
   }
 }
 
@@ -5511,17 +5663,32 @@ function removeExerciseFromActiveWorkoutOnly(exerciseId) {
 // workout's own list, so today's card (and its logged sets) stays put
 // while the template drops it from next time on. listPosition (see Session
 // in schema.js) keeps the card in the same place in today's list.
+//
+// For a replacement's card, it's the original that leaves the template.
+// The card copied into today's list is the replacement as done today, and
+// the swap itself is dropped: with the original gone from the template,
+// there's nothing left for it to swap.
 function removeExerciseFromTemplate(exerciseId) {
   const session = getActiveSession();
   const template = getActiveTemplate();
-  const placeInTodaysList = getSessionPlannedExercises(session, template)
-    .findIndex((candidate) => candidate.exerciseId === exerciseId);
-  const planned = template.plannedExercises.find((candidate) => candidate.exerciseId === exerciseId);
-  template.plannedExercises = template.plannedExercises.filter((candidate) => candidate !== planned);
+  const templateExerciseId = getTemplateExerciseId(session, exerciseId);
+  const todaysList = getSessionPlannedExercises(session, template);
+  const placeInTodaysList = todaysList.findIndex((candidate) => candidate.exerciseId === exerciseId);
+  const todaysCard = todaysList[placeInTodaysList];
+  template.plannedExercises = template.plannedExercises.filter(
+    (candidate) => candidate.exerciseId !== templateExerciseId
+  );
+  session.replacedExercises = session.replacedExercises.filter(
+    (replacement) => replacement.exerciseId !== templateExerciseId
+  );
   if (hasSetsInActiveWorkout(exerciseId)) {
-    // `{ ...planned }` makes a separate copy of the object, so the two
+    // `{ ...todaysCard }` makes a separate copy of the object, so the two
     // lists never share (and accidentally co-edit) one object.
-    session.addedExercises.push({ ...planned, listPosition: placeInTodaysList });
+    // replacesExerciseId only belongs on a day-list copy (see
+    // applyReplacement), so it's taken back off before saving.
+    const savedCard = { ...todaysCard, listPosition: placeInTodaysList };
+    delete savedCard.replacesExerciseId;
+    session.addedExercises.push(savedCard);
   }
 }
 
@@ -5538,6 +5705,64 @@ removeExerciseFromTemplateButton.addEventListener("click", () => {
 });
 
 document.getElementById("cancelRemoveExerciseButton").addEventListener("click", closeRemoveExercisePanel);
+
+// The exercise picker is reused to choose the replacement. The target id
+// stays set while the picker is open, so it's known what is being
+// replaced; the panel itself is hidden, not closed.
+replaceExerciseButton.addEventListener("click", () => {
+  removeExercisePanel.hidden = true;
+  appState.exercisePickerPurpose = "replacement";
+  activeWorkoutScreen.hidden = true;
+  exercisePickerScreen.hidden = false;
+  renderExercisePicker();
+  window.scrollTo(0, 0);
+});
+
+restoreOriginalExerciseButton.addEventListener("click", () => {
+  const session = getActiveSession();
+  const originalExerciseId = getTemplateExerciseId(session, appState.removeExerciseTargetId);
+  session.replacedExercises = session.replacedExercises.filter(
+    (replacement) => replacement.exerciseId !== originalExerciseId
+  );
+  forgetGymReplacement(session.gymId, originalExerciseId);
+  saveDatabase(appState.database);
+  closeRemoveExercisePanel();
+});
+
+// Swaps the card's exercise for `replacementExercise` in this workout, and
+// has the gym remember it, so the swap happens by itself next time. When
+// the card is already a replacement, the new choice replaces that one:
+// it's always the template's exercise that's being stood in for.
+function replaceExerciseAtThisGym(cardExerciseId, replacementExercise) {
+  const session = getActiveSession();
+  const originalExerciseId = getTemplateExerciseId(session, cardExerciseId);
+  const newReplacement = { exerciseId: originalExerciseId, replacementExerciseId: replacementExercise.id };
+
+  session.replacedExercises = session.replacedExercises
+    .filter((replacement) => replacement.exerciseId !== originalExerciseId)
+    .concat({ ...newReplacement });
+
+  const gym = appState.database.gyms.find((candidate) => candidate.id === session.gymId);
+  gym.exerciseReplacements = gym.exerciseReplacements
+    .filter((replacement) => replacement.exerciseId !== originalExerciseId)
+    .concat({ ...newReplacement });
+}
+
+function forgetGymReplacement(gymId, originalExerciseId) {
+  const gym = appState.database.gyms.find((candidate) => candidate.id === gymId);
+  gym.exerciseReplacements = gym.exerciseReplacements.filter(
+    (replacement) => replacement.exerciseId !== originalExerciseId
+  );
+}
+
+function chooseReplacementFromPicker(exercise) {
+  replaceExerciseAtThisGym(appState.removeExerciseTargetId, exercise);
+  saveDatabase(appState.database);
+  appState.exercisePickerPurpose = null;
+  exercisePickerScreen.hidden = true;
+  activeWorkoutScreen.hidden = false;
+  closeRemoveExercisePanel();
+}
 
 
 // ---------------------------------------------------------------------------

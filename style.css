@@ -519,6 +519,13 @@ h1 {
   flex: 1;
 }
 
+/* A gym's "Leg press → Hack squat" swap, indented under the gym's own row
+   so it reads as belonging to that gym. */
+.gym-replacement-row {
+  margin-left: 24px;
+  color: #b0b0b0;
+}
+
 /* Wraps a name plus an optional subtitle (e.g. the muscle summary) so they
    stack as one flex:1 block instead of each span individually stretching
    under the ".list-row span" rule above. */
