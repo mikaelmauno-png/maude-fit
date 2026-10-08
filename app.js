@@ -93,6 +93,7 @@ const appState = {
   workoutTemplateDraft: null,  // in-progress copy of the workout template being edited
   plannedExerciseDraft: null,  // in-progress values for a planned exercise
   pendingTemplateId: null,     // workout template chosen at Start Workout, held while the gym picker is open
+  isPendingCatchUp: false,     // true while the gym picker is open for starting a catch-up workout
   isEditingWorkoutExercises: false, // true while the active workout shows its "Add exercise" and "Remove" buttons
   exercisePickerPurpose: null, // "workoutTemplate" (adding to the template being edited), "activeWorkout" (adding to the workout in progress) or "replacement" (choosing what replaces removeExerciseTargetId at this gym) while the exercise picker is open
   isAddingExerciseToWorkout: false, // true while the target panel is setting up an exercise being added to the workout in progress
@@ -344,13 +345,32 @@ function getActiveSession() {
 }
 
 // Returns the WorkoutTemplate the current workout is following, or null for
-// a free-form workout (or when no workout is active).
+// a free-form workout (or when no workout is active). A catch-up workout
+// gets a stand-in built from its own plan (see buildCatchUpTemplate).
 function getActiveTemplate() {
   const session = getActiveSession();
+  if (session && session.catchUpExercises) {
+    return buildCatchUpTemplate(session);
+  }
   if (!session || !session.templateId) {
     return null;
   }
   return appState.database.workoutTemplates.find((template) => template.id === session.templateId) || null;
+}
+
+// A catch-up workout has no saved template, but shaped like one it can
+// use the same workout cards, set panel and suggestions as a template
+// workout. isCatchUp marks it, so the buttons that would change a real
+// template ("Set goal for next time", "Remove from template") stay hidden:
+// there's no template behind it to change.
+function buildCatchUpTemplate(session) {
+  return {
+    id: null,
+    name: "Catch-up",
+    isArchived: false,
+    isCatchUp: true,
+    plannedExercises: session.catchUpExercises
+  };
 }
 
 // A template workout's exercise list for that day: the template's own
@@ -795,7 +815,9 @@ function renderTemplateWorkoutCards(template) {
     // Not for an exercise added for today only: it isn't in the template,
     // so there's no "next time" for a goal to apply to. Nor for a
     // replacement: the template's goal belongs to the exercise it replaces.
-    if (!isAddedForThisWorkoutOnly(session, planned.exerciseId) && !planned.replacesExerciseId) {
+    // Nor in a catch-up workout, which has no template (see
+    // buildCatchUpTemplate).
+    if (!isAddedForThisWorkoutOnly(session, planned.exerciseId) && !planned.replacesExerciseId && !template.isCatchUp) {
       const nextGoalButton = document.createElement("button");
       nextGoalButton.type = "button";
       nextGoalButton.className = "card-action-button";
@@ -889,11 +911,50 @@ function renderStartWorkoutChoices() {
     return;
   }
 
+  const missedSets = findMissedSetsThisWeek();
+  if (missedSets.length > 0) {
+    startWorkoutChoices.appendChild(buildCatchUpChoice(missedSets));
+  }
+
   const freeformButton = document.createElement("button");
   freeformButton.type = "button";
   freeformButton.textContent = "Start free-form workout";
   freeformButton.addEventListener("click", () => beginStartWorkout(null));
   startWorkoutChoices.appendChild(freeformButton);
+}
+
+// The catch-up offer: what's still missing this week, laid out like an
+// open workout tile, so it reads as one more workout to do. It goes away
+// by itself once those sets are done, or when the week ends.
+function buildCatchUpChoice(missedSets) {
+  const panel = document.createElement("div");
+  panel.className = "workout-tile-panel catch-up-choice";
+
+  const heading = document.createElement("h2");
+  heading.textContent = "Catch-up";
+  panel.appendChild(heading);
+
+  const totalSets = missedSets.reduce((sum, planned) => sum + planned.targetSets, 0);
+  const statusLine = document.createElement("p");
+  statusLine.className = "workout-tile-panel-status";
+  statusLine.textContent = `${totalSets} ${totalSets === 1 ? "set" : "sets"} not done this week`;
+  panel.appendChild(statusLine);
+
+  const exerciseList = document.createElement("ol");
+  exerciseList.className = "workout-tile-exercise-list";
+  missedSets.forEach((planned, index) => {
+    exerciseList.appendChild(buildPlannedExerciseRow(planned, index + 1));
+  });
+  panel.appendChild(exerciseList);
+
+  const startButton = document.createElement("button");
+  startButton.type = "button";
+  startButton.className = "workout-tile-start-button";
+  startButton.textContent = "Start catch-up →";
+  startButton.addEventListener("click", () => beginStartWorkout(null, true));
+  panel.appendChild(startButton);
+
+  return panel;
 }
 
 // ---------------------------------------------------------------------------
@@ -1085,36 +1146,36 @@ function updateWorkoutControls() {
 // Called when a workout template (or free-form) is picked to start. If any gyms have
 // been added, asks which one this workout is at before actually starting;
 // otherwise there's nothing to ask, so it starts right away.
-function beginStartWorkout(templateId) {
+function beginStartWorkout(templateId, isCatchUp = false) {
   const activeGyms = appState.database.gyms.filter((gym) => !gym.isArchived);
   // Nothing to ask when there's zero or exactly one choice — a picker
   // screen for "pick the only gym you have" is a tap for no reason.
   if (activeGyms.length === 0) {
-    startWorkout(templateId, null);
+    startWorkout(templateId, null, isCatchUp);
     return;
   }
   if (activeGyms.length === 1) {
-    startWorkout(templateId, activeGyms[0].id);
+    startWorkout(templateId, activeGyms[0].id, isCatchUp);
     return;
   }
   appState.pendingTemplateId = templateId;
+  appState.isPendingCatchUp = isCatchUp;
   showGymPickerScreen();
 }
 
-// The gym's standing swaps that apply to this workout template, copied so
+// The gym's standing swaps that apply to this workout's plan, copied so
 // the session keeps its own record (see Session in schema.js). Nothing to
 // swap in a free-form workout, which has no plan, or with no gym chosen.
 //
 // A swap is left out when its replacement is archived, or already planned
 // in this template: two cards for one exercise would mix up its sets.
 // Then the original shows as usual, and can be swapped by hand.
-function chooseReplacementsForNewWorkout(templateId, gymId) {
-  const template = appState.database.workoutTemplates.find((candidate) => candidate.id === templateId);
+function chooseReplacementsForNewWorkout(plannedExercises, gymId) {
   const gym = appState.database.gyms.find((candidate) => candidate.id === gymId);
-  if (!template || !gym) {
+  if (!gym) {
     return [];
   }
-  const plannedIds = template.plannedExercises.map((planned) => planned.exerciseId);
+  const plannedIds = plannedExercises.map((planned) => planned.exerciseId);
   return gym.exerciseReplacements
     .filter((replacement) => {
       const replacementExercise = appState.database.exercises.find(
@@ -1127,7 +1188,18 @@ function chooseReplacementsForNewWorkout(templateId, gymId) {
     .map((replacement) => ({ ...replacement }));
 }
 
-function startWorkout(templateId, gymId) {
+// The plan a new workout follows: its template's list, the sets still
+// missing this week for a catch-up workout, or nothing for free-form.
+function choosePlanForNewWorkout(templateId, isCatchUp) {
+  if (isCatchUp) {
+    return findMissedSetsThisWeek();
+  }
+  const template = appState.database.workoutTemplates.find((candidate) => candidate.id === templateId);
+  return template ? template.plannedExercises : [];
+}
+
+function startWorkout(templateId, gymId, isCatchUp = false) {
+  const plan = choosePlanForNewWorkout(templateId, isCatchUp);
   const session = {
     id: crypto.randomUUID(),
     startedAt: new Date().toISOString(),
@@ -1139,12 +1211,14 @@ function startWorkout(templateId, gymId) {
     gymId: gymId,
     addedExercises: [],
     removedExerciseIds: [],
-    replacedExercises: chooseReplacementsForNewWorkout(templateId, gymId)
+    replacedExercises: chooseReplacementsForNewWorkout(plan, gymId),
+    catchUpExercises: isCatchUp ? plan : null
   };
   appState.database.sessions.push(session);
   appState.isEditingWorkoutExercises = false;
   appState.activeSessionId = session.id;
   appState.pendingTemplateId = null;
+  appState.isPendingCatchUp = false;
   saveDatabase(appState.database);
   closeFreeformReview();
   hidePersonalBestBanner();
@@ -2854,7 +2928,7 @@ function renderGymPicker() {
     buttonElement.className = "exercise-item";
     buttonElement.textContent = gym.name;
     buttonElement.addEventListener("click", () => {
-      startWorkout(appState.pendingTemplateId, gym.id);
+      startWorkout(appState.pendingTemplateId, gym.id, appState.isPendingCatchUp);
     });
     itemElement.appendChild(buttonElement);
     listElement.appendChild(itemElement);
@@ -2862,7 +2936,7 @@ function renderGymPicker() {
 }
 
 document.getElementById("skipGymPickerButton").addEventListener("click", () => {
-  startWorkout(appState.pendingTemplateId, null);
+  startWorkout(appState.pendingTemplateId, null, appState.isPendingCatchUp);
 });
 
 
@@ -2904,6 +2978,15 @@ function renderHistoryList() {
   }
 }
 
+// "Weekly workout 1", "Catch-up" or "Free-form": what a workout followed,
+// for History and the monthly recap.
+function describeWorkoutKind(session, template) {
+  if (session.catchUpExercises) {
+    return "Catch-up";
+  }
+  return template ? template.name : "Free-form";
+}
+
 // One finished workout: header, status line, then its sets grouped by
 // exercise as tappable pills.
 function buildWorkoutHistoryCard(session) {
@@ -2920,7 +3003,7 @@ function buildWorkoutHistoryCard(session) {
   const headerElement = document.createElement("div");
   headerElement.className = "history-card-header";
   headerElement.textContent =
-    `${formatSessionDate(session.startedAt)} · ${template ? template.name : "Free-form"}${gym ? ` · ${gym.name}` : ""}`;
+    `${formatSessionDate(session.startedAt)} · ${describeWorkoutKind(session, template)}${gym ? ` · ${gym.name}` : ""}`;
   cardElement.appendChild(headerElement);
 
   // "Normal" and empty notes are the defaults every session starts with,
@@ -3445,6 +3528,109 @@ function findMostRecentFinishedSessionThisWeek(templateId) {
     })
     .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
   return sessionsThisWeek[0] || null;
+}
+
+// ---------------------------------------------------------------------------
+// Catch-up workout: this week's planned sets that weren't done
+// ---------------------------------------------------------------------------
+
+function isThisWeek(isoString) {
+  const { start, end } = getCurrentWeekRange();
+  const date = new Date(isoString);
+  return date >= start && date < end;
+}
+
+// Everything a template workout planned for that day, skipped exercises
+// included: a skipped exercise is the clearest case of sets not done.
+function getEverythingPlannedForSession(session, template) {
+  const skipped = template.plannedExercises
+    .filter((planned) => session.removedExerciseIds.includes(planned.exerciseId))
+    .map((planned) => applyReplacement(session, planned));
+  return getSessionPlannedExercises(session, template).concat(skipped);
+}
+
+// How many of each planned exercise's sets one finished workout didn't
+// do, as a list of { planned, missedSets }, leaving out what was done in
+// full. Extra sets beyond the plan don't make up for another exercise.
+function findMissedSetsInSession(session, template) {
+  const missed = [];
+  for (const planned of getEverythingPlannedForSession(session, template)) {
+    const doneSets = appState.database.sets.filter(
+      (set) => set.sessionId === session.id && set.exerciseId === planned.exerciseId && !set.isWarmup
+    ).length;
+    if (doneSets < planned.targetSets) {
+      missed.push({ planned, missedSets: planned.targetSets - doneSets });
+    }
+  }
+  return missed;
+}
+
+// How many working sets of each exercise this week's catch-up workouts
+// already did, as a Map from exercise id to a count. A set done on a
+// replacement counts for the exercise it stood in for, since that's the
+// one the catch-up plan listed.
+function countCatchUpSetsDoneThisWeek() {
+  const doneByExerciseId = new Map();
+  const catchUpSessions = appState.database.sessions.filter(
+    (session) => session.catchUpExercises && isThisWeek(session.startedAt)
+  );
+  for (const session of catchUpSessions) {
+    for (const set of appState.database.sets) {
+      if (set.sessionId !== session.id || set.isWarmup) {
+        continue;
+      }
+      const plannedExerciseId = getTemplateExerciseId(session, set.exerciseId);
+      doneByExerciseId.set(plannedExerciseId, (doneByExerciseId.get(plannedExerciseId) || 0) + 1);
+    }
+  }
+  return doneByExerciseId;
+}
+
+// The catch-up plan: every set this week's finished template workouts
+// planned but didn't do, minus whatever catch-up workouts this week have
+// made up since. Same shape as a template's plannedExercises, with
+// targetSets being the sets still missing. Empty when nothing is.
+//
+// Only the latest finished workout of each template counts, same as the
+// home screen's "done this week" (findMostRecentFinishedSessionThisWeek).
+// An exercise missed in two workouts becomes one entry with both sets
+// added together, keeping the first one's rep range and load: two cards
+// for one exercise would mix up which sets belong to which.
+function findMissedSetsThisWeek() {
+  const missedByExerciseId = new Map();
+  const activeTemplates = appState.database.workoutTemplates.filter((template) => !template.isArchived);
+  for (const template of activeTemplates) {
+    const session = findMostRecentFinishedSessionThisWeek(template.id);
+    if (!session) {
+      continue;
+    }
+    for (const { planned, missedSets } of findMissedSetsInSession(session, template)) {
+      const existing = missedByExerciseId.get(planned.exerciseId);
+      if (existing) {
+        existing.targetSets += missedSets;
+      } else {
+        missedByExerciseId.set(planned.exerciseId, {
+          exerciseId: planned.exerciseId,
+          targetSets: missedSets,
+          targetRepsMin: planned.targetRepsMin,
+          targetRepsMax: planned.targetRepsMax,
+          targetLoad: planned.targetLoad,
+          // A goal set by hand belongs to its template, not to this plan.
+          targetLoadSetAt: null
+        });
+      }
+    }
+  }
+
+  const doneByExerciseId = countCatchUpSetsDoneThisWeek();
+  const stillMissing = [];
+  for (const planned of missedByExerciseId.values()) {
+    planned.targetSets -= doneByExerciseId.get(planned.exerciseId) || 0;
+    if (planned.targetSets > 0) {
+      stillMissing.push(planned);
+    }
+  }
+  return stillMissing;
 }
 
 const weeklyWorkoutTemplateSummaryElement = document.getElementById("weeklyWorkoutTemplateSummary");
@@ -4287,7 +4473,7 @@ function describeWorkoutsByTemplate(sessions) {
   const countByName = new Map();
   for (const session of sessions) {
     const template = appState.database.workoutTemplates.find((candidate) => candidate.id === session.templateId);
-    const name = template ? template.name : "Free-form";
+    const name = describeWorkoutKind(session, template);
     countByName.set(name, (countByName.get(name) || 0) + 1);
   }
   return Array.from(countByName.entries()).map(([name, count]) => `${name} × ${count}`);
@@ -5510,14 +5696,16 @@ function openTargetPanelForAddingToWorkout(exercise) {
   appState.plannedExerciseDraft = chooseTargetsForAddingToWorkout(exercise, template);
 
   document.getElementById("plannedExerciseEntryName").textContent = exercise.name;
-  plannedExerciseEntryHint.textContent =
-    `Add it to today's workout only, or to "${template.name}" as well so it's there next time too.`;
+  plannedExerciseEntryHint.textContent = template.isCatchUp
+    ? "Add it to this catch-up workout."
+    : `Add it to today's workout only, or to "${template.name}" as well so it's there next time too.`;
   plannedExerciseEntryHint.hidden = false;
   // The two save buttons are the "only today, or the template too?"
-  // question, so choosing is one tap with no extra dialog afterwards.
-  document.getElementById("savePlannedExerciseButton").textContent = "Only today";
+  // question, so choosing is one tap with no extra dialog afterwards. A
+  // catch-up workout has no template, so only the first applies.
+  document.getElementById("savePlannedExerciseButton").textContent = template.isCatchUp ? "Add" : "Only today";
   savePlannedExerciseToTemplateButton.textContent = "Today + template";
-  savePlannedExerciseToTemplateButton.hidden = false;
+  savePlannedExerciseToTemplateButton.hidden = Boolean(template.isCatchUp);
 
   renderPlannedExerciseDraft();
   exercisePickerScreen.hidden = true;
@@ -5587,12 +5775,14 @@ function openRemoveExercisePanel(exerciseId) {
   // A template has to keep at least one exercise, same rule as the
   // template editor's Save button.
   const isLastInTemplate = template.plannedExercises.length === 1;
+  // A catch-up workout has no template to remove anything from.
+  const canRemoveFromTemplate = !isTodayOnly && !isLastInTemplate && !template.isCatchUp;
 
   appState.removeExerciseTargetId = exerciseId;
   removeExerciseHeading.textContent = `Remove ${exercise.name}?`;
   removeExerciseTodayButton.hidden = hasSetsToday;
   removeExerciseTodayButton.textContent = isTodayOnly ? "Remove" : "Skip it today only";
-  removeExerciseFromTemplateButton.hidden = isTodayOnly || isLastInTemplate;
+  removeExerciseFromTemplateButton.hidden = !canRemoveFromTemplate;
   removeExerciseFromTemplateButton.textContent = hasSetsToday
     ? `Remove from "${template.name}" from next time`
     : `Remove today and from "${template.name}"`;
@@ -5607,7 +5797,7 @@ function openRemoveExercisePanel(exerciseId) {
   } else {
     removeExerciseHint.textContent = "";
   }
-  if (!isTodayOnly && isLastInTemplate) {
+  if (!isTodayOnly && isLastInTemplate && !template.isCatchUp) {
     removeExerciseHint.textContent += " It's the only exercise in the template, so it can't be removed from there.";
   }
 

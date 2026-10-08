@@ -42,8 +42,8 @@
 //
 // Bumped to 12 for the addition of CardioActivity and CardioSession below.
 //
-// Bumped to 13 for the addition of Gym.exerciseReplacements and
-// Session.replacedExercises below.
+// Bumped to 13 for the addition of Gym.exerciseReplacements,
+// Session.replacedExercises and Session.catchUpExercises below.
 const SCHEMA_VERSION = 13;
 
 // Every piece of app data lives under this one localStorage key, as a single
@@ -137,7 +137,11 @@ const MUSCLE_GROUPS = [
 //       exerciseId:            "leg-press",    // workout, because this gym
 //       replacementExerciseId: "hack-squat"    // can't do them (see Gym)
 //     }
-//   ]
+//   ],
+//   catchUpExercises: null                     // null for any other
+//                                              // workout; for a catch-up
+//                                              // workout, its list (see
+//                                              // below)
 // }
 //
 // A template workout's exercise list for the day is the template's
@@ -160,6 +164,15 @@ const MUSCLE_GROUPS = [
 // swap is copied onto the session rather than only read from the gym,
 // so the record of what this workout was stays true even after the gym's
 // replacements change later.
+//
+// A catch-up workout makes up this week's sets that weren't done: every
+// planned set missing from the week's finished template workouts. It has
+// no template (templateId is null); its plan is catchUpExercises, the
+// same shape as a template's plannedExercises, with targetSets being how
+// many sets of that exercise were still missing when it was started.
+// That plan is saved rather than worked out again later, since the
+// missing sets change as soon as any are done. addedExercises,
+// removedExerciseIds and replacedExercises work on it as on a template.
 
 // dayStatus records the context that would otherwise be lost. The engine will
 // later use it to avoid mistaking a bad night's sleep for a training problem,
@@ -406,13 +419,14 @@ function migrateFrom11To12(database) {
 }
 
 // Version 12 data has no replacements: no gym has an exercise it can't
-// do yet, and no past workout swapped one.
+// do yet, and no past workout swapped one. Nor were any catch-up workouts.
 function migrateFrom12To13(database) {
   for (const gym of database.gyms) {
     gym.exerciseReplacements = [];
   }
   for (const session of database.sessions) {
     session.replacedExercises = [];
+    session.catchUpExercises = null;
   }
   database.schemaVersion = 13;
 }
