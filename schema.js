@@ -43,7 +43,8 @@
 // Bumped to 12 for the addition of CardioActivity and CardioSession below.
 //
 // Bumped to 13 for the addition of Gym.exerciseReplacements,
-// Session.replacedExercises and Session.catchUpExercises below.
+// Gym.machineMaxLoads, Session.replacedExercises and
+// Session.catchUpExercises below.
 const SCHEMA_VERSION = 13;
 
 // Every piece of app data lives under this one localStorage key, as a single
@@ -228,8 +229,18 @@ const DAY_STATUSES = ["normal", "poorSleep", "ill", "stressed"];
 //       exerciseId:            "leg-press",   // into each workout started
 //       replacementExerciseId: "hack-squat"   // here automatically (see
 //     }                                       // Session.replacedExercises)
-//   ]
+//   ],
+//   machineMaxLoads: { "leg-press": 120 }     // kilograms: the heaviest a
+//                                             // machine here goes, keyed by
+//                                             // exercise id. Only for
+//                                             // gym-specific exercises;
+//                                             // one with no entry has no
+//                                             // known limit
 // }
+//
+// At a machine's max, progression suggestions add reps instead of weight
+// (see progression.js). The max only steers suggestions: a heavier set can
+// still be logged, since a gym can get a bigger stack.
 
 // BodyweightEntry — one weigh-in. At most one per calendar day: logging
 // again on the same day replaces this entry's weightKg rather than adding a
@@ -419,10 +430,12 @@ function migrateFrom11To12(database) {
 }
 
 // Version 12 data has no replacements: no gym has an exercise it can't
-// do yet, and no past workout swapped one. Nor were any catch-up workouts.
+// do yet, and no past workout swapped one. Nor were any catch-up workouts
+// or machine maximums.
 function migrateFrom12To13(database) {
   for (const gym of database.gyms) {
     gym.exerciseReplacements = [];
+    gym.machineMaxLoads = {};
   }
   for (const session of database.sessions) {
     session.replacedExercises = [];

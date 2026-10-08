@@ -519,9 +519,9 @@ h1 {
   flex: 1;
 }
 
-/* A gym's "Leg press → Hack squat" swap, indented under the gym's own row
-   so it reads as belonging to that gym. */
-.gym-replacement-row {
+/* A gym's "Leg press → Hack squat" swap or "Leg press: max 120 kg",
+   indented under the gym's own row so it reads as belonging to that gym. */
+.gym-detail-row {
   margin-left: 24px;
   color: #b0b0b0;
 }

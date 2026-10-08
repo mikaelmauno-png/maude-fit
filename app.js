@@ -827,6 +827,9 @@ function renderTemplateWorkoutCards(template) {
     }
 
     // Only in edit mode, so a stray thumb mid-set can't reach it.
+    if (appState.isEditingWorkoutExercises && exercise.isGymSpecific && session.gymId) {
+      cardElement.appendChild(buildMachineMaxButton(exercise, session.gymId));
+    }
     if (appState.isEditingWorkoutExercises) {
       const removeButton = document.createElement("button");
       removeButton.type = "button";
@@ -840,6 +843,45 @@ function renderTemplateWorkoutCards(template) {
   }
 
   templateWorkoutCardsElement.appendChild(buildWorkoutEditControls());
+}
+
+// Sets the heaviest this gym's machine goes for this exercise, which turns
+// its suggestions from more weight to more reps once it's reached (see
+// chooseSuggestion in progression.js). Typed rather than stepped: it's
+// set once per machine, and a stepper from 20 kg up to a stack's 150 kg
+// would be a lot of taps.
+function buildMachineMaxButton(exercise, gymId) {
+  const gym = appState.database.gyms.find((candidate) => candidate.id === gymId);
+  const currentMax = gym.machineMaxLoads[exercise.id];
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "card-action-button";
+  button.textContent = typeof currentMax === "number"
+    ? `Max weight at ${gym.name}: ${currentMax} kg`
+    : `Set max weight at ${gym.name}`;
+  button.addEventListener("click", () => {
+    const answer = prompt(
+      `Heaviest weight (kg) for ${exercise.name} at ${gym.name}. Leave empty for no limit.`,
+      typeof currentMax === "number" ? String(currentMax) : ""
+    );
+    if (answer === null) {
+      return;
+    }
+    if (answer.trim() === "") {
+      delete gym.machineMaxLoads[exercise.id];
+    } else {
+      // Same rule as a load increment: any positive number of kilograms.
+      const maxLoad = parseLoadIncrement(answer);
+      if (maxLoad === null) {
+        alert("Enter the weight as a number of kilograms, e.g. 120.");
+        return;
+      }
+      gym.machineMaxLoads[exercise.id] = maxLoad;
+    }
+    saveDatabase(appState.database);
+    renderExerciseArea();
+  });
+  return button;
 }
 
 // "Instead of Leg press", under a replacement's name, so it's clear why
@@ -2807,6 +2849,9 @@ function renderGymsManageList() {
     for (const replacement of gym.exerciseReplacements) {
       listElement.appendChild(buildGymReplacementRow(gym, replacement));
     }
+    for (const exerciseId of Object.keys(gym.machineMaxLoads)) {
+      listElement.appendChild(buildGymMachineMaxRow(gym, exerciseId));
+    }
   }
 }
 
@@ -2818,7 +2863,7 @@ function buildGymReplacementRow(gym, replacement) {
     appState.database.exercises.find((exercise) => exercise.id === exerciseId).name;
 
   const rowElement = document.createElement("li");
-  rowElement.className = "list-row gym-replacement-row";
+  rowElement.className = "list-row gym-detail-row";
 
   const descriptionSpan = document.createElement("span");
   descriptionSpan.textContent =
@@ -2830,6 +2875,32 @@ function buildGymReplacementRow(gym, replacement) {
   removeButton.textContent = "Remove";
   removeButton.addEventListener("click", () => {
     forgetGymReplacement(gym.id, replacement.exerciseId);
+    saveDatabase(appState.database);
+    renderGymsManageList();
+  });
+
+  rowElement.append(descriptionSpan, removeButton);
+  return rowElement;
+}
+
+// "Leg press: max 120 kg" under its gym. Set from a workout card in edit
+// mode (buildMachineMaxButton); removable here once the gym gets a bigger
+// stack, or if it was set by mistake.
+function buildGymMachineMaxRow(gym, exerciseId) {
+  const exercise = appState.database.exercises.find((candidate) => candidate.id === exerciseId);
+
+  const rowElement = document.createElement("li");
+  rowElement.className = "list-row gym-detail-row";
+
+  const descriptionSpan = document.createElement("span");
+  descriptionSpan.textContent = `${exercise.name}: max ${gym.machineMaxLoads[exerciseId]} kg`;
+
+  const removeButton = document.createElement("button");
+  removeButton.type = "button";
+  removeButton.className = "small-button";
+  removeButton.textContent = "Remove";
+  removeButton.addEventListener("click", () => {
+    delete gym.machineMaxLoads[exerciseId];
     saveDatabase(appState.database);
     renderGymsManageList();
   });
@@ -2908,7 +2979,8 @@ document.getElementById("addGymButton").addEventListener("click", () => {
     id: crypto.randomUUID(),
     name,
     isArchived: false,
-    exerciseReplacements: []
+    exerciseReplacements: [],
+    machineMaxLoads: {}
   });
   saveDatabase(appState.database);
   nameInput.value = "";

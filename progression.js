@@ -150,21 +150,62 @@ function suggestNextTarget(database, exerciseId, repsMin, repsMax, activeSession
     return null;
   }
 
-  const suggestion = chooseSuggestion(recentSessions, exercise.minimumLoadIncrement, repsMin, repsMax);
+  const maxLoad = findMachineMaxLoad(database, exercise, activeSession);
+  const suggestion = chooseSuggestion(recentSessions, exercise.minimumLoadIncrement, repsMin, repsMax, maxLoad);
   suggestion.basedOnSessionStartedAt = recentSessions[0].session.startedAt;
   return suggestion;
 }
 
 
+// The heaviest today's gym's machine goes for this exercise (see
+// Gym.machineMaxLoads in schema.js), or null when there's no known limit.
+// Only a gym-specific exercise has one: a barbell has no top.
+function findMachineMaxLoad(database, exercise, activeSession) {
+  if (!exercise.isGymSpecific || !activeSession || !activeSession.gymId) {
+    return null;
+  }
+  const gym = database.gyms.find((candidate) => candidate.id === activeSession.gymId);
+  const maxLoad = gym ? gym.machineMaxLoads[exercise.id] : undefined;
+  return typeof maxLoad === "number" ? maxLoad : null;
+}
+
+
 // Applies the double-progression rules to the latest session's results.
-// Returns `{ load, reps, repsPerSet, reason }`.
-function chooseSuggestion(recentSessions, increment, repsMin, repsMax) {
+// Returns `{ load, reps, repsPerSet, reason }`. `maxLoad` is the
+// machine's heaviest weight, or null for no limit.
+function chooseSuggestion(recentSessions, increment, repsMin, repsMax, maxLoad) {
   // In the order they were done, so "set 3" in the targets means the
   // third set, same as on the workout card.
   const topLoadSets = findTopLoadSets(recentSessions[0].workingSets).sort((a, b) => a.order - b.order);
   const lastLoad = topLoadSets[0].load;
   const setCount = topLoadSets.length;
   const outcome = classifySessionOutcome(topLoadSets, repsMin, repsMax);
+
+  // Already at the machine's heaviest weight, the top of the range can't
+  // lead to more weight, so the reps keep climbing past it instead. That
+  // includes "withinRange": once some sets are past the top, cutting them
+  // back to it would be a step backwards.
+  const isAtMaxLoad = maxLoad !== null && lastLoad >= maxLoad;
+  if (isAtMaxLoad && (outcome === "readyToProgress" || outcome === "withinRange")) {
+    return buildRepsOnlySuggestion(topLoadSets);
+  }
+  if (isAtMaxLoad && outcome === "topOfRangeAtFailure") {
+    return {
+      load: lastLoad,
+      reps: Math.min(...topLoadSets.map((set) => set.reps)),
+      repsPerSet: topLoadSets.map((set) => set.reps),
+      reason: `${lastLoad} kg is this machine's heaviest. Last time took everything (RIR 0), so repeat those reps.`
+    };
+  }
+
+  // One step short of the max: go up to it, rather than past it to a
+  // weight the machine doesn't have.
+  if (outcome === "readyToProgress" && maxLoad !== null && lastLoad + increment > maxLoad) {
+    return buildUniformSuggestion(
+      maxLoad, repsMin, setCount,
+      `All sets reached ${repsMax} reps last time, so go up to ${maxLoad} kg, this machine's heaviest.`
+    );
+  }
 
   if (outcome === "readyToProgress") {
     return buildUniformSuggestion(
@@ -223,6 +264,25 @@ function buildOneMoreRepSuggestion(topLoadSets, repsMax) {
     reps: Math.min(...repsPerSet),
     repsPerSet,
     reason: `Stay at ${lastLoad} kg, one more rep on set ${weakestSetIndex + 1} than last time.`
+  };
+}
+
+
+// At the machine's heaviest weight: same as buildOneMoreRepSuggestion, but
+// with no top of the range, since more weight isn't an option. Reps past
+// the range are the only way left to make the weight harder.
+function buildRepsOnlySuggestion(topLoadSets) {
+  const repsPerSet = topLoadSets.map((set) => set.reps);
+  const fewestReps = Math.min(...repsPerSet);
+  const weakestSetIndex = repsPerSet.indexOf(fewestReps);
+  repsPerSet[weakestSetIndex] = fewestReps + 1;
+
+  const lastLoad = topLoadSets[0].load;
+  return {
+    load: lastLoad,
+    reps: Math.min(...repsPerSet),
+    repsPerSet,
+    reason: `${lastLoad} kg is this machine's heaviest, so add a rep instead: one more on set ${weakestSetIndex + 1}.`
   };
 }
 
