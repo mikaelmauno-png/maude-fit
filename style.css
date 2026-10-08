@@ -13,6 +13,12 @@ body {
   font-family: sans-serif;
   margin: 0;
   padding: 16px;
+  /* Quick taps on a stepper's + button would otherwise count as a
+     double-tap and zoom the page in. "manipulation" turns off only the
+     double-tap zoom; pinch-zoom still works, so small text can still be
+     enlarged on purpose. It covers every element inside body too, since
+     a child can't allow a gesture its parent has turned off. */
+  touch-action: manipulation;
 }
 
 h1 {
