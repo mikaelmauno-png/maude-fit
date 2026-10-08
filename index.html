@@ -212,6 +212,7 @@
         <button id="manageWorkoutTemplatesButton">Manage workouts</button>
         <button id="manageExercisesButton">Manage exercises</button>
         <button id="manageGymsButton">Manage gyms</button>
+        <button id="manageCardioActivitiesButton">Cardio activities</button>
         <button id="viewDataButton">Export / Import data</button>
       </div>
     </section>
@@ -439,6 +440,32 @@
 
       <button id="toggleArchivedGymsButton" class="card-action-button">Show archived</button>
       <ul id="archivedGymsList" hidden></ul>
+    </section>
+
+
+    <!-- ===================================================================
+         CARDIO ACTIVITIES: the activities a cardio session can be (Run,
+         Rower, ...), with add / rename / archive, same pattern as Gyms.
+         Lists filled in by renderCardioActivitiesList in app.js.
+         =================================================================== -->
+    <section id="cardioActivitiesScreen" hidden>
+      <h1>Cardio activities</h1>
+      <div class="button-row">
+        <button id="backFromCardioActivitiesButton">Back</button>
+      </div>
+
+      <label class="text-field">
+        New activity name
+        <input type="text" id="newCardioActivityNameInput" placeholder="e.g. Ski erg">
+      </label>
+      <div class="button-row">
+        <button id="addCardioActivityButton">Add activity</button>
+      </div>
+
+      <ul id="cardioActivitiesList"></ul>
+
+      <button id="toggleArchivedCardioActivitiesButton" class="card-action-button">Show archived</button>
+      <ul id="archivedCardioActivitiesList" hidden></ul>
     </section>
 
 

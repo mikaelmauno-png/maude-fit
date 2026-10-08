@@ -149,6 +149,7 @@ const muscleEditorPanel = document.getElementById("muscleEditorPanel");
 const personalBestsScreen = document.getElementById("personalBestsScreen");
 const monthlyRecapScreen = document.getElementById("monthlyRecapScreen");
 const weeklyCheckInScreen = document.getElementById("weeklyCheckInScreen");
+const cardioActivitiesScreen = document.getElementById("cardioActivitiesScreen");
 const muscleStatsListScreen = document.getElementById("muscleStatsListScreen");
 const muscleStatsDetailScreen = document.getElementById("muscleStatsDetailScreen");
 const bodyweightScreen = document.getElementById("bodyweightScreen");
@@ -171,7 +172,8 @@ const allScreens = [
   exercisePickerScreen, plannedExerciseEntryPanel, exercisesScreen, historyScreen, gymsScreen,
   gymPickerScreen, setEntryPanel, exerciseStatsListScreen, exerciseStatsDetailScreen, muscleEditorPanel,
   personalBestsScreen, muscleStatsListScreen, muscleStatsDetailScreen, dayStatusPanel,
-  bodyweightScreen, removeExercisePanel, monthlyRecapScreen, weeklyCheckInScreen
+  bodyweightScreen, removeExercisePanel, monthlyRecapScreen, weeklyCheckInScreen,
+  cardioActivitiesScreen
 ];
 
 function hideAllScreens() {
@@ -2063,6 +2065,25 @@ function slugify(name) {
     .replace(/^-+|-+$/g, "");
 }
 
+// An id made from `name` that none of `existingItems` already uses: the
+// plain slug if it's free, otherwise the slug with a number on the end
+// ("rower-2"). Ids must be unique and never change (see schema.js), so two
+// things with similar names can't end up sharing one. Returns "" when the
+// name has no letters or numbers to make a slug from.
+function makeUniqueIdFromName(name, existingItems) {
+  const baseId = slugify(name);
+  if (baseId === "") {
+    return "";
+  }
+  let id = baseId;
+  let suffix = 2;
+  while (existingItems.some((item) => item.id === id)) {
+    id = `${baseId}-${suffix}`;
+    suffix++;
+  }
+  return id;
+}
+
 // Builds the "Main: X · Secondary: Y, Z" summary line for one exercise's
 // muscles, or null when none are set yet — used both in the manage list and
 // nowhere else, so callers decide what to show instead when it's null.
@@ -2329,20 +2350,10 @@ document.getElementById("addExerciseButton").addEventListener("click", () => {
     return;
   }
 
-  const baseId = slugify(name);
-  if (baseId === "") {
+  const id = makeUniqueIdFromName(name, appState.database.exercises);
+  if (id === "") {
     alert("That name needs at least one letter or number.");
     return;
-  }
-
-  // Exercise ids must be stable and unique (schema.js: "never changes"), so
-  // two exercises can't share one — append a number if the plain slug is
-  // already taken.
-  let id = baseId;
-  let suffix = 2;
-  while (appState.database.exercises.some((exercise) => exercise.id === id)) {
-    id = `${baseId}-${suffix}`;
-    suffix++;
   }
 
   appState.database.exercises.push({
@@ -5732,6 +5743,134 @@ function finishSessionAtLastActivity(session) {
 
 
 // ---------------------------------------------------------------------------
+// Cardio activities (Settings) — the list a cardio session picks its
+// activity from. Same add / rename / archive pattern as the Gyms screen.
+// ---------------------------------------------------------------------------
+
+function showCardioActivitiesScreen() {
+  hideAllScreens();
+  cardioActivitiesScreen.hidden = false;
+  renderCardioActivitiesList();
+}
+
+function isCardioActivityUnused(activityId) {
+  return !appState.database.cardioSessions.some((session) => session.activityId === activityId);
+}
+
+function buildSmallButton(label, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "small-button";
+  button.textContent = label;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+// Only CardioActivity.name changes: the id, which cardio sessions point at,
+// stays the same, so history follows the activity under its new name.
+function renameCardioActivity(activity) {
+  const newName = prompt("Rename activity", activity.name);
+  if (newName === null) {
+    return;
+  }
+  const trimmedName = newName.trim();
+  if (trimmedName === "") {
+    alert("Name can't be empty.");
+    return;
+  }
+  activity.name = trimmedName;
+  saveDatabase(appState.database);
+  renderCardioActivitiesList();
+}
+
+// Archiving rather than deleting keeps past cardio sessions of this
+// activity resolvable; it just stops being offered for new ones.
+function setCardioActivityArchived(activity, isArchived) {
+  activity.isArchived = isArchived;
+  saveDatabase(appState.database);
+  renderCardioActivitiesList();
+}
+
+// Only offered for an archived activity no cardio session uses, so nothing
+// in the history can be left pointing at an activity that's gone.
+function deleteCardioActivity(activity) {
+  const confirmed = confirm(`Delete "${activity.name}"? This can't be undone.`);
+  if (!confirmed) {
+    return;
+  }
+  appState.database.cardioActivities = appState.database.cardioActivities.filter(
+    (candidate) => candidate.id !== activity.id
+  );
+  saveDatabase(appState.database);
+  renderCardioActivitiesList();
+}
+
+function buildCardioActivityRow(activity) {
+  const rowElement = document.createElement("li");
+  rowElement.className = "list-row";
+
+  const nameSpan = document.createElement("span");
+  nameSpan.textContent = activity.name;
+  rowElement.appendChild(nameSpan);
+
+  if (activity.isArchived) {
+    rowElement.appendChild(buildSmallButton("Unarchive", () => setCardioActivityArchived(activity, false)));
+    if (isCardioActivityUnused(activity.id)) {
+      const deleteButton = buildSmallButton("Delete", () => deleteCardioActivity(activity));
+      deleteButton.classList.add("destructive-button");
+      rowElement.appendChild(deleteButton);
+    }
+  } else {
+    rowElement.appendChild(buildSmallButton("Rename", () => renameCardioActivity(activity)));
+    rowElement.appendChild(buildSmallButton("Archive", () => setCardioActivityArchived(activity, true)));
+  }
+  return rowElement;
+}
+
+// Both lists are drawn every time; the archived one simply stays hidden
+// until "Show archived" is tapped.
+function renderCardioActivitiesList() {
+  const activeListElement = document.getElementById("cardioActivitiesList");
+  const archivedListElement = document.getElementById("archivedCardioActivitiesList");
+  activeListElement.innerHTML = "";
+  archivedListElement.innerHTML = "";
+
+  for (const activity of appState.database.cardioActivities) {
+    const targetList = activity.isArchived ? archivedListElement : activeListElement;
+    targetList.appendChild(buildCardioActivityRow(activity));
+  }
+}
+
+document.getElementById("addCardioActivityButton").addEventListener("click", () => {
+  const nameInput = document.getElementById("newCardioActivityNameInput");
+  const name = nameInput.value.trim();
+  if (name === "") {
+    alert("Enter a name for the activity.");
+    return;
+  }
+  const id = makeUniqueIdFromName(name, appState.database.cardioActivities);
+  if (id === "") {
+    alert("That name needs at least one letter or number.");
+    return;
+  }
+
+  appState.database.cardioActivities.push({ id, name, isArchived: false });
+  saveDatabase(appState.database);
+  nameInput.value = "";
+  renderCardioActivitiesList();
+});
+
+document.getElementById("toggleArchivedCardioActivitiesButton").addEventListener("click", (event) => {
+  const archivedListElement = document.getElementById("archivedCardioActivitiesList");
+  archivedListElement.hidden = !archivedListElement.hidden;
+  event.currentTarget.textContent = archivedListElement.hidden ? "Show archived" : "Hide archived";
+});
+
+document.getElementById("manageCardioActivitiesButton").addEventListener("click", showCardioActivitiesScreen);
+document.getElementById("backFromCardioActivitiesButton").addEventListener("click", showSettingsScreen);
+
+
+// ---------------------------------------------------------------------------
 // Startup
 //
 // Runs once, at the very end of the file. It can't happen any earlier: the
@@ -5749,3 +5888,4 @@ if (appState.activeSessionId !== null) {
   updateWorkoutControls();
   renderExerciseArea();
 }
+

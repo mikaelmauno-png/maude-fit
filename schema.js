@@ -39,7 +39,9 @@
 //
 // Bumped to 11 for the addition of preferences on the database itself
 // (see createEmptyDatabase).
-const SCHEMA_VERSION = 11;
+//
+// Bumped to 12 for the addition of CardioActivity and CardioSession below.
+const SCHEMA_VERSION = 12;
 
 // Every piece of app data lives under this one localStorage key, as a single
 // JSON string. One key is simpler to export, import, and reason about than
@@ -231,6 +233,40 @@ const DAY_STATUSES = ["normal", "poorSleep", "ill", "stressed"];
 //   notes:      ""
 // }
 //
+// CardioActivity — a kind of cardio, like an Exercise is a kind of lift:
+// "Run", "Rower", or one added by hand. A CardioSession points at one by id,
+// never by typed name, for the same reason as exercises: free-text names
+// would split one activity's history into several spellings. Archived
+// rather than deleted once used, same as Exercise and Gym.
+//
+// {
+//   id:         "rower",     // stable, lowercase, hyphenated, never changes
+//   name:       "Rower",     // shown in the UI, safe to reword
+//   isArchived: false
+// }
+
+// CardioSession — one bout of cardio, logged on its own (not as part of a
+// strength workout) once it's done.
+//
+// {
+//   id:               "9f8c...",                  // crypto.randomUUID()
+//   activityId:       "rower",
+//   performedAt:      "2026-10-06T17:40:00.000Z",
+//   durationMinutes:  30,         // whole minutes, always given
+//   effort:           6,          // 1-10, how hard it felt overall (RPE),
+//                                 // always given; effort × minutes is the
+//                                 // usual way to compare cardio load
+//   distanceKm:       6.2,        // or null when not recorded
+//   averageHeartRate: 148,        // beats per minute, or null when not
+//                                 // recorded
+//   notes:            ""
+// }
+//
+// Distance and heart rate are null rather than 0 when missing: 0 km would
+// claim the distance was measured and was nothing.
+const CARDIO_EFFORT_MIN = 1;
+const CARDIO_EFFORT_MAX = 10;
+
 // For fatigue and stress high is bad; for motivation and recovery high is
 // good. Each is stored exactly as answered rather than flipped into one
 // "higher is better" direction, so the raw answers survive and any
@@ -255,6 +291,8 @@ function createEmptyDatabase() {
     gyms: [],                // Gym objects
     bodyweightEntries: [],     // BodyweightEntry objects
     weeklyCheckIns: [],        // WeeklyCheckIn objects
+    cardioActivities: createStarterCardioActivities(), // CardioActivity objects
+    cardioSessions: [],        // CardioSession objects
     preferences: {             // choices made in the app's screens, kept so
                                // they survive closing the app
       chartRangeWeeks: 12      // how many weeks back the trend charts show
@@ -337,6 +375,14 @@ function migrateFrom10To11(database) {
   database.schemaVersion = 11;
 }
 
+// Version 11 data has no cardio. The starter activities go in so there's
+// something to pick from the first time, same as on a new install.
+function migrateFrom11To12(database) {
+  database.cardioActivities = createStarterCardioActivities();
+  database.cardioSessions = [];
+  database.schemaVersion = 12;
+}
+
 // Keyed by the version each migration upgrades *from*. Versions with no
 // entry here (1-3) are too old to migrate and are still refused.
 const MIGRATIONS = {
@@ -346,7 +392,8 @@ const MIGRATIONS = {
   7: migrateFrom7To8,
   8: migrateFrom8To9,
   9: migrateFrom9To10,
-  10: migrateFrom10To11
+  10: migrateFrom10To11,
+  11: migrateFrom11To12
 };
 
 // Applies migrations one step at a time until the data reaches
@@ -486,6 +533,8 @@ function importDatabase(jsonText) {
       !Array.isArray(parsed.gyms) ||
       !Array.isArray(parsed.bodyweightEntries) ||
       !Array.isArray(parsed.weeklyCheckIns) ||
+      !Array.isArray(parsed.cardioActivities) ||
+      !Array.isArray(parsed.cardioSessions) ||
       typeof parsed.preferences !== "object" || parsed.preferences === null) {
     throw new Error("That file is not a workout log export.");
   }
@@ -545,6 +594,20 @@ function loadAutoCopy() {
     console.error("The automatic copy could not be read.", error);
     return null;
   }
+}
+
+
+// ---------------------------------------------------------------------------
+// Starter cardio activities
+// ---------------------------------------------------------------------------
+
+// The cardio activities a new install (or an upgrade from version 11)
+// starts with. A function rather than a plain list, so each database gets
+// its own fresh objects instead of sharing one list that renaming an
+// activity in one place would quietly change everywhere.
+function createStarterCardioActivities() {
+  const starterNames = ["Run", "Bike", "Rower", "Walk", "Elliptical", "Swim", "Stairs"];
+  return starterNames.map((name) => ({ id: name.toLowerCase(), name, isArchived: false }));
 }
 
 
