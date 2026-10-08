@@ -4348,6 +4348,7 @@ function renderMonthlyRecap() {
     cards.push(buildWeightRecordsRecapCard(range));
     cards.push(buildDayStatusRecapCard(sessions));
   }
+  cards.push(buildCardioRecapCard(range));
   cards.push(buildCheckInRecapCard(range));
   cards.push(buildBodyweightRecapCard(range));
 
@@ -4364,6 +4365,46 @@ function stepRecapMonth(monthStep) {
   const steppedMonth = new Date(year, monthIndex + monthStep, 1);
   appState.recapMonth = { year: steppedMonth.getFullYear(), monthIndex: steppedMonth.getMonth() };
   renderMonthlyRecap();
+}
+
+// "Rower: 3 sessions · 1 h 45 min · 15.9 km" for one activity in the month.
+// Distance only counts the sessions where it was recorded, and is left out
+// entirely when none of them have it.
+function describeCardioActivityForMonth(activity, cardioSessions) {
+  const totalMinutes = cardioSessions.reduce((sum, session) => sum + session.durationMinutes, 0);
+  const parts = [
+    `${cardioSessions.length} session${cardioSessions.length === 1 ? "" : "s"}`,
+    formatMinutes(totalMinutes)
+  ];
+  const sessionsWithDistance = cardioSessions.filter((session) => session.distanceKm !== null);
+  if (sessionsWithDistance.length > 0) {
+    const totalKm = sessionsWithDistance.reduce((sum, session) => sum + session.distanceKm, 0);
+    // toFixed(1) also tidies floating-point leftovers from adding decimals.
+    parts.push(`${totalKm.toFixed(1)} km`);
+  }
+  return `${activity.name}: ${parts.join(" · ")}`;
+}
+
+// Cardio for the month: how many sessions and how long in total, then one
+// line per activity, most-done first.
+function buildCardioRecapCard(range) {
+  const monthSessions = appState.database.cardioSessions.filter((session) => isInRange(session.performedAt, range));
+  if (monthSessions.length === 0) {
+    return null;
+  }
+
+  const lines = [];
+  for (const activity of appState.database.cardioActivities) {
+    const activitySessions = monthSessions.filter((session) => session.activityId === activity.id);
+    if (activitySessions.length > 0) {
+      lines.push({ count: activitySessions.length, text: describeCardioActivityForMonth(activity, activitySessions) });
+    }
+  }
+  lines.sort((a, b) => b.count - a.count);
+
+  const totalMinutes = monthSessions.reduce((sum, session) => sum + session.durationMinutes, 0);
+  const headline = `${monthSessions.length} session${monthSessions.length === 1 ? "" : "s"} · ${formatMinutes(totalMinutes)}`;
+  return buildRecapCard("Cardio", headline, lines.map((line) => line.text));
 }
 
 // The average of each rating over the check-ins for weeks starting in this
