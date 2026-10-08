@@ -1154,3 +1154,34 @@ h1 {
 .muscle-area .button-row {
   margin-bottom: 12px;
 }
+
+/* Under "Start free-form workout": a full-width button of its own, with
+   the same gap the button stack uses between its buttons. */
+.home-cardio-button {
+  display: block;
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+/* Effort 1-10 as two rows of five equal buttons, so each stays big enough
+   for a thumb on a phone-width screen. */
+.cardio-effort-buttons {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.cardio-effort-buttons button {
+  padding: 14px 0;
+  font-size: 1.2rem;
+}
+
+.cardio-notes {
+  margin-top: 16px;
+}
+
+#saveCardioButton:disabled {
+  background-color: #2a2a2a;
+  color: #777777;
+}

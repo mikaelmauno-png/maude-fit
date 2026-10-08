@@ -43,6 +43,9 @@
            active workout screen — see renderStartWorkoutChoices() in
            app.js. -->
       <div id="startWorkoutChoices" class="button-stack"></div>
+      <!-- Cardio is logged on its own, once it's done (see CardioSession in
+           schema.js), so this is always available, workout or not. -->
+      <button id="logCardioButton" class="home-cardio-button">Log cardio</button>
 
       <!-- Shown until this week's check-in is answered (see
            renderWeeklyCheckInPrompt in app.js), then hidden until next
@@ -440,6 +443,86 @@
 
       <button id="toggleArchivedGymsButton" class="card-action-button">Show archived</button>
       <ul id="archivedGymsList" hidden></ul>
+    </section>
+
+
+    <!-- ===================================================================
+         LOG CARDIO: one cardio session, entered after it's done. Activity
+         and effort are one tap each; duration starts at last time's for
+         that activity. Distance and heart rate stay out of the way behind
+         "+" buttons until wanted. Filled in by renderCardioLog in app.js.
+         =================================================================== -->
+    <section id="cardioLogScreen" hidden>
+      <h1 id="cardioLogHeading">Log cardio</h1>
+      <div class="button-row">
+        <button id="backFromCardioLogButton">Back</button>
+      </div>
+
+      <h3>Activity</h3>
+      <div class="button-row" id="cardioActivityOptions"></div>
+
+      <!-- Only when logging a new session; editing keeps the original date. -->
+      <div id="cardioDayChoice">
+        <h3>When</h3>
+        <div class="button-row">
+          <button type="button" id="cardioTodayButton" class="day-status-option">Today</button>
+          <button type="button" id="cardioYesterdayButton" class="day-status-option">Yesterday</button>
+        </div>
+      </div>
+
+      <div class="stepper-row">
+        <span class="stepper-label">Minutes</span>
+        <div class="stepper">
+          <button type="button" id="cardioDurationDecrement">&minus;</button>
+          <button type="button" id="cardioDurationValue" class="stepper-value"></button>
+          <input type="number" inputmode="numeric" id="cardioDurationValueInput" class="stepper-value-input" hidden>
+          <button type="button" id="cardioDurationIncrement">+</button>
+        </div>
+      </div>
+
+      <h3>Effort</h3>
+      <p class="check-in-scale-hint">1 = very easy · 10 = all-out</p>
+      <div class="cardio-effort-buttons" id="cardioEffortOptions"></div>
+
+      <!-- Optional. The "+" button shows the stepper; "Remove" hides it
+           again and saves the value as not recorded (null). -->
+      <button type="button" id="addCardioDistanceButton" class="card-action-button">+ Distance</button>
+      <div id="cardioDistanceRow" hidden>
+      <div class="stepper-row">
+        <span class="stepper-label">Distance (km)</span>
+        <div class="stepper">
+          <button type="button" id="cardioDistanceDecrement">&minus;</button>
+          <button type="button" id="cardioDistanceValue" class="stepper-value"></button>
+          <input type="number" inputmode="decimal" id="cardioDistanceValueInput" class="stepper-value-input" hidden>
+          <button type="button" id="cardioDistanceIncrement">+</button>
+        </div>
+      </div>
+        <button type="button" id="removeCardioDistanceButton" class="card-action-button">Remove distance</button>
+      </div>
+
+      <button type="button" id="addCardioHeartRateButton" class="card-action-button">+ Heart rate</button>
+      <div id="cardioHeartRateRow" hidden>
+      <div class="stepper-row">
+        <span class="stepper-label">Avg heart rate</span>
+        <div class="stepper">
+          <button type="button" id="cardioHeartRateDecrement">&minus;</button>
+          <button type="button" id="cardioHeartRateValue" class="stepper-value"></button>
+          <input type="number" inputmode="numeric" id="cardioHeartRateValueInput" class="stepper-value-input" hidden>
+          <button type="button" id="cardioHeartRateIncrement">+</button>
+        </div>
+      </div>
+        <button type="button" id="removeCardioHeartRateButton" class="card-action-button">Remove heart rate</button>
+      </div>
+
+      <label class="text-field cardio-notes">
+        Notes (optional)
+        <input type="text" id="cardioNotesInput" placeholder="e.g. 5 × 500 m intervals">
+      </label>
+
+      <div class="button-row">
+        <!-- Disabled until an activity and an effort are chosen. -->
+        <button id="saveCardioButton">Save</button>
+      </div>
     </section>
 
 

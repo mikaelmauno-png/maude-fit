@@ -106,6 +106,7 @@ const appState = {
   muscleDraft: null,              // { mainMuscle, secondaryMuscles } while the muscle editor is open; null otherwise
   checkInDraft: null,               // { weekStart, fatigue, stress, motivation, recovery, notes } while the weekly check-in screen is open; a rating is null until answered
   isCheckInOpenedFromHistory: false, // true when the check-in screen was opened from History, so saving stays there instead of going home
+  cardioDraft: null,                // the cardio session being logged or edited while the Log cardio screen is open (see startNewCardioDraft); null otherwise
   recapMonth: null,                 // { year, monthIndex } the monthly recap is showing (monthIndex 0 = January); null until it's first opened
   exerciseStatsSelectedGymId: null, // which gym's data the stats charts are scoped to, when the exercise is gym-specific and used at more than one gym
   bodyweightDraftWeightKg: null,    // value shown on the bodyweight stepper; null only before the Bodyweight screen has been opened once
@@ -150,6 +151,7 @@ const personalBestsScreen = document.getElementById("personalBestsScreen");
 const monthlyRecapScreen = document.getElementById("monthlyRecapScreen");
 const weeklyCheckInScreen = document.getElementById("weeklyCheckInScreen");
 const cardioActivitiesScreen = document.getElementById("cardioActivitiesScreen");
+const cardioLogScreen = document.getElementById("cardioLogScreen");
 const muscleStatsListScreen = document.getElementById("muscleStatsListScreen");
 const muscleStatsDetailScreen = document.getElementById("muscleStatsDetailScreen");
 const bodyweightScreen = document.getElementById("bodyweightScreen");
@@ -173,7 +175,7 @@ const allScreens = [
   gymPickerScreen, setEntryPanel, exerciseStatsListScreen, exerciseStatsDetailScreen, muscleEditorPanel,
   personalBestsScreen, muscleStatsListScreen, muscleStatsDetailScreen, dayStatusPanel,
   bodyweightScreen, removeExercisePanel, monthlyRecapScreen, weeklyCheckInScreen,
-  cardioActivitiesScreen
+  cardioActivitiesScreen, cardioLogScreen
 ];
 
 function hideAllScreens() {
@@ -5868,6 +5870,269 @@ document.getElementById("toggleArchivedCardioActivitiesButton").addEventListener
 
 document.getElementById("manageCardioActivitiesButton").addEventListener("click", showCardioActivitiesScreen);
 document.getElementById("backFromCardioActivitiesButton").addEventListener("click", showSettingsScreen);
+
+
+// ---------------------------------------------------------------------------
+// Logging cardio — one CardioSession (schema.js), entered after it's done.
+// The form works on appState.cardioDraft and only writes to the database
+// on Save.
+// ---------------------------------------------------------------------------
+
+// Starting values when an activity has never been logged before.
+const DEFAULT_CARDIO_MINUTES = 30;
+const DEFAULT_CARDIO_DISTANCE_KM = 5;
+const DEFAULT_CARDIO_HEART_RATE = 140;
+
+// The most recent cardio session of one activity, or undefined. ISO date
+// strings sort by time as plain text, so the largest one is the newest.
+function findLastCardioSession(activityId) {
+  return appState.database.cardioSessions
+    .filter((session) => session.activityId === activityId)
+    .sort((a, b) => b.performedAt.localeCompare(a.performedAt))[0];
+}
+
+// The activity logged most recently of all, so the usual one is already
+// picked when the screen opens.
+function findLastUsedCardioActivityId() {
+  const newest = appState.database.cardioSessions
+    .slice()
+    .sort((a, b) => b.performedAt.localeCompare(a.performedAt))[0];
+  return newest ? newest.activityId : null;
+}
+
+// Shape of appState.cardioDraft:
+// {
+//   editingSessionId: null,       // id of the session being corrected, or
+//                                 // null when logging a new one
+//   activityId: "rower",          // null until one is picked
+//   isYesterday: false,           // new sessions only: log it as yesterday
+//   durationMinutes: 30,
+//   effort: null,                 // null until tapped; Save needs it
+//   distanceKm: null,             // null = not recorded (stepper hidden)
+//   averageHeartRate: null,       // null = not recorded (stepper hidden)
+//   notes: ""
+// }
+function startNewCardioDraft() {
+  appState.cardioDraft = {
+    editingSessionId: null,
+    activityId: null,
+    isYesterday: false,
+    durationMinutes: DEFAULT_CARDIO_MINUTES,
+    effort: null,
+    distanceKm: null,
+    averageHeartRate: null,
+    notes: ""
+  };
+  const lastActivityId = findLastUsedCardioActivityId();
+  const lastActivity = appState.database.cardioActivities.find((activity) => activity.id === lastActivityId);
+  if (lastActivity && !lastActivity.isArchived) {
+    chooseCardioActivity(lastActivity.id);
+  }
+}
+
+// Picking an activity starts the duration (and distance or heart rate, if
+// shown) at what was logged last time for it, so a regular session needs
+// only a nudge. Effort isn't carried over: it's the one thing worth
+// thinking about fresh each time.
+function chooseCardioActivity(activityId) {
+  const draft = appState.cardioDraft;
+  draft.activityId = activityId;
+  const last = findLastCardioSession(activityId);
+  draft.durationMinutes = last ? last.durationMinutes : DEFAULT_CARDIO_MINUTES;
+  if (draft.distanceKm !== null && last && last.distanceKm !== null) {
+    draft.distanceKm = last.distanceKm;
+  }
+  if (draft.averageHeartRate !== null && last && last.averageHeartRate !== null) {
+    draft.averageHeartRate = last.averageHeartRate;
+  }
+}
+
+function showCardioLogScreen() {
+  hideAllScreens();
+  startNewCardioDraft();
+  cardioLogScreen.hidden = false;
+  renderCardioLog();
+}
+
+// Built fresh on every render: the list of activities can change in
+// Settings between visits, and only active ones are offered. An archived
+// activity still shows when editing a session that used it.
+function renderCardioActivityOptions() {
+  const optionsElement = document.getElementById("cardioActivityOptions");
+  optionsElement.innerHTML = "";
+  const draft = appState.cardioDraft;
+  const offeredActivities = appState.database.cardioActivities.filter(
+    (activity) => !activity.isArchived || activity.id === draft.activityId
+  );
+  for (const activity of offeredActivities) {
+    const optionButton = document.createElement("button");
+    optionButton.type = "button";
+    optionButton.className = "day-status-option";
+    optionButton.textContent = activity.name;
+    optionButton.classList.toggle("day-status-option-selected", activity.id === draft.activityId);
+    optionButton.addEventListener("click", () => {
+      chooseCardioActivity(activity.id);
+      renderCardioLog();
+    });
+    optionsElement.appendChild(optionButton);
+  }
+}
+
+// Built once: 1 to 10 never changes.
+const cardioEffortOptionsElement = document.getElementById("cardioEffortOptions");
+for (let effort = CARDIO_EFFORT_MIN; effort <= CARDIO_EFFORT_MAX; effort++) {
+  const effortButton = document.createElement("button");
+  effortButton.type = "button";
+  effortButton.className = "day-status-option";
+  effortButton.textContent = effort;
+  effortButton.dataset.effort = effort;
+  effortButton.addEventListener("click", () => {
+    appState.cardioDraft.effort = effort;
+    renderCardioLog();
+  });
+  cardioEffortOptionsElement.appendChild(effortButton);
+}
+
+function renderCardioOptionalRows() {
+  const draft = appState.cardioDraft;
+  const hasDistance = draft.distanceKm !== null;
+  const hasHeartRate = draft.averageHeartRate !== null;
+  document.getElementById("cardioDistanceRow").hidden = !hasDistance;
+  document.getElementById("addCardioDistanceButton").hidden = hasDistance;
+  document.getElementById("cardioHeartRateRow").hidden = !hasHeartRate;
+  document.getElementById("addCardioHeartRateButton").hidden = hasHeartRate;
+  if (hasDistance) {
+    document.getElementById("cardioDistanceValue").textContent = `${draft.distanceKm} km`;
+  }
+  if (hasHeartRate) {
+    document.getElementById("cardioHeartRateValue").textContent = `${draft.averageHeartRate} bpm`;
+  }
+}
+
+function renderCardioLog() {
+  const draft = appState.cardioDraft;
+  const isEditing = draft.editingSessionId !== null;
+  document.getElementById("cardioLogHeading").textContent = isEditing ? "Edit cardio" : "Log cardio";
+
+  renderCardioActivityOptions();
+
+  document.getElementById("cardioDayChoice").hidden = isEditing;
+  document.getElementById("cardioTodayButton").classList.toggle("day-status-option-selected", !draft.isYesterday);
+  document.getElementById("cardioYesterdayButton").classList.toggle("day-status-option-selected", draft.isYesterday);
+
+  document.getElementById("cardioDurationValue").textContent = `${draft.durationMinutes} min`;
+
+  for (const effortButton of cardioEffortOptionsElement.children) {
+    // dataset values are strings, hence Number() before comparing.
+    effortButton.classList.toggle("day-status-option-selected", Number(effortButton.dataset.effort) === draft.effort);
+  }
+
+  renderCardioOptionalRows();
+  document.getElementById("cardioNotesInput").value = draft.notes;
+  document.getElementById("saveCardioButton").disabled = draft.activityId === null || draft.effort === null;
+}
+
+// Wires one stepper (−, value, +, and tap-the-value-to-type) to a field of
+// the cardio draft. The three cardio steppers differ only in these values.
+function connectCardioStepper(idPrefix, field, step, minimum, isInteger) {
+  const decrementButton = document.getElementById(`${idPrefix}Decrement`);
+  const incrementButton = document.getElementById(`${idPrefix}Increment`);
+  decrementButton.addEventListener("click", () =>
+    adjustDraftField(appState.cardioDraft, field, -step, minimum, renderCardioLog));
+  incrementButton.addEventListener("click", () =>
+    adjustDraftField(appState.cardioDraft, field, step, minimum, renderCardioLog));
+  makeStepperValueEditable(
+    document.getElementById(`${idPrefix}Value`), document.getElementById(`${idPrefix}ValueInput`),
+    decrementButton, incrementButton,
+    () => appState.cardioDraft, field, minimum, isInteger, renderCardioLog
+  );
+}
+
+// Minutes step by 5 (most sessions are round numbers); typing gives any
+// exact value. Distance steps by 0.1 km, heart rate by 1 bpm, both starting
+// from last time's value so a small nudge is the usual change.
+connectCardioStepper("cardioDuration", "durationMinutes", 5, 1, true);
+connectCardioStepper("cardioDistance", "distanceKm", 0.1, 0, false);
+connectCardioStepper("cardioHeartRate", "averageHeartRate", 1, 30, true);
+
+// Showing an optional field starts it at last time's value for this
+// activity, or a sensible default.
+function showOptionalCardioField(field, defaultValue) {
+  const draft = appState.cardioDraft;
+  const last = draft.activityId ? findLastCardioSession(draft.activityId) : undefined;
+  draft[field] = last && last[field] !== null ? last[field] : defaultValue;
+  renderCardioLog();
+}
+
+document.getElementById("addCardioDistanceButton").addEventListener("click", () =>
+  showOptionalCardioField("distanceKm", DEFAULT_CARDIO_DISTANCE_KM));
+document.getElementById("addCardioHeartRateButton").addEventListener("click", () =>
+  showOptionalCardioField("averageHeartRate", DEFAULT_CARDIO_HEART_RATE));
+document.getElementById("removeCardioDistanceButton").addEventListener("click", () => {
+  appState.cardioDraft.distanceKm = null;
+  renderCardioLog();
+});
+document.getElementById("removeCardioHeartRateButton").addEventListener("click", () => {
+  appState.cardioDraft.averageHeartRate = null;
+  renderCardioLog();
+});
+
+document.getElementById("cardioTodayButton").addEventListener("click", () => {
+  appState.cardioDraft.isYesterday = false;
+  renderCardioLog();
+});
+document.getElementById("cardioYesterdayButton").addEventListener("click", () => {
+  appState.cardioDraft.isYesterday = true;
+  renderCardioLog();
+});
+
+document.getElementById("cardioNotesInput").addEventListener("input", (event) => {
+  appState.cardioDraft.notes = event.target.value;
+});
+
+// "Yesterday" is the same clock time a day earlier: the exact hour isn't
+// known when logging after the fact, and the date is what matters.
+function chooseCardioPerformedAt(isYesterday) {
+  const performedAt = new Date();
+  if (isYesterday) {
+    performedAt.setDate(performedAt.getDate() - 1);
+  }
+  return performedAt.toISOString();
+}
+
+// The draft's values in the stored CardioSession shape (schema.js).
+function buildCardioSessionFields(draft) {
+  return {
+    activityId: draft.activityId,
+    durationMinutes: draft.durationMinutes,
+    effort: draft.effort,
+    distanceKm: draft.distanceKm,
+    averageHeartRate: draft.averageHeartRate,
+    notes: draft.notes.trim()
+  };
+}
+
+function saveCardioDraft() {
+  const draft = appState.cardioDraft;
+  appState.database.cardioSessions.push({
+    id: crypto.randomUUID(),
+    performedAt: chooseCardioPerformedAt(draft.isYesterday),
+    ...buildCardioSessionFields(draft)
+  });
+  saveDatabase(appState.database);
+}
+
+function leaveCardioLogScreen() {
+  appState.cardioDraft = null;
+  showMainScreen();
+}
+
+document.getElementById("saveCardioButton").addEventListener("click", () => {
+  saveCardioDraft();
+  leaveCardioLogScreen();
+});
+document.getElementById("backFromCardioLogButton").addEventListener("click", leaveCardioLogScreen);
+document.getElementById("logCardioButton").addEventListener("click", showCardioLogScreen);
 
 
 // ---------------------------------------------------------------------------
