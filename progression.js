@@ -36,9 +36,19 @@ function roundLoad(load) {
 // For a gym-specific exercise (a machine or cable stack), only sessions at
 // the same gym count, for the same reason as findMostRecentWorkingSet in
 // app.js: 50 kg on one gym's machine isn't 50 kg on another's.
-function findRecentSessions(database, exercise, activeSession, sessionCount) {
+//
+// With `isScopedToWorkout`, only sessions of the same workout template
+// count too. The same exercise is often trained differently in different
+// workouts (3 × 1 heavy in one, 3 × 6 in another), so a volume day's
+// results say nothing about how to approach the heavy day. When today's
+// workout isn't known (free-form), there's nothing to scope to, and every
+// session of the exercise counts.
+function findRecentSessions(database, exercise, activeSession, sessionCount, isScopedToWorkout) {
   const scopeToGymId = exercise.isGymSpecific && activeSession && activeSession.gymId
     ? activeSession.gymId
+    : null;
+  const scopeToTemplateId = isScopedToWorkout && activeSession
+    ? findWorkoutTemplateIdOf(activeSession, exercise.id)
     : null;
 
   // Grouping the sets by session first means the sets list is scanned only
@@ -65,6 +75,9 @@ function findRecentSessions(database, exercise, activeSession, sessionCount) {
     if (scopeToGymId !== null && session.gymId !== scopeToGymId) {
       return false;
     }
+    if (scopeToTemplateId !== null && findWorkoutTemplateIdOf(session, exercise.id) !== scopeToTemplateId) {
+      return false;
+    }
     return true;
   });
 
@@ -75,6 +88,25 @@ function findRecentSessions(database, exercise, activeSession, sessionCount) {
   return eligibleSessions
     .slice(0, sessionCount)
     .map((session) => ({ session, workingSets: workingSetsBySessionId.get(session.id) }));
+}
+
+
+// Which workout template one exercise in a session was done for, or null
+// when none (a free-form workout). Usually the session's own template. In
+// a catch-up workout, each exercise was carried over from a template of
+// its own (see Session.catchUpExercises in schema.js); an exercise done
+// there as a replacement counts for the one it stood in for. Catch-up
+// workouts saved before fromTemplateId existed give null.
+function findWorkoutTemplateIdOf(session, exerciseId) {
+  if (!session.catchUpExercises) {
+    return session.templateId;
+  }
+  const replacement = session.replacedExercises.find(
+    (candidate) => candidate.replacementExerciseId === exerciseId
+  );
+  const plannedExerciseId = replacement ? replacement.exerciseId : exerciseId;
+  const catchUpEntry = session.catchUpExercises.find((planned) => planned.exerciseId === plannedExerciseId);
+  return catchUpEntry && catchUpEntry.fromTemplateId ? catchUpEntry.fromTemplateId : null;
 }
 
 
@@ -145,7 +177,9 @@ function suggestNextTarget(database, exerciseId, repsMin, repsMax, activeSession
 
   // Two sessions are needed at most: the latest, plus the one before it to
   // tell a single bad day apart from a real stall (missedTwiceAtSameLoad).
-  const recentSessions = findRecentSessions(database, exercise, activeSession, 2);
+  // Only this workout's own sessions: with none yet, there's no
+  // suggestion, and the steppers start from the workout's planned load.
+  const recentSessions = findRecentSessions(database, exercise, activeSession, 2, true);
   if (recentSessions.length === 0) {
     return null;
   }

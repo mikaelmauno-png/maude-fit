@@ -1818,17 +1818,39 @@ function describeLastSession(exerciseId) {
   // confusing for an exercise that has been done plenty — just elsewhere.
   const isScopedToThisGym = Boolean(exercise.isGymSpecific && activeSession && activeSession.gymId);
 
-  const recentSessions = findRecentSessions(appState.database, exercise, activeSession, 1);
+  // This workout's own last session, same as the suggestion uses. Never
+  // done in this workout, the last time from any workout is still worth
+  // seeing, labelled with that workout so it isn't mistaken for this one.
+  const sameWorkoutSessions = findRecentSessions(appState.database, exercise, activeSession, 1, true);
+  const isFromAnotherWorkout = sameWorkoutSessions.length === 0;
+  const recentSessions = isFromAnotherWorkout
+    ? findRecentSessions(appState.database, exercise, activeSession, 1, false)
+    : sameWorkoutSessions;
   if (recentSessions.length === 0) {
     return isScopedToThisGym ? "Not done at this gym before." : "First time doing this exercise.";
   }
 
   const { session, workingSets } = recentSessions[0];
   const setsInOrder = workingSets.slice().sort((a, b) => a.order - b.order);
-  const scopeNote = isScopedToThisGym ? " (at this gym)" : "";
+  const workoutNote = isFromAnotherWorkout && activeSession
+    ? describeOtherWorkoutNote(session, exerciseId)
+    : "";
+  const scopeNote = (isScopedToThisGym ? " (at this gym)" : "") + workoutNote;
   const rirText = setsInOrder.map((set) => set.rir).join(" · ");
   return `Last time · ${formatShortDate(session.startedAt)}${scopeNote}: ` +
     `${formatLoadsAndReps(setsInOrder)} — RIR ${rirText}`;
+}
+
+// " (in Workout 2)" after the date in the "Last time" line, when that last
+// time was in a different workout from today's. Nothing for a free-form
+// workout, which has no workout of its own to differ from.
+function describeOtherWorkoutNote(pastSession, exerciseId) {
+  const pastTemplateId = findWorkoutTemplateIdOf(pastSession, exerciseId);
+  if (findWorkoutTemplateIdOf(getActiveSession(), exerciseId) === null) {
+    return "";
+  }
+  const pastTemplate = appState.database.workoutTemplates.find((template) => template.id === pastTemplateId);
+  return ` (in ${pastTemplate ? pastTemplate.name : "free-form"})`;
 }
 
 // "100 kg × 8 · 8 · 7" when every set used the same weight (the usual
@@ -3683,6 +3705,9 @@ function findMissedSetsThisWeek() {
       } else {
         missedByExerciseId.set(planned.exerciseId, {
           exerciseId: planned.exerciseId,
+          // So suggestions follow this template's history (see
+          // findWorkoutTemplateIdOf in progression.js).
+          fromTemplateId: template.id,
           targetSets: missedSets,
           targetRepsMin: planned.targetRepsMin,
           targetRepsMax: planned.targetRepsMax,

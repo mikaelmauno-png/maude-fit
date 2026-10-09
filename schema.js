@@ -170,7 +170,12 @@ const MUSCLE_GROUPS = [
 // planned set missing from the week's finished template workouts. It has
 // no template (templateId is null); its plan is catchUpExercises, the
 // same shape as a template's plannedExercises, with targetSets being how
-// many sets of that exercise were still missing when it was started.
+// many sets of that exercise were still missing when it was started, plus
+// fromTemplateId: the template it was missed from, so its suggestions
+// follow that workout's history. (An exercise missed in two templates
+// keeps the first one's.) Catch-ups saved before fromTemplateId was added
+// don't have it; older app versions ignore it, so it needed no version
+// bump, same as listPosition.
 // That plan is saved rather than worked out again later, since the
 // missing sets change as soon as any are done. addedExercises,
 // removedExerciseIds and replacedExercises work on it as on a template.
