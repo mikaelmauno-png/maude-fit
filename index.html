@@ -169,10 +169,22 @@
            set for that exercise on weight or on load×reps ("volume"). -->
       <p id="prBanner" hidden></p>
 
-      <!-- Optional at any point during an active workout — deliberately not
-           part of ending the workout, so the common "just finish and go"
-           path stays a single tap. Sets Session.dayStatus/notes, which the
-           schema already collects for the future training engine. -->
+      <!-- At the top so it's the first thing seen when a workout starts —
+           readiness is only useful if answered before any sets colour it.
+           Never required: nothing is pre-selected and ignoring it costs no
+           tap. Sets Session.readiness, and Session.dayStatus via the reason
+           buttons, which app.js fills in. -->
+      <section id="readinessCard" hidden>
+        <p class="readiness-question">How ready do you feel to train?</p>
+        <div class="check-in-rating-buttons readiness-buttons" id="readinessButtons"></div>
+        <p class="readiness-hint">1 = poor · 5 = great</p>
+        <div class="readiness-reasons" id="readinessReasonButtons"></div>
+      </section>
+
+      <!-- Optional at any point during an active workout, and never part of
+           ending it, so the common "just finish and go" path stays a single
+           tap. Edits the same readiness and status as the card above, plus
+           notes. -->
       <div class="workout-side-actions">
         <button id="dayStatusButton" class="card-action-button" hidden>Today's status</button>
         <!-- Opens the Bodyweight screen; saving there comes straight back
@@ -328,6 +340,11 @@
          =================================================================== -->
     <section id="dayStatusPanel" class="bottom-sheet" hidden>
       <h2 id="dayStatusHeading">Today's status</h2>
+      <!-- Lets a past workout's readiness be corrected from History too.
+           Filled in by app.js from CHECK_IN_SCALE_MIN/MAX. -->
+      <p class="readiness-question">Readiness to train</p>
+      <div class="check-in-rating-buttons readiness-buttons" id="dayStatusReadinessButtons"></div>
+      <p class="readiness-hint">1 = poor · 5 = great</p>
       <!-- Filled in from DAY_STATUSES in schema.js, so this stays in sync
            with the schema's contract rather than duplicating the list. -->
       <div class="button-row" id="dayStatusOptions"></div>
@@ -338,13 +355,6 @@
       <div class="button-row">
         <button id="saveDayStatusButton">Save</button>
         <button id="cancelDayStatusButton">Cancel</button>
-      </div>
-      <!-- Only when opened by End workout (see openDayStatusPanelToFinish
-           in app.js): then tapping a status above saves it and ends the
-           workout, and these replace Save/Cancel. -->
-      <div class="button-stack">
-        <button id="finishWithoutStatusButton" hidden>Finish without status</button>
-        <button id="backToWorkoutButton" class="card-action-button" hidden>Back to workout</button>
       </div>
     </section>
 

@@ -45,7 +45,9 @@
 // Bumped to 13 for the addition of Gym.exerciseReplacements,
 // Gym.machineMaxLoads, Session.replacedExercises and
 // Session.catchUpExercises below.
-const SCHEMA_VERSION = 13;
+//
+// Bumped to 14 for the addition of Session.readiness below.
+const SCHEMA_VERSION = 14;
 
 // Every piece of app data lives under this one localStorage key, as a single
 // JSON string. One key is simpler to export, import, and reason about than
@@ -118,6 +120,8 @@ const MUSCLE_GROUPS = [
 //   endedAt:    "2026-08-31T18:20:00.000Z",   // null while in progress
 //   dayStatus:  "normal",                     // see DAY_STATUSES below;
 //                                              // null until it's set
+//   readiness:  4,                            // 1-5, see below; null if
+//                                              // not answered
 //   notes:      "",
 //   templateId: "weekly-workout-1",           // which WorkoutTemplate this
 //                                              // followed, or null for a
@@ -188,6 +192,15 @@ const MUSCLE_GROUPS = [
 // "felt normal" apart from "never answered". Sessions saved before version 9
 // started at "normal" instead, so for those "normal" can mean either.
 const DAY_STATUSES = ["normal", "poorSleep", "ill", "stressed"];
+
+// readiness is "How ready do you feel to train?", a whole number from
+// CHECK_IN_SCALE_MIN to CHECK_IN_SCALE_MAX (1 = poor, 5 = great), asked at
+// the start of a workout. Asked before any sets, so the answer isn't
+// coloured by how the workout then went — that's what lets the engine later
+// treat it as a cause rather than a result. null means "not answered" and is
+// never replaced by a default: a skipped answer is not the same as "felt
+// fine". dayStatus stays alongside it as the reason (poor sleep, ill,
+// stressed) when there is one.
 
 // WorkoutTemplate — a reusable weekly workout template, e.g. "Weekly workout 1". Meant
 // to be replaced every 1-3 months as training needs change, which is why old
@@ -449,6 +462,18 @@ function migrateFrom12To13(database) {
   database.schemaVersion = 13;
 }
 
+// Version 13 sessions have no readiness. null ("not answered") is the only
+// honest value: nothing was asked before version 14. Setting it only where
+// it's missing means running this twice changes nothing.
+function migrateFrom13To14(database) {
+  for (const session of database.sessions) {
+    if (session.readiness === undefined) {
+      session.readiness = null;
+    }
+  }
+  database.schemaVersion = 14;
+}
+
 // Keyed by the version each migration upgrades *from*. Versions with no
 // entry here (1-3) are too old to migrate and are still refused.
 const MIGRATIONS = {
@@ -460,7 +485,8 @@ const MIGRATIONS = {
   9: migrateFrom9To10,
   10: migrateFrom10To11,
   11: migrateFrom11To12,
-  12: migrateFrom12To13
+  12: migrateFrom12To13,
+  13: migrateFrom13To14
 };
 
 // Applies migrations one step at a time until the data reaches

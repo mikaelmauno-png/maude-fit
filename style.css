@@ -992,6 +992,42 @@ h1 {
   padding: 12px 8px;
 }
 
+/* Readiness card at the top of the workout screen. Taller than the weekly
+   check-in's buttons because this is tapped standing in the gym, mid-warmup,
+   often with chalk on the hands. */
+#readinessCard {
+  margin-bottom: 16px;
+}
+
+.readiness-question {
+  margin: 0 0 8px;
+  font-weight: bold;
+}
+
+.readiness-buttons button {
+  min-height: 56px;
+}
+
+.readiness-hint {
+  margin: 6px 0 10px;
+  color: #b0b0b0;
+  font-size: 0.9rem;
+}
+
+/* The three reasons share one row; min-width: 0 stops them wrapping onto
+   separate lines on a narrow phone. */
+.readiness-reasons {
+  display: flex;
+  gap: 8px;
+}
+
+.readiness-reasons button {
+  min-width: 0;
+  min-height: 56px;
+  padding: 8px 4px;
+  font-size: 1rem;
+}
+
 /* "Today's status" and "Log bodyweight" side by side on the workout screen:
    both are occasional, so they share one row instead of taking two. */
 .workout-side-actions {

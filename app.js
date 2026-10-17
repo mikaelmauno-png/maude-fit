@@ -100,9 +100,8 @@ const appState = {
   removeExerciseTargetId: null, // which exercise the "Remove from workout" panel (or the replacement picker opened from it) is about; null when both are closed
   nextGoalTarget: null,        // { templateId, exerciseId } while adjusting an existing planned exercise's target from a workout card; null otherwise
   freeformReviewExerciseId: null, // which exercise's logged-sets review card is open, in a free-form workout; null otherwise
-  dayStatusDraft: null,           // { dayStatus, notes } while the today's-status panel is open; null otherwise
+  dayStatusDraft: null,           // { readiness, dayStatus, notes } while the today's-status panel is open; null otherwise
   dayStatusEditingSessionId: null, // which session the open day-status panel is editing (active or a past one); null when the panel is closed
-  isFinishingWorkout: false,      // true while the day-status panel is open because End workout was tapped with no status set
   muscleEditorExerciseId: null,   // which exercise's muscle editor is open; null otherwise
   muscleDraft: null,              // { mainMuscle, secondaryMuscles } while the muscle editor is open; null otherwise
   checkInDraft: null,               // { weekStart, fatigue, stress, motivation, recovery, notes } while the weekly check-in screen is open; a rating is null until answered
@@ -1175,7 +1174,7 @@ function updateWorkoutControls() {
   const isActive = appState.activeSessionId !== null;
   endWorkoutButton.hidden = !isActive;
   dayStatusButton.hidden = !isActive;
-  renderDayStatusButton();
+  renderReadinessCard();
   workoutBodyweightButton.hidden = !isActive;
   renderWorkoutBodyweightButton();
   workoutStatus.textContent = isActive ? "Workout in progress" : "";
@@ -1248,6 +1247,7 @@ function startWorkout(templateId, gymId, isCatchUp = false) {
     endedAt: null,
     // Not set yet; see DAY_STATUSES in schema.js.
     dayStatus: null,
+    readiness: null,
     notes: "",
     templateId: templateId,
     gymId: gymId,
@@ -1271,7 +1271,9 @@ function startWorkout(templateId, gymId, isCatchUp = false) {
 }
 
 // True when a workout holds nothing at all: no sets (warmups included) and
-// no day status or notes. Such a workout was almost certainly started by
+// no day status or notes. A readiness answer alone doesn't count: it's
+// tapped first thing, so a workout started by mistake often has one. Such
+// a workout was almost certainly started by
 // mistake, and saving it would turn that workout's tile green for the week
 // (at 0%) and leave a blank card in History.
 function isSessionEmpty(session) {
@@ -1280,15 +1282,11 @@ function isSessionEmpty(session) {
   return !hasSets && hasNoStatus && session.notes === "";
 }
 
-// A workout with sets but no status yet gets one chance to set it: the
-// status panel opens, and tapping a status there ends the workout too, so
-// it costs exactly one tap either way (see openDayStatusPanelToFinish).
+// No status prompt here any more: readiness and its reason are asked at
+// the start (see the readiness card), where the answer isn't coloured by
+// how the workout went. Asking again at the end would mean two check-ins
+// per workout.
 endWorkoutButton.addEventListener("click", () => {
-  const session = getActiveSession();
-  if (session.dayStatus === null && !isSessionEmpty(session)) {
-    openDayStatusPanelToFinish(session.id);
-    return;
-  }
   finishActiveWorkout();
 });
 
@@ -1589,12 +1587,12 @@ function hidePersonalBestBanner() {
 
 
 // ---------------------------------------------------------------------------
-// Today's status (Session.dayStatus / notes)
+// Today's status (Session.readiness / dayStatus / notes)
 //
-// Available as a button any time a workout is active. Never a required
-// step: at the end of a workout with no status set, the panel opens once
-// more, but picking a status there is itself the tap that ends the workout,
-// and "Finish without status" skips it.
+// Available as a button any time a workout is active, and from a History
+// card for a finished one. Never a required step. The readiness card at the
+// top of the workout screen sets the same fields in one tap; this panel is
+// where notes go, and where a past workout's answers can be corrected.
 // ---------------------------------------------------------------------------
 
 const DAY_STATUS_LABELS = {
@@ -1607,6 +1605,42 @@ const DAY_STATUS_LABELS = {
 const dayStatusHeading = document.getElementById("dayStatusHeading");
 const dayStatusOptionsElement = document.getElementById("dayStatusOptions");
 const dayStatusNotesInput = document.getElementById("dayStatusNotesInput");
+const dayStatusReadinessButtonsElement = document.getElementById("dayStatusReadinessButtons");
+
+// Every pick in these panels works like this: tapping a value selects it,
+// and tapping the already-selected one clears it back to null. That undoes
+// a mis-tap without needing a separate "clear" button.
+function toggledValue(currentValue, tappedValue) {
+  return currentValue === tappedValue ? null : tappedValue;
+}
+
+// One button per point on the 1-5 scale. Shared by the readiness card and
+// this panel so the two can't end up with different scales.
+function createReadinessButtons(containerElement, onPick) {
+  for (let value = CHECK_IN_SCALE_MIN; value <= CHECK_IN_SCALE_MAX; value++) {
+    const valueButton = document.createElement("button");
+    valueButton.type = "button";
+    valueButton.className = "day-status-option";
+    valueButton.textContent = value;
+    valueButton.dataset.value = value;
+    valueButton.addEventListener("click", () => onPick(value));
+    containerElement.appendChild(valueButton);
+  }
+}
+
+// dataset values are always strings, hence String() before comparing. A
+// null selection matches no button, so nothing is highlighted.
+function highlightSelectedButton(containerElement, datasetKey, selectedValue) {
+  for (const button of containerElement.children) {
+    const isSelected = button.dataset[datasetKey] === String(selectedValue);
+    button.classList.toggle("day-status-option-selected", isSelected);
+  }
+}
+
+createReadinessButtons(dayStatusReadinessButtonsElement, (value) => {
+  appState.dayStatusDraft.readiness = toggledValue(appState.dayStatusDraft.readiness, value);
+  renderDayStatusPanel();
+});
 
 // Built once from DAY_STATUSES (schema.js) rather than hardcoded in HTML,
 // so this can't quietly drift out of sync with the schema's contract.
@@ -1617,13 +1651,7 @@ for (const status of DAY_STATUSES) {
   optionButton.textContent = DAY_STATUS_LABELS[status];
   optionButton.dataset.dayStatus = status;
   optionButton.addEventListener("click", () => {
-    appState.dayStatusDraft.dayStatus = status;
-    if (appState.isFinishingWorkout) {
-      saveDayStatusDraft();
-      closeDayStatusPanel();
-      finishActiveWorkout();
-      return;
-    }
+    appState.dayStatusDraft.dayStatus = toggledValue(appState.dayStatusDraft.dayStatus, status);
     renderDayStatusPanel();
   });
   dayStatusOptionsElement.appendChild(optionButton);
@@ -1631,10 +1659,8 @@ for (const status of DAY_STATUSES) {
 
 function renderDayStatusPanel() {
   dayStatusNotesInput.value = appState.dayStatusDraft.notes;
-  for (const optionButton of dayStatusOptionsElement.children) {
-    const isSelected = optionButton.dataset.dayStatus === appState.dayStatusDraft.dayStatus;
-    optionButton.classList.toggle("day-status-option-selected", isSelected);
-  }
+  highlightSelectedButton(dayStatusReadinessButtonsElement, "value", appState.dayStatusDraft.readiness);
+  highlightSelectedButton(dayStatusOptionsElement, "dayStatus", appState.dayStatusDraft.dayStatus);
 }
 
 // sessionId lets this same panel edit either the in-progress session (from
@@ -1643,35 +1669,21 @@ function renderDayStatusPanel() {
 function openDayStatusPanel(sessionId) {
   const session = appState.database.sessions.find((candidate) => candidate.id === sessionId);
   appState.dayStatusEditingSessionId = sessionId;
-  appState.dayStatusDraft = { dayStatus: session.dayStatus, notes: session.notes };
+  appState.dayStatusDraft = {
+    readiness: session.readiness,
+    dayStatus: session.dayStatus,
+    notes: session.notes
+  };
   dayStatusHeading.textContent = session.endedAt === null ? "Today's status" : "Edit status";
-  showDayStatusPanelButtons(false);
   renderDayStatusPanel();
   dayStatusPanel.hidden = false;
-}
-
-// The same panel, opened by End workout. Here a status button saves and
-// finishes in one tap, so the usual Save/Cancel pair is swapped for
-// "Finish without status" and "Back to workout". Any note typed first is
-// saved along with the status.
-function openDayStatusPanelToFinish(sessionId) {
-  openDayStatusPanel(sessionId);
-  appState.isFinishingWorkout = true;
-  dayStatusHeading.textContent = "How was today?";
-  showDayStatusPanelButtons(true);
-}
-
-function showDayStatusPanelButtons(isFinishing) {
-  document.getElementById("saveDayStatusButton").hidden = isFinishing;
-  document.getElementById("cancelDayStatusButton").hidden = isFinishing;
-  document.getElementById("finishWithoutStatusButton").hidden = !isFinishing;
-  document.getElementById("backToWorkoutButton").hidden = !isFinishing;
 }
 
 function saveDayStatusDraft() {
   const session = appState.database.sessions.find(
     (candidate) => candidate.id === appState.dayStatusEditingSessionId
   );
+  session.readiness = appState.dayStatusDraft.readiness;
   session.dayStatus = appState.dayStatusDraft.dayStatus;
   session.notes = appState.dayStatusDraft.notes;
   saveDatabase(appState.database);
@@ -1680,9 +1692,8 @@ function saveDayStatusDraft() {
 function closeDayStatusPanel() {
   appState.dayStatusDraft = null;
   appState.dayStatusEditingSessionId = null;
-  appState.isFinishingWorkout = false;
   dayStatusPanel.hidden = true;
-  renderDayStatusButton();
+  renderReadinessCard();
   // Safe to call even when History isn't the visible screen — it just
   // redraws the (currently hidden) history list. Same pattern as
   // closeSetEntryPanel() below.
@@ -1725,17 +1736,6 @@ document.getElementById("cancelDayStatusButton").addEventListener("click", () =>
   closeDayStatusPanel();
 });
 
-// Still saves a note typed in the panel; the status stays unset.
-document.getElementById("finishWithoutStatusButton").addEventListener("click", () => {
-  saveDayStatusDraft();
-  closeDayStatusPanel();
-  finishActiveWorkout();
-});
-
-document.getElementById("backToWorkoutButton").addEventListener("click", () => {
-  closeDayStatusPanel();
-});
-
 // Green with the chosen status once set ("Today: Poor sleep"), plain grey
 // "Today's status" until then, so a glance shows whether it's done.
 function renderDayStatusButton() {
@@ -1743,6 +1743,57 @@ function renderDayStatusButton() {
   const isSet = session !== null && session.dayStatus !== null;
   dayStatusButton.textContent = isSet ? `Today: ${DAY_STATUS_LABELS[session.dayStatus]}` : "Today's status";
   dayStatusButton.classList.toggle("day-status-button-set", isSet);
+}
+
+
+// ---------------------------------------------------------------------------
+// Readiness card (top of the workout screen)
+//
+// One tap for "How ready do you feel to train?" (Session.readiness), and an
+// optional reason (Session.dayStatus). Saved on every tap with no Save
+// step, since it's answered standing in the gym. Ignoring it is fine: both
+// fields stay null, which means "not answered", never "felt normal".
+// ---------------------------------------------------------------------------
+
+const readinessCard = document.getElementById("readinessCard");
+const readinessButtonsElement = document.getElementById("readinessButtons");
+const readinessReasonButtonsElement = document.getElementById("readinessReasonButtons");
+
+// "Normal" is left out here: a readiness of 4 or 5 already says that. It
+// stays in the status panel, and in old data, as a valid value.
+const READINESS_REASON_STATUSES = DAY_STATUSES.filter((status) => status !== "normal");
+
+createReadinessButtons(readinessButtonsElement, (value) => {
+  const session = getActiveSession();
+  session.readiness = toggledValue(session.readiness, value);
+  saveDatabase(appState.database);
+  renderReadinessCard();
+});
+
+for (const status of READINESS_REASON_STATUSES) {
+  const reasonButton = document.createElement("button");
+  reasonButton.type = "button";
+  reasonButton.className = "day-status-option";
+  reasonButton.textContent = DAY_STATUS_LABELS[status];
+  reasonButton.dataset.dayStatus = status;
+  reasonButton.addEventListener("click", () => {
+    const session = getActiveSession();
+    session.dayStatus = toggledValue(session.dayStatus, status);
+    saveDatabase(appState.database);
+    renderReadinessCard();
+  });
+  readinessReasonButtonsElement.appendChild(reasonButton);
+}
+
+function renderReadinessCard() {
+  renderDayStatusButton();
+  const session = getActiveSession();
+  readinessCard.hidden = session === null;
+  if (session === null) {
+    return;
+  }
+  highlightSelectedButton(readinessButtonsElement, "value", session.readiness);
+  highlightSelectedButton(readinessReasonButtonsElement, "dayStatus", session.dayStatus);
 }
 
 
@@ -3100,14 +3151,18 @@ function buildWorkoutHistoryCard(session) {
     `${formatSessionDate(session.startedAt)} · ${describeWorkoutKind(session, template)}${gym ? ` · ${gym.name}` : ""}`;
   cardElement.appendChild(headerElement);
 
-  // "Normal" and empty notes are the defaults every session starts with,
-  // so only shown when there's actually something to say.
+  // Unanswered readiness, "Normal" and empty notes say nothing, so the line
+  // only appears when there's actually something to show.
   const hasStatusWorthShowing = session.dayStatus !== null && session.dayStatus !== "normal";
-  if (hasStatusWorthShowing || session.notes !== "") {
+  const readinessText = session.readiness !== null
+    ? `Readiness ${session.readiness}/${CHECK_IN_SCALE_MAX}`
+    : null;
+  const statusText = hasStatusWorthShowing ? DAY_STATUS_LABELS[session.dayStatus] : null;
+  if (readinessText || statusText || session.notes !== "") {
     const statusLine = document.createElement("div");
     statusLine.className = "history-card-line";
-    const statusText = hasStatusWorthShowing ? DAY_STATUS_LABELS[session.dayStatus] : null;
-    statusLine.textContent = [statusText, session.notes].filter(Boolean).join(" — ");
+    const answers = [readinessText, statusText].filter(Boolean).join(" · ");
+    statusLine.textContent = [answers, session.notes].filter(Boolean).join(" — ");
     cardElement.appendChild(statusLine);
   }
 
@@ -4683,9 +4738,17 @@ function buildBodyweightRecapCard(range) {
   ]);
 }
 
-// Only the statuses that say something (not "Normal"), plus how many
-// workouts never got a status, so a quiet card isn't mistaken for "all fine".
+// Average readiness as the headline, then only the reasons that say
+// something (not "Normal"), plus how many workouts never got a readiness
+// answer, so a quiet card isn't mistaken for "all fine". A missing reason
+// isn't counted: since version 14 no reason is the usual case, not a gap.
 function buildDayStatusRecapCard(sessions) {
+  const answeredReadiness = sessions
+    .filter((session) => session.readiness !== null)
+    .map((session) => session.readiness);
+  const averageReadinessText = answeredReadiness.length > 0
+    ? `Readiness ${formatAverage(answeredReadiness)}/${CHECK_IN_SCALE_MAX}`
+    : null;
   const lines = [];
   for (const status of DAY_STATUSES) {
     if (status === "normal") {
@@ -4696,14 +4759,21 @@ function buildDayStatusRecapCard(sessions) {
       lines.push(`${DAY_STATUS_LABELS[status]}: ${count}`);
     }
   }
-  const unsetCount = sessions.filter((session) => session.dayStatus === null).length;
-  if (unsetCount > 0) {
-    lines.push(`No status set: ${unsetCount}`);
+  const unansweredCount = sessions.length - answeredReadiness.length;
+  if (unansweredCount > 0) {
+    lines.push(`Readiness not answered: ${unansweredCount}`);
   }
   if (lines.length === 0) {
     lines.push("No poor-sleep, ill or stressed days logged");
   }
-  return buildRecapCard("Day status", null, lines);
+  return buildRecapCard("Day status", averageReadinessText, lines);
+}
+
+// One decimal place, e.g. 3.6; enough to see a month-to-month change
+// without pretending to more precision than 1-5 answers have.
+function formatAverage(values) {
+  const total = values.reduce((sum, value) => sum + value, 0);
+  return (total / values.length).toFixed(1);
 }
 
 function renderMonthlyRecapMonthPicker() {
