@@ -83,6 +83,13 @@ Now in scope, built in small steps. First step: per-exercise double
 progression for template workouts (not free-form). Suggestions are hints:
 they may pre-fill steppers but never change logged data or workout templates.
 Volume landmarks and deload logic come later, each as its own step.
+
+Wellness tracking is in scope as its own step, before deload logic: one
+optional 1–5 "readiness to train" tap at session start, stored as a number.
+Skipping it must take no extra tap and no dialog; a skipped rating is stored
+as missing, never as a default value. Deload logic may later use it as a
+whole-body trigger.
+
 ## Out of scope for now
 
 Do not build, and do not add hooks or placeholders for:
