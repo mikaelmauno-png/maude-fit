@@ -291,6 +291,7 @@ function showMuscleStatsListScreen() {
   muscleStatsListScreen.hidden = false;
   renderBodyDiagram();
   renderMuscleStatsList();
+  renderDropDetectionReadout();
 }
 
 function showMuscleStatsDetailScreen(muscle) {
@@ -5415,6 +5416,104 @@ function renderWorkoutTemplateEditor() {
     rowElement.append(detailSpan, moveUpButton, moveDownButton, removeButton);
     listElement.appendChild(rowElement);
   });
+  renderSingleSlotMuscleNote();
+}
+
+// Drop detection (deload.js) needs at least two exercises across all
+// workouts that mainly train a muscle. The note is shown here, where it can
+// be acted on, and counts this workout as if it were saved already, so
+// adding or removing an exercise updates it straight away.
+function renderSingleSlotMuscleNote() {
+  const draft = appState.workoutTemplateDraft;
+  const templatesIfSaved = appState.database.workoutTemplates
+    .filter((template) => !template.isArchived && template.id !== draft.id)
+    .concat([draft]);
+  const singleSlotMuscles = findSingleSlotMuscles(templatesIfSaved, appState.database.exercises);
+
+  const noteElement = document.getElementById("singleSlotMuscleNote");
+  noteElement.hidden = singleSlotMuscles.length === 0;
+  const muscleNames = singleSlotMuscles.map((muscle) => MUSCLE_GROUP_LABELS[muscle]).join(", ");
+  const isOneMuscle = singleSlotMuscles.length === 1;
+  noteElement.textContent =
+    `Only one exercise across your workouts mainly trains: ${muscleNames}. ` +
+    `Performance drops can't be detected for ${isOneMuscle ? "it" : "these"}, so only ` +
+    `whole-body deloads will cover ${isOneMuscle ? "it" : "them"}. Adding one more ` +
+    `exercise that mainly trains ${isOneMuscle ? "it" : "one of them"}, in any workout, ` +
+    "changes that.";
+}
+
+
+// ---------------------------------------------------------------------------
+// TEMPORARY (deload step 2): drop-detection test view on Muscle stats.
+//
+// Shows what deload.js sees, one line per muscle, so the rules can be
+// checked against real training before they suggest anything. Remove this
+// section, and #dropDetectionReadout in index.html, when suggestions ship.
+// ---------------------------------------------------------------------------
+
+function describeHistoryKeyForReadout(timeline) {
+  const template = appState.database.workoutTemplates.find((candidate) => candidate.id === timeline.templateId);
+  const exercise = appState.database.exercises.find((candidate) => candidate.id === timeline.performedExerciseId);
+  return `${template ? template.name : "?"} · ${exercise ? exercise.name : "?"}`;
+}
+
+function describeNoiseForReadout(noise) {
+  const ruleText = `e1RM from sets with reps + RIR ≤ ${DROP_E1RM_MAX_REPS_PLUS_RIR}.`;
+  if (noise.sigmaHat === null) {
+    return `${ruleText} Not active yet: ${noise.pairCount} of ${DROP_MIN_NOISE_PAIRS} session pairs needed to measure noise.`;
+  }
+  return `${ruleText} Noise ${(noise.sigmaHat * 100).toFixed(1)}% from ${noise.pairCount} session pairs.`;
+}
+
+function describeMuscleForReadout(analysis, isActive) {
+  const name = MUSCLE_GROUP_LABELS[analysis.muscle];
+  if (!analysis.isDropTested) {
+    return `${name}: one main exercise, so whole-body deloads only.`;
+  }
+  // "No drop" must only be said when the muscle was actually checked, so
+  // the cases where it can't be come first.
+  if (analysis.slotsWithData === 0) {
+    return `${name}: ${analysis.mainSlotCount} main exercises, but none give a usable e1RM ` +
+      "(bodyweight sets, too many reps, or no RIR logged), so nothing can be checked.";
+  }
+  const coverage = `${name}: ${analysis.mainSlotCount} main exercises, ` +
+    `${analysis.slotsWithData} with usable data`;
+  if (!isActive) {
+    return `${coverage}.`;
+  }
+  if (analysis.readyKeyCount === 0) {
+    return `${coverage}; not enough history yet (${DROP_BASELINE_SESSIONS + DROP_RECENT_WINDOW_SESSIONS} usable sessions per exercise needed).`;
+  }
+  const parts = [`${coverage}, ${analysis.readyKeyCount} with enough history`];
+  for (const flag of analysis.pendingFlags) {
+    parts.push(`flagged ${formatShortDate(flag.at)} (${describeHistoryKeyForReadout(flag.timeline)}), waiting for ${DROP_PERSISTENCE_SESSIONS} more sessions`);
+  }
+  const latestConfirmation = analysis.confirmations[analysis.confirmations.length - 1];
+  if (latestConfirmation) {
+    parts.push(`drop confirmed ${formatShortDate(latestConfirmation.at)} (${latestConfirmation.route}, ${analysis.confirmations.length} in all)`);
+  }
+  if (analysis.pendingFlags.length === 0 && !latestConfirmation) {
+    parts.push("no drop");
+  }
+  return parts.join("; ") + ".";
+}
+
+function renderDropDetectionReadout() {
+  const listElement = document.getElementById("dropDetectionReadoutList");
+  listElement.innerHTML = "";
+  const { noise, muscles } = analyzeDropDetection(appState.database);
+  const lines = [describeNoiseForReadout(noise)];
+  const sortedMuscles = muscles.sort((a, b) =>
+    MUSCLE_GROUP_LABELS[a.muscle].localeCompare(MUSCLE_GROUP_LABELS[b.muscle])
+  );
+  for (const analysis of sortedMuscles) {
+    lines.push(describeMuscleForReadout(analysis, noise.sigmaHat !== null));
+  }
+  for (const line of lines) {
+    const itemElement = document.createElement("li");
+    itemElement.textContent = line;
+    listElement.appendChild(itemElement);
+  }
 }
 
 workoutTemplateNameInput.addEventListener("input", () => {

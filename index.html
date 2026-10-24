@@ -781,6 +781,14 @@
       </section>
 
       <ul id="muscleStatsList"></ul>
+
+      <!-- TEMPORARY (deload step 2): shows what the drop-detection rules in
+           deload.js see, so they can be watched on real data before they're
+           allowed to suggest anything. Removed when suggestions ship. -->
+      <section id="dropDetectionReadout">
+        <h2>Drop detection (test view)</h2>
+        <ul id="dropDetectionReadoutList"></ul>
+      </section>
     </section>
 
     <section id="muscleStatsDetailScreen" hidden>
@@ -825,6 +833,11 @@
       </label>
 
       <ul id="plannedExerciseList"></ul>
+
+      <!-- Which muscles only one exercise in all your workouts mainly
+           trains, since drop detection needs two (see deload.js). Filled
+           in by renderSingleSlotMuscleNote in app.js; hidden when none. -->
+      <p id="singleSlotMuscleNote" hidden></p>
 
       <div class="button-row">
         <button id="addPlannedExerciseButton">Add exercise</button>
@@ -941,6 +954,7 @@
        page by the time these run. -->
   <script src="schema.js"></script>
   <script src="progression.js"></script>
+  <script src="deload.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -1231,3 +1231,27 @@ h1 {
   background-color: #2a2a2a;
   color: #777777;
 }
+
+/* Template editor: which muscles drop detection can't cover (see
+   renderSingleSlotMuscleNote). Muted, since it's advice, not an error. */
+#singleSlotMuscleNote {
+  color: #b0b0b0;
+  font-size: 0.9rem;
+  margin: 0 0 16px;
+}
+
+/* TEMPORARY (deload step 2): the drop-detection test view on Muscle stats.
+   Plain small text; it's a diagnostic, removed when suggestions ship. */
+#dropDetectionReadout {
+  margin-top: 24px;
+}
+
+#dropDetectionReadoutList {
+  padding-left: 18px;
+  color: #b0b0b0;
+  font-size: 0.9rem;
+}
+
+#dropDetectionReadoutList li {
+  margin-bottom: 8px;
+}
