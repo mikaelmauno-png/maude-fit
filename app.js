@@ -5469,18 +5469,20 @@ function renderSingleSlotMuscleNote() {
   const templatesIfSaved = appState.database.workoutTemplates
     .filter((template) => !template.isArchived && template.id !== draft.id)
     .concat([draft]);
-  const singleSlotMuscles = findSingleSlotMuscles(templatesIfSaved, appState.database.exercises);
+  const hasBodyweightLog = appState.database.bodyweightEntries.length > 0;
+  const singleSlotMuscles = findSingleSlotMuscles(templatesIfSaved, appState.database.exercises, hasBodyweightLog);
 
   const noteElement = document.getElementById("singleSlotMuscleNote");
   noteElement.hidden = singleSlotMuscles.length === 0;
   const muscleNames = singleSlotMuscles.map((muscle) => MUSCLE_GROUP_LABELS[muscle]).join(", ");
   const isOneMuscle = singleSlotMuscles.length === 1;
+  const lowestRepsMinAllowed = DROP_E1RM_MAX_REPS_PLUS_RIR - TARGET_RIR_ASSUMED;
   noteElement.textContent =
-    `Only one exercise across your workouts mainly trains: ${muscleNames}. ` +
-    `Performance drops can't be detected for ${isOneMuscle ? "it" : "these"}, so only ` +
-    `whole-body deloads will cover ${isOneMuscle ? "it" : "them"}. Adding one more ` +
-    `exercise that mainly trains ${isOneMuscle ? "it" : "one of them"}, in any workout, ` +
-    "changes that.";
+    "Spotting a performance drop takes two exercises, in any of your workouts, " +
+    "that mainly train a muscle and give a usable strength estimate (a rep range " +
+    `starting at ${lowestRepsMinAllowed} or fewer, and a logged bodyweight for ` +
+    `bodyweight exercises). Only one does for: ${muscleNames}. Until there's a ` +
+    `second, only whole-body deloads will cover ${isOneMuscle ? "it" : "them"}.`;
 }
 
 
@@ -5492,63 +5494,76 @@ function renderSingleSlotMuscleNote() {
 // section, and #dropDetectionReadout in index.html, when suggestions ship.
 // ---------------------------------------------------------------------------
 
-function describeHistoryKeyForReadout(timeline) {
-  const template = appState.database.workoutTemplates.find((candidate) => candidate.id === timeline.templateId);
-  const exercise = appState.database.exercises.find((candidate) => candidate.id === timeline.performedExerciseId);
+function describeSlotForReadout(templateId, exerciseId) {
+  const template = appState.database.workoutTemplates.find((candidate) => candidate.id === templateId);
+  const exercise = findExerciseById(exerciseId);
   return `${template ? template.name : "?"} · ${exercise ? exercise.name : "?"}`;
 }
 
-function describeNoiseForReadout(noise) {
-  const ruleText = `e1RM from sets with reps + RIR ≤ ${DROP_E1RM_MAX_REPS_PLUS_RIR}.`;
+const NOISE_POOL_LABELS = { standard: "standard slots", highRep: "high-rep slots" };
+
+function describeNoisePoolForReadout(pool, noise) {
   if (noise.sigmaHat === null) {
-    return `${ruleText} Not active yet: ${noise.pairCount} of ${DROP_MIN_NOISE_PAIRS} session pairs needed to measure noise.`;
+    return `Noise, ${NOISE_POOL_LABELS[pool]}: not active yet, ${noise.pairCount} of ${DROP_MIN_NOISE_PAIRS} session pairs.`;
   }
-  return `${ruleText} Noise ${(noise.sigmaHat * 100).toFixed(1)}% from ${noise.pairCount} session pairs.`;
+  return `Noise, ${NOISE_POOL_LABELS[pool]}: ${(noise.sigmaHat * 100).toFixed(1)}% from ${noise.pairCount} session pairs.`;
 }
 
-function describeMuscleForReadout(analysis, isActive) {
+const KEY_STATUS_TEXTS = {
+  noRecentData: () => "no usable sets lately",
+  collecting: (usableSessions) => `collecting data (${Math.min(usableSessions, DROP_SESSIONS_NEEDED)}/${DROP_SESSIONS_NEEDED} sessions)`,
+  waitingForNoise: () => "enough sessions, waiting for the noise estimate",
+  watching: () => "watching"
+};
+
+// "Treeni 1 · Bench: watching" for each of a muscle's exercises. A gym
+// swap or a second gym's machine shows as its own line, since it keeps
+// its own history.
+function describeKeyForReadout(key) {
+  if (key.timeline === null) {
+    const slotText = describeSlotForReadout(key.slot.templateId, key.slot.exerciseId);
+    return `${slotText}: ${KEY_STATUS_TEXTS[key.status](key.usableSessions)}`;
+  }
+  const slotText = describeSlotForReadout(key.timeline.templateId, key.timeline.performedExerciseId);
+  const gym = appState.database.gyms.find((candidate) => candidate.id === key.timeline.gymId);
+  const gymText = key.timeline.gymId === null ? "" : ` (${gym ? gym.name : "no gym recorded"})`;
+  return `${slotText}${gymText}: ${KEY_STATUS_TEXTS[key.status](key.usableSessions)}`;
+}
+
+function describeMuscleForReadout(analysis) {
   const name = MUSCLE_GROUP_LABELS[analysis.muscle];
+  if (analysis.mainSlotCount === 0) {
+    return `${name}: no exercise gives a usable strength estimate, so only whole-body deloads apply.`;
+  }
   if (!analysis.isDropTested) {
-    return `${name}: one main exercise, so whole-body deloads only.`;
+    return `${name}: one main exercise slot, so only whole-body deloads apply.`;
   }
-  // "No drop" must only be said when the muscle was actually checked, so
-  // the cases where it can't be come first.
-  if (analysis.slotsWithData === 0) {
-    return `${name}: ${analysis.mainSlotCount} main exercises, but none give a usable e1RM ` +
-      "(bodyweight sets, too many reps, or no RIR logged), so nothing can be checked.";
-  }
-  const coverage = `${name}: ${analysis.mainSlotCount} main exercises, ` +
-    `${analysis.slotsWithData} with usable data`;
-  if (!isActive) {
-    return `${coverage}.`;
-  }
-  if (analysis.readyKeyCount === 0) {
-    return `${coverage}; not enough history yet (${DROP_BASELINE_SESSIONS + DROP_RECENT_WINDOW_SESSIONS} usable sessions per exercise needed).`;
-  }
-  const parts = [`${coverage}, ${analysis.readyKeyCount} with enough history`];
+  const parts = analysis.keys.map(describeKeyForReadout);
   for (const flag of analysis.pendingFlags) {
-    parts.push(`flagged ${formatShortDate(flag.at)} (${describeHistoryKeyForReadout(flag.timeline)}), waiting for ${DROP_PERSISTENCE_SESSIONS} more sessions`);
+    const slotText = describeSlotForReadout(flag.timeline.templateId, flag.timeline.performedExerciseId);
+    parts.push(`flagged ${formatShortDate(flag.at)} (${slotText}), waiting for ${DROP_PERSISTENCE_SESSIONS} more sessions`);
   }
   const latestConfirmation = analysis.confirmations[analysis.confirmations.length - 1];
   if (latestConfirmation) {
     parts.push(`drop confirmed ${formatShortDate(latestConfirmation.at)} (${latestConfirmation.route}, ${analysis.confirmations.length} in all)`);
   }
-  if (analysis.pendingFlags.length === 0 && !latestConfirmation) {
-    parts.push("no drop");
-  }
-  return parts.join("; ") + ".";
+  return `${name}: ${parts.join("; ")}.`;
 }
 
 function renderDropDetectionReadout() {
   const listElement = document.getElementById("dropDetectionReadoutList");
   listElement.innerHTML = "";
-  const { noise, muscles } = analyzeDropDetection(appState.database);
-  const lines = [describeNoiseForReadout(noise)];
+  const { noiseByPool, muscles } = analyzeDropDetection(appState.database);
+  const lines = [
+    `e1RM from sets with reps + RIR ≤ ${DROP_E1RM_MAX_REPS_PLUS_RIR}.`,
+    describeNoisePoolForReadout("standard", noiseByPool.standard),
+    describeNoisePoolForReadout("highRep", noiseByPool.highRep)
+  ];
   const sortedMuscles = muscles.sort((a, b) =>
     MUSCLE_GROUP_LABELS[a.muscle].localeCompare(MUSCLE_GROUP_LABELS[b.muscle])
   );
   for (const analysis of sortedMuscles) {
-    lines.push(describeMuscleForReadout(analysis, noise.sigmaHat !== null));
+    lines.push(describeMuscleForReadout(analysis));
   }
   for (const line of lines) {
     const itemElement = document.createElement("li");

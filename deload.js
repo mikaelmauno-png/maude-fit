@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Training recommendations: performance-drop detection (deload design v5).
+// Training recommendations: performance-drop detection (deload design v5.2).
 //
 // Watches each exercise's estimated one-rep max (e1RM) over time and spots a
 // real drop in performance — the sign that fatigue has built up and a
@@ -23,18 +23,30 @@
 //                history is per gym.
 // - window:      the 3 most recent usable sessions of a key.
 // - baseline:    the 6 usable sessions before the window, to compare with.
+// - noise pool:  "standard" or "highRep" keys, each with its own noise
+//                estimate (see section "Noise" below).
 // ---------------------------------------------------------------------------
 
 
-// The rule's numbers, from the deload design (v5 section 11). Named here so
-// a change is one edit, and so the readout can show which values are in use.
+// The rule's numbers, from the deload design (v5.2 section 11). Named here
+// so a change is one edit, and so the readout can show which values are in
+// use.
 const DROP_RECENT_WINDOW_SESSIONS = 3;
 const DROP_BASELINE_SESSIONS = 6;
+const DROP_SESSIONS_NEEDED = DROP_BASELINE_SESSIONS + DROP_RECENT_WINDOW_SESSIONS;
 const DROP_PERSISTENCE_SESSIONS = 2;
 const DROP_THRESHOLD_K = 1.5;
-// Sets with more reps + RIR than this give a less reliable e1RM, so they're
-// left out. Still under discussion: it removes most 8-12 rep exercises.
-const DROP_E1RM_MAX_REPS_PLUS_RIR = 10;
+// Sets with more reps + RIR than this give too unreliable an e1RM. 15 (not
+// the usual 10) because each slot is only ever compared with itself at the
+// same rep range, so the formula's error at high reps mostly cancels out.
+const DROP_E1RM_MAX_REPS_PLUS_RIR = 15;
+// Templates don't store a target RIR yet, so a slot's rep range is judged
+// against the most cautious one in use (3 reps in reserve). Replace with the
+// real target once goal settings exist.
+const TARGET_RIR_ASSUMED = 3;
+// Slots aimed at more than 10 reps (by the middle of their rep range) wobble
+// more from session to session, so they get their own noise estimate.
+const HIGH_REP_MIDPOINT_ABOVE = 10;
 const DROP_MIN_NOISE_PAIRS = 30;
 const DROP_MAX_PAIR_GAP_DAYS = 28;
 // A change bigger than this between two sessions is far more likely a typo
@@ -68,17 +80,34 @@ function findMainMuscle(exercise) {
 
 // Epley's formula, with reps in reserve added to the reps actually done:
 // a set of 8 with 2 left in the tank is treated like a 10-rep max.
-function estimatedOneRepMax(set) {
-  return set.load * (1 + (set.reps + set.rir) / 30);
+// `totalLoad` is everything moved: for a bodyweight exercise, the body plus
+// what was added.
+function estimatedOneRepMax(totalLoad, set) {
+  return totalLoad * (1 + (set.reps + set.rir) / 30);
 }
 
-// Warmups, sets without a logged RIR, and bodyweight sets (load 0, where the
-// formula would give 0) can't give a usable e1RM.
-function isUsableForEstimatedOneRepMax(set) {
+// Warmups and sets without a logged RIR can't give a usable e1RM, nor can
+// one with nothing moved (a bodyweight set when no bodyweight is known).
+function isUsableForEstimatedOneRepMax(set, totalLoad) {
   return !set.isWarmup
     && typeof set.rir === "number"
-    && set.load > 0
+    && totalLoad > 0
     && set.reps + set.rir <= DROP_E1RM_MAX_REPS_PLUS_RIR;
+}
+
+// The bodyweight that applied to a workout: the latest weigh-in logged
+// before the workout ended, or the earliest one there is if the workout is
+// older than every weigh-in. Using the weight of that day (not today's)
+// matters: losing 3 kg mustn't make every past pull-up look 3 kg weaker.
+// null when no bodyweight has ever been logged. `entriesOldestFirst` must be
+// sorted by loggedAt.
+function findBodyweightForSession(entriesOldestFirst, session) {
+  if (entriesOldestFirst.length === 0) {
+    return null;
+  }
+  const loggedBefore = entriesOldestFirst.filter((entry) => entry.loggedAt <= session.endedAt);
+  const chosen = loggedBefore.length > 0 ? loggedBefore[loggedBefore.length - 1] : entriesOldestFirst[0];
+  return chosen.weightKg;
 }
 
 
@@ -158,17 +187,27 @@ function describeHistoryKey(session, performedExercise) {
   };
 }
 
-// Every slot in the given templates, grouped by the main muscle of its
-// exercise, as a Map from muscle to a list of { slotId, templateId,
-// exerciseId }. Takes the templates as a parameter so the template editor
-// can ask "what if this draft were saved?".
-function findMainSlotsByMuscle(templates, exercises) {
+// Whether a slot can ever produce a usable e1RM: its rep range has to fit
+// under the cap (judged at the assumed target RIR), and a bodyweight
+// exercise needs a bodyweight to add its load to.
+function canSlotGiveEstimatedOneRepMax(planned, exercise, hasBodyweightLog) {
+  const fitsUnderCap = planned.targetRepsMin + TARGET_RIR_ASSUMED <= DROP_E1RM_MAX_REPS_PLUS_RIR;
+  const hasLoad = !exercise.isBodyweight || hasBodyweightLog;
+  return fitsUnderCap && hasLoad;
+}
+
+// The "main slots" of each muscle in the given templates: slots whose
+// exercise mainly trains it and that can give a usable e1RM. A Map from
+// muscle to a list of { slotId, templateId, exerciseId }. Takes the
+// templates as a parameter so the template editor can ask "what if this
+// draft were saved?".
+function findMainSlotsByMuscle(templates, exercises, hasBodyweightLog) {
   const slotsByMuscle = new Map();
   for (const template of templates) {
     for (const planned of template.plannedExercises) {
       const exercise = exercises.find((candidate) => candidate.id === planned.exerciseId);
       const muscle = exercise ? findMainMuscle(exercise) : null;
-      if (muscle === null) {
+      if (muscle === null || !canSlotGiveEstimatedOneRepMax(planned, exercise, hasBodyweightLog)) {
         continue;
       }
       if (!slotsByMuscle.has(muscle)) {
@@ -192,9 +231,9 @@ function isMuscleDropTested(mainSlots) {
 }
 
 // Muscles with exactly one main slot, for the template editor's note.
-function findSingleSlotMuscles(templates, exercises) {
+function findSingleSlotMuscles(templates, exercises, hasBodyweightLog) {
   const singleSlotMuscles = [];
-  for (const [muscle, mainSlots] of findMainSlotsByMuscle(templates, exercises)) {
+  for (const [muscle, mainSlots] of findMainSlotsByMuscle(templates, exercises, hasBodyweightLog)) {
     if (mainSlots.length === 1) {
       singleSlotMuscles.push(muscle);
     }
@@ -231,13 +270,41 @@ function wasDoneAsDeload(session, exerciseId) {
 }
 
 // The best usable e1RM among one exercise's sets in one session, or null
-// when none of them qualify.
-function findBestEstimatedOneRepMax(sets) {
-  const usableSets = sets.filter(isUsableForEstimatedOneRepMax);
-  if (usableSets.length === 0) {
+// when none of them qualify. `bodyweightKg` is only used (and only needed)
+// for a bodyweight exercise.
+function findBestEstimatedOneRepMax(sets, exercise, bodyweightKg) {
+  const extraLoad = exercise.isBodyweight ? bodyweightKg : 0;
+  if (extraLoad === null) {
     return null;
   }
-  return Math.max(...usableSets.map(estimatedOneRepMax));
+  const estimates = sets
+    .filter((set) => isUsableForEstimatedOneRepMax(set, set.load + extraLoad))
+    .map((set) => estimatedOneRepMax(set.load + extraLoad, set));
+  return estimates.length > 0 ? Math.max(...estimates) : null;
+}
+
+// Which noise pool a slot belongs to, from the middle of its template rep
+// range. The template's planned entry is still there for archived
+// templates; for a slot since taken out of its template, the middle of the
+// reps actually logged stands in.
+function findNoisePool(database, templateId, originalExerciseId, loggedReps) {
+  const template = database.workoutTemplates.find((candidate) => candidate.id === templateId);
+  const planned = template
+    ? template.plannedExercises.find((candidate) => candidate.exerciseId === originalExerciseId)
+    : null;
+  const midpoint = planned
+    ? (planned.targetRepsMin + planned.targetRepsMax) / 2
+    : medianOf(loggedReps);
+  return midpoint > HIGH_REP_MIDPOINT_ABOVE ? "highRep" : "standard";
+}
+
+function medianOf(values) {
+  if (values.length === 0) {
+    return 0;
+  }
+  const sorted = values.slice().sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
 // Groups sets by session, then by exercise, in one pass over the sets list:
@@ -257,7 +324,7 @@ function groupSetsBySessionAndExercise(sets) {
   return groups;
 }
 
-// One timeline per history key: { ...key description, entries: [...] },
+// One timeline per history key: { ...key description, pool, entries },
 // each entry being one finished session in which that exercise was done.
 // Entries without a usable e1RM are kept (with estimatedOneRepMax null),
 // because they still mark "the first session after a deload or a break".
@@ -267,6 +334,9 @@ function buildHistoryTimelines(database) {
     .sort((a, b) => (a.startedAt < b.startedAt ? -1 : 1));
   const breakEndTimes = findBreakEndTimes(finishedSessions);
   const setGroups = groupSetsBySessionAndExercise(database.sets);
+  const bodyweightEntries = database.bodyweightEntries
+    .slice()
+    .sort((a, b) => (a.loggedAt < b.loggedAt ? -1 : 1));
   const timelinesByKey = new Map();
 
   for (const session of finishedSessions) {
@@ -278,14 +348,16 @@ function buildHistoryTimelines(database) {
         continue;
       }
       if (!timelinesByKey.has(keyDescription.key)) {
-        timelinesByKey.set(keyDescription.key, { ...keyDescription, entries: [] });
+        timelinesByKey.set(keyDescription.key, { ...keyDescription, loggedReps: [], entries: [] });
       }
-      const entries = timelinesByKey.get(keyDescription.key).entries;
+      const timeline = timelinesByKey.get(keyDescription.key);
+      const entries = timeline.entries;
       const previousEntry = entries.length > 0 ? entries[entries.length - 1] : null;
+      timeline.loggedReps.push(...sets.filter((set) => !set.isWarmup).map((set) => set.reps));
       entries.push({
         session,
         startedAt: session.startedAt,
-        estimatedOneRepMax: findBestEstimatedOneRepMax(sets),
+        estimatedOneRepMax: findBestEstimatedOneRepMax(sets, exercise, findBodyweightForSession(bodyweightEntries, session)),
         category: categorizeSession(session),
         isDeload: wasDoneAsDeload(session, exerciseId),
         isFirstAfterDeload: previousEntry !== null && previousEntry.isDeload,
@@ -294,7 +366,11 @@ function buildHistoryTimelines(database) {
       });
     }
   }
-  return Array.from(timelinesByKey.values());
+  const timelines = Array.from(timelinesByKey.values());
+  for (const timeline of timelines) {
+    timeline.pool = findNoisePool(database, timeline.templateId, timeline.originalExerciseId, timeline.loggedReps);
+  }
+  return timelines;
 }
 
 
@@ -348,15 +424,25 @@ function standardDeviationOf(values) {
   return Math.sqrt(sumOfSquares / (values.length - 1));
 }
 
-// Returns { pairCount, sigmaHat }; sigmaHat is null until there are enough
-// pairs to trust it. There's deliberately no default to fall back on: a
-// guessed noise level would make the test look precise when it isn't.
+// Returns { pairCount, sigmaHat } for one pool's keys; sigmaHat is null
+// until there are enough pairs to trust it. There's deliberately no default
+// to fall back on: a guessed noise level would make the test look precise
+// when it isn't.
 function estimateNoise(timelines) {
   const changes = collectNoiseChanges(timelines);
   if (changes.length < DROP_MIN_NOISE_PAIRS) {
     return { pairCount: changes.length, sigmaHat: null };
   }
   return { pairCount: changes.length, sigmaHat: standardDeviationOf(changes) / Math.SQRT2 };
+}
+
+// One estimate per pool: high-rep slots are measured separately, so their
+// extra wobble doesn't make the standard slots' test less sensitive.
+function estimateNoiseByPool(timelines) {
+  return {
+    standard: estimateNoise(timelines.filter((timeline) => timeline.pool === "standard")),
+    highRep: estimateNoise(timelines.filter((timeline) => timeline.pool === "highRep"))
+  };
 }
 
 
@@ -438,10 +524,12 @@ function scanTimelineForDrops(timeline, sigmaHat) {
         events.push({ type: isConfirmed ? "confirmed" : "cleared", at: entry.startedAt, frozenBaseline: pendingFlag.frozenBaseline });
         pendingFlag = null;
       }
-      return;
     }
 
-    if (evaluation !== null && evaluation.isFlagged) {
+    // Checked even on the session that just settled an earlier flag: that
+    // session can start a new flag straight away, as in the design's
+    // simulation, rather than being skipped.
+    if (pendingFlag === null && evaluation !== null && evaluation.isFlagged) {
       pendingFlag = { at: entry.startedAt, frozenBaseline: evaluation.baselineAverage, persistenceEntries: [] };
       events.push({ type: "flagged", at: entry.startedAt, frozenBaseline: evaluation.baselineAverage });
     }
@@ -494,35 +582,63 @@ function findCrossSlotConfirmations(scannedTimelines) {
   return confirmationTimes;
 }
 
+// What one history key is doing right now, for the status lines. Each
+// case is spelled out so a muscle is never shown as watched when it isn't:
+// - "noRecentData":    none of its last 3 sessions gave a usable e1RM
+// - "collecting":      fewer usable sessions than the rule needs so far
+// - "waitingForNoise": enough sessions, but its noise pool can't be
+//                      measured yet
+// - "watching":        the rule is running on it
+function describeKeyStatus(timeline, scan, sigmaHat) {
+  const usableSessions = timeline.entries.filter(isWindowEligible).length;
+  const lastEntries = timeline.entries.slice(-DROP_RECENT_WINDOW_SESSIONS);
+  if (lastEntries.every((entry) => entry.estimatedOneRepMax === null)) {
+    return { status: "noRecentData", usableSessions };
+  }
+  if (sigmaHat === null) {
+    const hasEnough = usableSessions >= DROP_SESSIONS_NEEDED;
+    return { status: hasEnough ? "waitingForNoise" : "collecting", usableSessions };
+  }
+  return { status: scan.isReady ? "watching" : "collecting", usableSessions };
+}
+
 // Everything known about one muscle, for the readout. `timelines` are the
 // muscle's own keys (those whose performed exercise mainly trains it, in
-// one of its main slots).
-function analyzeMuscle(muscle, mainSlots, timelines, sigmaHat) {
+// one of its main slots). Each key is judged with its own pool's noise.
+function analyzeMuscle(muscle, mainSlots, timelines, noiseByPool) {
   const result = {
     muscle,
     mainSlotCount: mainSlots.length,
     isDropTested: isMuscleDropTested(mainSlots),
-    slotsWithData: new Set(
-      timelines.filter((timeline) => timeline.entries.some(isWindowEligible)).map((timeline) => timeline.slotId)
-    ).size,
-    readyKeyCount: 0,
+    keys: [],
     pendingFlags: [],
     confirmations: []
   };
-  if (!result.isDropTested || sigmaHat === null) {
+  if (!result.isDropTested) {
     return result;
   }
 
-  const scannedTimelines = timelines.map((timeline) => ({ timeline, scan: scanTimelineForDrops(timeline, sigmaHat) }));
-  for (const { timeline, scan } of scannedTimelines) {
-    if (scan.isReady) {
-      result.readyKeyCount += 1;
+  const scannedTimelines = [];
+  for (const timeline of timelines) {
+    const sigmaHat = noiseByPool[timeline.pool].sigmaHat;
+    const scan = sigmaHat === null ? null : scanTimelineForDrops(timeline, sigmaHat);
+    result.keys.push({ timeline, ...describeKeyStatus(timeline, scan, sigmaHat) });
+    if (scan === null) {
+      continue;
     }
+    scannedTimelines.push({ timeline, scan });
     if (scan.pendingFlag !== null) {
       result.pendingFlags.push({ timeline, ...scan.pendingFlag });
     }
     for (const event of scan.events.filter((candidate) => candidate.type === "confirmed")) {
       result.confirmations.push({ at: event.at, route: "persistence", timeline });
+    }
+  }
+  // A main slot not trained yet has no timeline, but still belongs in the
+  // status: it's collecting data from zero.
+  for (const slot of mainSlots) {
+    if (!timelines.some((timeline) => timeline.slotId === slot.slotId)) {
+      result.keys.push({ timeline: null, slot, status: "collecting", usableSessions: 0 });
     }
   }
   for (const at of findCrossSlotConfirmations(scannedTimelines)) {
@@ -532,13 +648,31 @@ function analyzeMuscle(muscle, mainSlots, timelines, sigmaHat) {
   return result;
 }
 
-// The whole picture: the noise estimate plus one analysis per muscle that
-// has a main slot in an active workout template.
+// Muscles that some active workout mainly trains, but with no slot able to
+// give a usable e1RM (e.g. only bodyweight pull-ups and no bodyweight
+// logged). Listed so they aren't silently missing from the status.
+function findMusclesWithoutMainSlots(activeTemplates, exercises, mainSlotsByMuscle) {
+  const muscles = new Set();
+  for (const template of activeTemplates) {
+    for (const planned of template.plannedExercises) {
+      const exercise = exercises.find((candidate) => candidate.id === planned.exerciseId);
+      const muscle = exercise ? findMainMuscle(exercise) : null;
+      if (muscle !== null && !mainSlotsByMuscle.has(muscle)) {
+        muscles.add(muscle);
+      }
+    }
+  }
+  return Array.from(muscles);
+}
+
+// The whole picture: the noise estimate per pool, plus one analysis per
+// muscle that an active workout template mainly trains.
 function analyzeDropDetection(database) {
   const activeTemplates = database.workoutTemplates.filter((template) => !template.isArchived);
-  const mainSlotsByMuscle = findMainSlotsByMuscle(activeTemplates, database.exercises);
+  const hasBodyweightLog = database.bodyweightEntries.length > 0;
+  const mainSlotsByMuscle = findMainSlotsByMuscle(activeTemplates, database.exercises, hasBodyweightLog);
   const timelines = buildHistoryTimelines(database);
-  const noise = estimateNoise(timelines);
+  const noiseByPool = estimateNoiseByPool(timelines);
 
   const muscles = [];
   for (const [muscle, mainSlots] of mainSlotsByMuscle) {
@@ -547,7 +681,10 @@ function analyzeDropDetection(database) {
       const performedExercise = database.exercises.find((candidate) => candidate.id === timeline.performedExerciseId);
       return mainSlotIds.has(timeline.slotId) && findMainMuscle(performedExercise) === muscle;
     });
-    muscles.push(analyzeMuscle(muscle, mainSlots, muscleTimelines, noise.sigmaHat));
+    muscles.push(analyzeMuscle(muscle, mainSlots, muscleTimelines, noiseByPool));
   }
-  return { noise, muscles };
+  for (const muscle of findMusclesWithoutMainSlots(activeTemplates, database.exercises, mainSlotsByMuscle)) {
+    muscles.push(analyzeMuscle(muscle, [], [], noiseByPool));
+  }
+  return { noiseByPool, muscles };
 }
