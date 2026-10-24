@@ -427,7 +427,7 @@ function applyReplacement(session, planned) {
   return {
     ...planned,
     exerciseId: replacement.replacementExerciseId,
-    targetLoad: previous ? previous.load : 20,
+    targetLoad: previous ? previous.load : defaultStartingLoad(findExerciseById(replacement.replacementExerciseId)),
     // Any goal set by hand was for the original, so it doesn't apply.
     targetLoadSetAt: null,
     replacesExerciseId: planned.exerciseId
@@ -556,7 +556,7 @@ function renderFreeformReview() {
 
     const weightSpan = document.createElement("span");
     weightSpan.className = "set-pill-weight";
-    weightSpan.textContent = `${set.load} kg`;
+    weightSpan.textContent = formatLoad(set.load, exercise);
 
     const repsSpan = document.createElement("span");
     repsSpan.className = "set-pill-reps";
@@ -596,7 +596,7 @@ function buildSetPill(loggedSet, planned, suggestion, setIndex) {
   weightSpan.className = "set-pill-weight";
   const goalOverrides = isGoalOverride(planned, suggestion);
   const pendingLoad = suggestion && !goalOverrides ? suggestion.load : planned.targetLoad;
-  weightSpan.textContent = `${loggedSet ? loggedSet.load : pendingLoad} kg`;
+  weightSpan.textContent = formatLoad(loggedSet ? loggedSet.load : pendingLoad, findExerciseById(planned.exerciseId));
 
   // This set's own target from the suggestion ("7"), or the template's rep
   // range ("6-8") when there's no suggestion to follow.
@@ -718,12 +718,12 @@ function isGoalOverride(planned, suggestion) {
 // card and the set panel. While a goal overrides the suggestion, the
 // suggestion is still mentioned, so it's visible what the rules would
 // have said.
-function describeProgression(suggestion, goalLoad, goalOverrides) {
+function describeProgression(suggestion, goalLoad, goalOverrides, exercise) {
   const repsText = describeSuggestedReps(suggestion);
   if (goalOverrides) {
-    return `Your goal: ${goalLoad} kg (suggestion was ${suggestion.load} kg × ${repsText}).`;
+    return `Your goal: ${formatLoad(goalLoad, exercise)} (suggestion was ${formatLoad(suggestion.load, exercise)} × ${repsText}).`;
   }
-  return `Suggested: ${suggestion.load} kg × ${repsText}. ${suggestion.reason}`;
+  return `Suggested: ${formatLoad(suggestion.load, exercise)} × ${repsText}. ${suggestion.reason}`;
 }
 
 // "8" when every set has the same target, "8 · 7 · 7" when they differ.
@@ -737,7 +737,9 @@ function describeSuggestedReps(suggestion) {
 function buildSuggestionLine(planned, suggestion) {
   const lineElement = document.createElement("p");
   lineElement.className = "progression-suggestion";
-  lineElement.textContent = describeProgression(suggestion, planned.targetLoad, isGoalOverride(planned, suggestion));
+  lineElement.textContent = describeProgression(
+    suggestion, planned.targetLoad, isGoalOverride(planned, suggestion), findExerciseById(planned.exerciseId)
+  );
   return lineElement;
 }
 
@@ -1907,20 +1909,40 @@ function describeOtherWorkoutNote(pastSession, exerciseId) {
 }
 
 // "100 kg × 8 · 8 · 7" when every set used the same weight (the usual
-// case), otherwise each set in full: "100×8 · 100×8 · 97.5×7".
+// case), otherwise each set in full: "100×8 · 100×8 · 97.5×7". For a
+// bodyweight exercise the loads are what was added: "BW + 10 kg × 8 · 8".
 function formatLoadsAndReps(sets) {
+  const exercise = findExerciseById(sets[0].exerciseId);
   const everySetSameLoad = sets.every((set) => set.load === sets[0].load);
   if (everySetSameLoad) {
-    return `${sets[0].load} kg × ${sets.map((set) => set.reps).join(" · ")}`;
+    return `${formatLoad(sets[0].load, exercise)} × ${sets.map((set) => set.reps).join(" · ")}`;
   }
-  return sets.map((set) => `${set.load}×${set.reps}`).join(" · ");
+  const prefix = exercise && exercise.isBodyweight ? "BW + " : "";
+  return sets.map((set) => `${prefix}${set.load}×${set.reps}`).join(" · ");
+}
+
+
+// "Leg press (gym-specific)", "Pull-up (bodyweight)", or just the name.
+function describeExerciseNameWithKind(exercise) {
+  const kinds = [];
+  if (exercise.isGymSpecific) {
+    kinds.push("gym-specific");
+  }
+  if (exercise.isBodyweight) {
+    kinds.push("bodyweight");
+  }
+  return kinds.length > 0 ? `${exercise.name} (${kinds.join(", ")})` : exercise.name;
+}
+
+function findExerciseById(exerciseId) {
+  return appState.database.exercises.find((candidate) => candidate.id === exerciseId);
 }
 
 // Redraws the stepper values and the RIR row's visibility from
 // `appState.setDraft`. Called after every stepper button press and every
 // warmup toggle, so the panel always shows the current draft.
 function renderSetDraft() {
-  loadValueElement.textContent = `${appState.setDraft.load} kg`;
+  loadValueElement.textContent = formatLoad(appState.setDraft.load, findExerciseById(appState.setDraft.exerciseId));
   repsValueElement.textContent = appState.setDraft.reps;
   rirValueElement.textContent = appState.setDraft.rir;
   rirRow.hidden = appState.setDraft.isWarmup;
@@ -1964,7 +1986,7 @@ function openSetEntryPanel(exerciseId, planTarget = null) {
   const suggestionToFollow = goalOverrides ? null : suggestion;
   appState.setDraft = {
     exerciseId,
-    load: chooseStartingLoad(planTarget, suggestionToFollow, previous),
+    load: chooseStartingLoad(planTarget, suggestionToFollow, previous, exercise),
     reps: chooseStartingReps(planTarget, suggestionToFollow, previous),
     rir: previous ? previous.rir : 2,
     isWarmup: false
@@ -1975,14 +1997,14 @@ function openSetEntryPanel(exerciseId, planTarget = null) {
   deleteSetButton.hidden = true;
 
   if (planTarget) {
-    plannedTarget.textContent = `Planned: ${formatRepRange(planTarget.repsMin, planTarget.repsMax)} reps @ ${planTarget.load} kg`;
+    plannedTarget.textContent = `Planned: ${formatRepRange(planTarget.repsMin, planTarget.repsMax)} reps @ ${formatLoad(planTarget.load, exercise)}`;
     plannedTarget.hidden = false;
   } else {
     plannedTarget.hidden = true;
   }
 
   if (suggestion) {
-    progressionSuggestion.textContent = describeProgression(suggestion, planTarget.load, goalOverrides);
+    progressionSuggestion.textContent = describeProgression(suggestion, planTarget.load, goalOverrides, exercise);
     progressionSuggestion.hidden = false;
   } else {
     progressionSuggestion.hidden = true;
@@ -1997,7 +2019,7 @@ function openSetEntryPanel(exerciseId, planTarget = null) {
 // Where the load stepper starts: the progression suggestion if there is
 // one, else the workout template's planned load, else last time's load, else an empty
 // Olympic bar (20 kg) for an exercise that's never been done.
-function chooseStartingLoad(planTarget, suggestion, previous) {
+function chooseStartingLoad(planTarget, suggestion, previous, exercise) {
   // Once a set's already been logged for this exercise this session, later
   // sets default to that actual weight instead of resetting back to the
   // suggestion or the workout template's static target every time — the target only
@@ -2012,7 +2034,13 @@ function chooseStartingLoad(planTarget, suggestion, previous) {
   if (planTarget) {
     return planTarget.load;
   }
-  return previous ? previous.load : 20;
+  return previous ? previous.load : defaultStartingLoad(exercise);
+}
+
+// For an exercise never done before: an empty Olympic bar (20 kg), or
+// nothing added for a bodyweight exercise, whose load is only what's added.
+function defaultStartingLoad(exercise) {
+  return exercise && exercise.isBodyweight ? 0 : 20;
 }
 
 // Reps deliberately don't carry forward the same way load does: each set
@@ -2425,7 +2453,7 @@ function buildExerciseManageRow(exercise) {
 
   const nameSpan = document.createElement("span");
   nameSpan.className = "exercise-manage-name";
-  nameSpan.textContent = exercise.isGymSpecific ? `${exercise.name} (gym-specific)` : exercise.name;
+  nameSpan.textContent = describeExerciseNameWithKind(exercise);
   infoElement.appendChild(nameSpan);
 
   const incrementSpan = document.createElement("span");
@@ -2498,6 +2526,16 @@ function buildExerciseManageRow(exercise) {
     renderExercisesManageList();
   });
 
+  const bodyweightToggleButton = document.createElement("button");
+  bodyweightToggleButton.type = "button";
+  bodyweightToggleButton.className = "small-button";
+  bodyweightToggleButton.textContent = exercise.isBodyweight ? "Not bodyweight" : "Mark bodyweight";
+  bodyweightToggleButton.addEventListener("click", () => {
+    exercise.isBodyweight = !exercise.isBodyweight;
+    saveDatabase(appState.database);
+    renderExercisesManageList();
+  });
+
   const archiveButton = document.createElement("button");
   archiveButton.type = "button";
   archiveButton.className = "small-button";
@@ -2513,7 +2551,7 @@ function buildExerciseManageRow(exercise) {
 
   const actionsElement = document.createElement("div");
   actionsElement.className = "exercise-manage-actions";
-  actionsElement.append(musclesButton, renameButton, incrementButton, gymToggleButton, archiveButton);
+  actionsElement.append(musclesButton, renameButton, incrementButton, gymToggleButton, bodyweightToggleButton, archiveButton);
 
   rowElement.append(infoElement, actionsElement);
   return rowElement;
@@ -2610,6 +2648,7 @@ function parseLoadIncrement(text) {
 document.getElementById("addExerciseButton").addEventListener("click", () => {
   const nameInput = document.getElementById("newExerciseNameInput");
   const gymSpecificCheckbox = document.getElementById("newExerciseGymSpecificCheckbox");
+  const bodyweightCheckbox = document.getElementById("newExerciseBodyweightCheckbox");
   const incrementInput = document.getElementById("newExerciseIncrementInput");
   const name = nameInput.value.trim();
   if (name === "") {
@@ -2637,11 +2676,13 @@ document.getElementById("addExerciseButton").addEventListener("click", () => {
     muscles: {},
     isArchived: false,
     isGymSpecific: gymSpecificCheckbox.checked,
+    isBodyweight: bodyweightCheckbox.checked,
     minimumLoadIncrement
   });
   saveDatabase(appState.database);
   nameInput.value = "";
   gymSpecificCheckbox.checked = false;
+  bodyweightCheckbox.checked = false;
   incrementInput.value = "2.5";
   renderExercisesManageList();
   // Straight on to its muscles, so a new exercise doesn't sit in "No main
@@ -3224,7 +3265,7 @@ function buildWorkoutHistoryCard(session) {
 
       const weightSpan = document.createElement("span");
       weightSpan.className = "set-pill-weight";
-      weightSpan.textContent = `${set.load} kg`;
+      weightSpan.textContent = formatLoad(set.load, exercise);
 
       const repsSpan = document.createElement("span");
       repsSpan.className = "set-pill-reps";
@@ -4356,7 +4397,7 @@ function renderExerciseStatsList() {
     // Same "(gym-specific)" convention the Manage Exercises list already
     // uses — otherwise it's not obvious why only some exercises' detail
     // screens show a gym picker.
-    buttonElement.textContent = exercise.isGymSpecific ? `${exercise.name} (gym-specific)` : exercise.name;
+    buttonElement.textContent = describeExerciseNameWithKind(exercise);
     buttonElement.addEventListener("click", () => showExerciseStatsDetailScreen(exercise.id));
     itemElement.appendChild(buttonElement);
     listElement.appendChild(itemElement);
@@ -5940,7 +5981,7 @@ function openExercisePickerForActiveWorkout() {
 // Starting targets: the template's own, when it still lists this exercise
 // (it was only skipped for today). Otherwise 3 × 8-10 at the load last used
 // for this exercise, if any, so the load stepper needs a few taps at most;
-// 20 kg (an empty bar) when it's never been done.
+// otherwise defaultStartingLoad (an empty bar, or nothing added).
 function chooseTargetsForAddingToWorkout(exercise, template) {
   const plannedInTemplate = template.plannedExercises.find((planned) => planned.exerciseId === exercise.id);
   if (plannedInTemplate) {
@@ -5952,7 +5993,7 @@ function chooseTargetsForAddingToWorkout(exercise, template) {
     targetSets: 3,
     targetRepsMin: 8,
     targetRepsMax: 10,
-    targetLoad: previous ? previous.load : 20,
+    targetLoad: previous ? previous.load : defaultStartingLoad(exercise),
     targetLoadSetAt: null
   };
 }

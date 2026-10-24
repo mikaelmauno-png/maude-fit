@@ -48,7 +48,8 @@
 //
 // Bumped to 14 for the addition of Session.readiness below.
 //
-// Bumped to 15 for the addition of Deload and Session.deload below.
+// Bumped to 15 for the addition of Deload, Session.deload and
+// Exercise.isBodyweight below.
 const SCHEMA_VERSION = 15;
 
 // Every piece of app data lives under this one localStorage key, as a single
@@ -76,12 +77,22 @@ const STORAGE_KEY = "workoutLog";
 //                                     // load numbers aren't comparable between
 //                                     // gyms; false for free weights, where a
 //                                     // kilogram means the same thing anywhere
+//   isBodyweight: false,              // true for pull-ups, dips and the like:
+//                                     // the body is the main weight, and a
+//                                     // set's load is only what's ADDED
+//                                     // (0 = bodyweight alone; see below)
 //   minimumLoadIncrement: 2.5         // kilograms: the smallest weight raise
 //                                     // this exercise's equipment allows (e.g.
 //                                     // 1 for small dumbbells, 5 for a machine
 //                                     // stack). Progression suggestions step
 //                                     // the load by exactly this much.
 // }
+//
+// About `isBodyweight`: a set's load stays "kilograms added" (a belt or a
+// vest), so logged numbers never change meaning. Anything that needs the
+// total weight moved (the drop test's e1RM, in deload.js) adds the
+// bodyweight logged on or before that day. Not stored on the set because
+// the bodyweight log already keeps its dates, so it can always be looked up.
 //
 // About `muscles`: a value of 1.0 means the muscle is the prime mover
 // ("main muscle" in the UI), 0.5 means it is meaningfully involved but not
@@ -530,10 +541,22 @@ function migrateFrom13To14(database) {
 
 // Version 14 data has no deloads: nothing could suggest one before
 // version 15, so an empty list and null on every workout are exactly
-// right. Setting only what's missing makes running it twice harmless.
+// right. Nor does any exercise say whether it's a bodyweight one. Setting
+// only what's missing makes running it twice harmless.
 function migrateFrom14To15(database) {
   if (database.deloads === undefined) {
     database.deloads = [];
+  }
+  // The starter library's pull-ups are bodyweight exercises by definition,
+  // so those (matched by their stable id) start ticked; everything else
+  // starts unticked and can be marked in the exercise list.
+  const starterBodyweightIds = STARTER_EXERCISES
+    .filter((starter) => starter.isBodyweight)
+    .map((starter) => starter.id);
+  for (const exercise of database.exercises) {
+    if (exercise.isBodyweight === undefined) {
+      exercise.isBodyweight = starterBodyweightIds.includes(exercise.id);
+    }
   }
   for (const session of database.sessions) {
     if (session.deload === undefined) {
@@ -796,6 +819,7 @@ const STARTER_EXERCISES = [
     muscles: { chest: 1.0, frontDelt: 0.5, triceps: 0.5 },
     isArchived: false,
     isGymSpecific: false,
+    isBodyweight: false,
     minimumLoadIncrement: 2.5
   },
   {
@@ -804,6 +828,7 @@ const STARTER_EXERCISES = [
     muscles: { quads: 1.0, glutes: 0.5, adductors: 0.5 },
     isArchived: false,
     isGymSpecific: false,
+    isBodyweight: false,
     minimumLoadIncrement: 2.5
   },
   {
@@ -812,6 +837,7 @@ const STARTER_EXERCISES = [
     muscles: { hamstrings: 1.0, glutes: 0.5, lowerBack: 0.5 },
     isArchived: false,
     isGymSpecific: false,
+    isBodyweight: false,
     minimumLoadIncrement: 2.5
   },
   {
@@ -820,6 +846,7 @@ const STARTER_EXERCISES = [
     muscles: { lats: 1.0, biceps: 0.5, upperBack: 0.5 },
     isArchived: false,
     isGymSpecific: false,
+    isBodyweight: true,
     minimumLoadIncrement: 2.5
   },
   {
@@ -828,6 +855,7 @@ const STARTER_EXERCISES = [
     muscles: { frontDelt: 1.0, triceps: 0.5, sideDelt: 0.5 },
     isArchived: false,
     isGymSpecific: false,
+    isBodyweight: false,
     minimumLoadIncrement: 2.5
   },
   {
@@ -836,6 +864,7 @@ const STARTER_EXERCISES = [
     muscles: { sideDelt: 1.0 },
     isArchived: false,
     isGymSpecific: true,
+    isBodyweight: false,
     minimumLoadIncrement: 5
   },
   {
@@ -844,6 +873,7 @@ const STARTER_EXERCISES = [
     muscles: { lats: 1.0, biceps: 0.5, upperBack: 0.5 },
     isArchived: false,
     isGymSpecific: false,
+    isBodyweight: true,
     minimumLoadIncrement: 2.5
   },
   {
@@ -852,6 +882,7 @@ const STARTER_EXERCISES = [
     muscles: { upperBack: 1.0, lats: 0.5, rearDelt: 0.5, biceps: 0.5 },
     isArchived: false,
     isGymSpecific: true,
+    isBodyweight: false,
     minimumLoadIncrement: 5
   },
   {
@@ -860,6 +891,7 @@ const STARTER_EXERCISES = [
     muscles: { lats: 1.0, upperBack: 0.5, biceps: 0.5 },
     isArchived: false,
     isGymSpecific: true,
+    isBodyweight: false,
     minimumLoadIncrement: 5
   },
   {
@@ -868,6 +900,7 @@ const STARTER_EXERCISES = [
     muscles: { lats: 1.0, upperBack: 0.5, biceps: 0.5 },
     isArchived: false,
     isGymSpecific: true,
+    isBodyweight: false,
     minimumLoadIncrement: 5
   },
   {
@@ -876,6 +909,7 @@ const STARTER_EXERCISES = [
     muscles: { biceps: 1.0, forearms: 0.5 },
     isArchived: false,
     isGymSpecific: false,
+    isBodyweight: false,
     minimumLoadIncrement: 2
   },
   {
@@ -884,6 +918,7 @@ const STARTER_EXERCISES = [
     muscles: { biceps: 1.0, forearms: 0.5 },
     isArchived: false,
     isGymSpecific: false,
+    isBodyweight: false,
     minimumLoadIncrement: 2
   },
   {
@@ -892,6 +927,7 @@ const STARTER_EXERCISES = [
     muscles: { triceps: 1.0 },
     isArchived: false,
     isGymSpecific: true,
+    isBodyweight: false,
     minimumLoadIncrement: 5
   },
   {
@@ -900,6 +936,7 @@ const STARTER_EXERCISES = [
     muscles: { triceps: 1.0 },
     isArchived: false,
     isGymSpecific: true,
+    isBodyweight: false,
     minimumLoadIncrement: 5
   },
   {
@@ -908,6 +945,7 @@ const STARTER_EXERCISES = [
     muscles: { triceps: 1.0 },
     isArchived: false,
     isGymSpecific: true,
+    isBodyweight: false,
     minimumLoadIncrement: 5
   },
   {
@@ -916,6 +954,7 @@ const STARTER_EXERCISES = [
     muscles: { triceps: 1.0 },
     isArchived: false,
     isGymSpecific: true,
+    isBodyweight: false,
     minimumLoadIncrement: 5
   },
   {
@@ -924,6 +963,7 @@ const STARTER_EXERCISES = [
     muscles: { triceps: 1.0 },
     isArchived: false,
     isGymSpecific: true,
+    isBodyweight: false,
     minimumLoadIncrement: 5
   },
   {
@@ -932,6 +972,7 @@ const STARTER_EXERCISES = [
     muscles: { triceps: 1.0 },
     isArchived: false,
     isGymSpecific: false,
+    isBodyweight: false,
     minimumLoadIncrement: 2
   },
   {
@@ -940,6 +981,7 @@ const STARTER_EXERCISES = [
     muscles: { glutes: 1.0 },
     isArchived: false,
     isGymSpecific: true,
+    isBodyweight: false,
     minimumLoadIncrement: 5
   },
   {
@@ -948,6 +990,7 @@ const STARTER_EXERCISES = [
     muscles: { calves: 1.0 },
     isArchived: false,
     isGymSpecific: true,
+    isBodyweight: false,
     minimumLoadIncrement: 5
   },
   {
@@ -956,6 +999,7 @@ const STARTER_EXERCISES = [
     muscles: { obliques: 1.0, abs: 0.5 },
     isArchived: false,
     isGymSpecific: true,
+    isBodyweight: false,
     minimumLoadIncrement: 5
   },
   {
@@ -964,6 +1008,7 @@ const STARTER_EXERCISES = [
     muscles: { abs: 1.0 },
     isArchived: false,
     isGymSpecific: true,
+    isBodyweight: false,
     minimumLoadIncrement: 5
   }
 ];

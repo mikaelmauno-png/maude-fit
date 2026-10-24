@@ -24,6 +24,21 @@ function roundLoad(load) {
 }
 
 
+// Lives here rather than in app.js because the suggestion reasons below
+// need it too, and this file loads first; app.js uses it for every load
+// it shows.
+// How a load reads on screen. For a bodyweight exercise the stored load is
+// only the weight added (see Exercise.isBodyweight in schema.js), so it's
+// shown on top of "BW" — "10 kg" alone on a pull-up would read as if the
+// whole pull-up weighed 10 kg.
+function formatLoad(load, exercise) {
+  if (exercise && exercise.isBodyweight) {
+    return load === 0 ? "BW" : `BW + ${load} kg`;
+  }
+  return `${load} kg`;
+}
+
+
 // Returns the most recent past sessions of one exercise, newest first, as
 // a list of `{ session, workingSets }`. At most `sessionCount` are
 // returned. The session itself comes along (not just its sets) so the app
@@ -185,7 +200,7 @@ function suggestNextTarget(database, exerciseId, repsMin, repsMax, activeSession
   }
 
   const maxLoad = findMachineMaxLoad(database, exercise, activeSession);
-  const suggestion = chooseSuggestion(recentSessions, exercise.minimumLoadIncrement, repsMin, repsMax, maxLoad);
+  const suggestion = chooseSuggestion(recentSessions, exercise.minimumLoadIncrement, repsMin, repsMax, maxLoad, exercise);
   suggestion.basedOnSessionStartedAt = recentSessions[0].session.startedAt;
   return suggestion;
 }
@@ -206,8 +221,9 @@ function findMachineMaxLoad(database, exercise, activeSession) {
 
 // Applies the double-progression rules to the latest session's results.
 // Returns `{ load, reps, repsPerSet, reason }`. `maxLoad` is the
-// machine's heaviest weight, or null for no limit.
-function chooseSuggestion(recentSessions, increment, repsMin, repsMax, maxLoad) {
+// machine's heaviest weight, or null for no limit. `exercise` is only for
+// wording the reason ("Stay at BW" for a pull-up, not "Stay at 0 kg").
+function chooseSuggestion(recentSessions, increment, repsMin, repsMax, maxLoad, exercise) {
   // In the order they were done, so "set 3" in the targets means the
   // third set, same as on the workout card.
   const topLoadSets = findTopLoadSets(recentSessions[0].workingSets).sort((a, b) => a.order - b.order);
@@ -251,7 +267,7 @@ function chooseSuggestion(recentSessions, increment, repsMin, repsMax, maxLoad) 
   if (outcome === "topOfRangeAtFailure") {
     return buildUniformSuggestion(
       lastLoad, repsMax, setCount,
-      `Reached ${repsMax} reps but at RIR 0. Repeat ${lastLoad} kg before adding weight.`
+      `Reached ${repsMax} reps but at RIR 0. Repeat ${formatLoad(lastLoad, exercise)} before adding weight.`
     );
   }
 
@@ -264,11 +280,11 @@ function chooseSuggestion(recentSessions, increment, repsMin, repsMax, maxLoad) 
     }
     return buildUniformSuggestion(
       lastLoad, repsMin, setCount,
-      `Fell short of ${repsMin} reps last time. Stay at ${lastLoad} kg.`
+      `Fell short of ${repsMin} reps last time. Stay at ${formatLoad(lastLoad, exercise)}.`
     );
   }
 
-  return buildOneMoreRepSuggestion(topLoadSets, repsMax);
+  return buildOneMoreRepSuggestion(topLoadSets, repsMax, exercise);
 }
 
 // The same rep target on every set: after a weight change, or when last
@@ -282,7 +298,7 @@ function buildUniformSuggestion(load, reps, setCount, reason) {
 // actually achievable next session, and lifting the weakest set first
 // evens the sets out before the strongest pulls further ahead:
 // 8·7·6 → 8·7·7 → 8·8·7 → 8·8·8, and then the weight goes up.
-function buildOneMoreRepSuggestion(topLoadSets, repsMax) {
+function buildOneMoreRepSuggestion(topLoadSets, repsMax, exercise) {
   // A set that went past the top of the range still only needs the top
   // next time; the range is what decides when the weight goes up.
   const repsPerSet = topLoadSets.map((set) => Math.min(set.reps, repsMax));
@@ -297,7 +313,7 @@ function buildOneMoreRepSuggestion(topLoadSets, repsMax) {
     load: lastLoad,
     reps: Math.min(...repsPerSet),
     repsPerSet,
-    reason: `Stay at ${lastLoad} kg, one more rep on set ${weakestSetIndex + 1} than last time.`
+    reason: `Stay at ${formatLoad(lastLoad, exercise)}, one more rep on set ${weakestSetIndex + 1} than last time.`
   };
 }
 
