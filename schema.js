@@ -47,7 +47,9 @@
 // Session.catchUpExercises below.
 //
 // Bumped to 14 for the addition of Session.readiness below.
-const SCHEMA_VERSION = 14;
+//
+// Bumped to 15 for the addition of Deload and Session.deload below.
+const SCHEMA_VERSION = 15;
 
 // Every piece of app data lives under this one localStorage key, as a single
 // JSON string. One key is simpler to export, import, and reason about than
@@ -122,6 +124,11 @@ const MUSCLE_GROUPS = [
 //                                              // null until it's set
 //   readiness:  4,                            // 1-5, see below; null if
 //                                              // not answered
+//   deload: {                                  // null for a normal workout;
+//     deloadId:    "7c2e...",                  // otherwise which Deload this
+//     exerciseIds: ["barbell-bench-press"]     // workout was part of, and
+//   },                                         // which exercises in it were
+//                                              // done as deload sets
 //   notes:      "",
 //   templateId: "weekly-workout-1",           // which WorkoutTemplate this
 //                                              // followed, or null for a
@@ -328,6 +335,52 @@ const DAY_STATUSES = ["normal", "poorSleep", "ill", "stressed"];
 //
 // Distance and heart rate are null rather than 0 when missing: 0 km would
 // claim the distance was measured and was nothing.
+
+// Deload — one suggested or accepted lighter stretch of training: fewer
+// sets at the same weight, stopping further from failure. Rules in the
+// deload design (v5); nothing creates these yet.
+//
+// {
+//   id:          "7c2e...",                // crypto.randomUUID()
+//   scope:       "muscle",                 // "muscle" or "whole"
+//   muscles:     ["chest"],                // empty for a whole-body deload
+//   slots: [                               // the template slots it covers
+//     {
+//       templateId:         "weekly-workout-1",
+//       originalExerciseId: "barbell-bench-press", // the template's exercise,
+//                                                  // even if a gym swap was
+//                                                  // done instead
+//       sessionsRequired:   1,             // how many deload workouts this
+//       sessionsDone:       0,             // slot needs, and has had
+//       plannedSets:        2              // the reduced set count
+//     }
+//   ],
+//   suggestedAt: "2026-10-24T08:00:00.000Z",
+//   acceptedAt:  null,                     // each null until it happens
+//   declinedAt:  null,                     // (also set when it expires)
+//   completedAt: null,
+//   trigger:     "drop",                   // see DELOAD_TRIGGERS
+//   evidence: {                            // why it was suggested, kept so
+//     historyKeys:    [],                  // the decision can be checked
+//     frozenBaseline: null,                // later even if the rules or the
+//     windowMeans:    [],                  // data change; empty/null for
+//     k:              1.5,                 // a backstop or manual deload
+//     sigmaHat:       0.032
+//   },
+//   status:      "suggested"               // see DELOAD_STATUSES
+// }
+//
+// The record is never deleted. A declined or expired suggestion is kept
+// too: the rules need "when was the last one declined", and it's the only
+// record of what the app suggested and what was done about it.
+//
+// Session.deload is stored on each workout rather than worked out from
+// dates later, because which sets were deliberately easy can't be
+// reconstructed afterwards: once the Deload record's slots or dates are
+// read back months later, a lighter workout and a deload look alike.
+const DELOAD_SCOPES = ["muscle", "whole"];
+const DELOAD_TRIGGERS = ["drop", "wellness+drop", "backstop", "manual"];
+const DELOAD_STATUSES = ["suggested", "accepted", "declined", "expired", "completed", "superseded"];
 const CARDIO_EFFORT_MIN = 1;
 const CARDIO_EFFORT_MAX = 10;
 
@@ -357,6 +410,7 @@ function createEmptyDatabase() {
     weeklyCheckIns: [],        // WeeklyCheckIn objects
     cardioActivities: createStarterCardioActivities(), // CardioActivity objects
     cardioSessions: [],        // CardioSession objects
+    deloads: [],               // Deload objects
     preferences: {             // choices made in the app's screens, kept so
                                // they survive closing the app
       chartRangeWeeks: 12      // how many weeks back the trend charts show
@@ -474,6 +528,21 @@ function migrateFrom13To14(database) {
   database.schemaVersion = 14;
 }
 
+// Version 14 data has no deloads: nothing could suggest one before
+// version 15, so an empty list and null on every workout are exactly
+// right. Setting only what's missing makes running it twice harmless.
+function migrateFrom14To15(database) {
+  if (database.deloads === undefined) {
+    database.deloads = [];
+  }
+  for (const session of database.sessions) {
+    if (session.deload === undefined) {
+      session.deload = null;
+    }
+  }
+  database.schemaVersion = 15;
+}
+
 // Keyed by the version each migration upgrades *from*. Versions with no
 // entry here (1-3) are too old to migrate and are still refused.
 const MIGRATIONS = {
@@ -486,7 +555,8 @@ const MIGRATIONS = {
   10: migrateFrom10To11,
   11: migrateFrom11To12,
   12: migrateFrom12To13,
-  13: migrateFrom13To14
+  13: migrateFrom13To14,
+  14: migrateFrom14To15
 };
 
 // Applies migrations one step at a time until the data reaches

@@ -1248,6 +1248,7 @@ function startWorkout(templateId, gymId, isCatchUp = false) {
     // Not set yet; see DAY_STATUSES in schema.js.
     dayStatus: null,
     readiness: null,
+    deload: null,
     notes: "",
     templateId: templateId,
     gymId: gymId,
