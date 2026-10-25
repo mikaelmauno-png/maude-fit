@@ -32,9 +32,9 @@ function roundLoad(load) {
 }
 
 
-// Lives here rather than in app.js because the suggestion reasons below
-// need it too, and this file loads first; app.js uses it for every load
-// it shows.
+// Lives here rather than with the screens because the suggestion reasons
+// below need it too, and this file loads first; the screens use it for
+// every load they show.
 // How a load reads on screen. For a bodyweight exercise the stored load is
 // only the weight added (see Exercise.isBodyweight in schema.js), so it's
 // shown on top of "BW" — "10 kg" alone on a pull-up would read as if the
@@ -51,14 +51,14 @@ function formatLoad(load, exercise) {
 // a list of `{ session, workingSets }`. At most `sessionCount` are
 // returned. The session itself comes along (not just its sets) so the app
 // can tell *when* a suggestion's evidence is from; see isGoalOverride in
-// app.js.
+// workout.js.
 //
 // Today's session is left out: the suggestion is about how to approach
 // today, so it has to be based on what happened *before* today.
 //
 // For a gym-specific exercise (a machine or cable stack), only sessions at
 // the same gym count, for the same reason as findMostRecentWorkingSet in
-// app.js: 50 kg on one gym's machine isn't 50 kg on another's.
+// workout.js: 50 kg on one gym's machine isn't 50 kg on another's.
 //
 // With `isScopedToWorkout`, only sessions of the same workout template
 // count too. The same exercise is often trained differently in different

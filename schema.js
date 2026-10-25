@@ -258,7 +258,7 @@ const DAY_STATUSES = ["normal", "poorSleep", "ill", "stressed"];
 //                                   // overrides that suggestion; once a newer
 //                                   // session is logged, suggestions take
 //                                   // over again (see isGoalOverride in
-//                                   // app.js). So a goal lasts one session.
+//                                   // workout.js). So a goal lasts one session.
 //     }
 //     // ...one entry per exercise in this workout template, in the order they're done
 //   ]
@@ -746,7 +746,7 @@ function saveDatabase(database) {
 //
 // The copy inside the file has lastBackedUpAt set to the moment it was made,
 // so a phone that later imports it knows everything in it is already backed
-// up. The live database is deliberately left untouched here: app.js only
+// up. The live database is deliberately left untouched here: settings.js only
 // records the backup once the file has actually been saved somewhere, since
 // closing the share sheet without choosing a place isn't a backup.
 function buildBackupFile(database, backedUpAt) {
@@ -814,7 +814,7 @@ function importDatabase(jsonText) {
 // Automatic copy
 //
 // One extra copy of the whole database, kept on the phone and replaced each
-// time a new one is taken (see app.js for when). It's there for when the
+// time a new one is taken (see app.js and settings.js for when). It's there for when the
 // app itself damages the data (a bug, or importing the wrong file), and can
 // be restored from the Export / Import screen.
 //

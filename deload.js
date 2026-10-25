@@ -697,7 +697,8 @@ function analyzeDropDetection(database) {
 // or fewer (see buildDeloadSuggestion in progression.js).
 //
 // Like the rest of this file, the functions here only work things out. The
-// app (app.js) is what saves the Deload record and the sessions.
+// app's screens (home-cards.js) are what save the Deload record and the
+// sessions.
 // ---------------------------------------------------------------------------
 
 // How long a slot can go untrained before the deload stops waiting for it.
