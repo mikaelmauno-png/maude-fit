@@ -163,6 +163,14 @@ ul li {
   font-size: 1.3rem;
 }
 
+/* The rest target from Settings has passed: green, the app's "go" colour,
+   readable at arm's length without having to work out the number. On the
+   whole timer, or on one line of a superset. */
+#restTimer.rest-target-reached,
+.rest-timer-line.rest-target-reached {
+  color: var(--color-suggestion);
+}
+
 .rest-timer-line {
   display: flex;
   justify-content: space-between;
@@ -697,8 +705,50 @@ h1 {
 /* A row of short preset choices ("1 kg", "2.5 kg" ...): narrower than the
    usual button-row minimum, so four fit across a phone. */
 .preset-row button {
+  /* Equal widths (flex-basis 0), so a short label like "Off" gets as big
+     a target as "1.25 kg". */
+  flex: 1 1 0;
   min-width: 0;
   padding: 12px 4px;
+}
+
+/* ---------------------------------------------------------------------------
+   Settings screen
+   --------------------------------------------------------------------------- */
+
+/* Small grey group titles (Library, Preferences, Data), so the groups read
+   as sections without competing with the screen's own heading. */
+.settings-heading {
+  margin: 24px 0 8px;
+  color: var(--color-text-dim);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.settings-card {
+  background-color: var(--color-surface);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.settings-card .button-row {
+  margin-bottom: 0;
+}
+
+.settings-question {
+  margin: 0 0 10px;
+  font-weight: bold;
+}
+
+.settings-hint {
+  margin: -4px 0 10px;
+}
+
+.settings-wide-button {
+  display: block;
+  width: 100%;
 }
 
 /* A quiet button for something that removes, like archiving: the muted

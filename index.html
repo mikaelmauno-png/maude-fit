@@ -216,35 +216,57 @@
 
 
     <!-- ===================================================================
-         SETTINGS SCREEN: entry point for the three "manage a list" screens
-         plus export/import, kept off the home screen so its own button row
-         stays short.
+         SETTINGS SCREEN: three groups — Library (the lists workouts are
+         built from), Preferences (choices about how the app behaves) and
+         Data (backups). Kept off the home screen so it stays about training.
          =================================================================== -->
     <section id="settingsScreen" hidden>
       <h1>Settings</h1>
+
+      <h2 class="settings-heading">Library</h2>
       <div class="button-stack">
-        <button id="manageWorkoutTemplatesButton">Manage workouts</button>
-        <button id="manageExercisesButton">Manage exercises</button>
-        <button id="manageGymsButton">Manage gyms</button>
+        <button id="manageWorkoutTemplatesButton">Workouts</button>
+        <button id="manageExercisesButton">Exercises</button>
+        <button id="manageGymsButton">Gyms</button>
         <button id="manageCardioActivitiesButton">Cardio activities</button>
-        <button id="viewDataButton">Export / Import data</button>
       </div>
+
+      <h2 class="settings-heading">Preferences</h2>
+      <!-- Both rows are filled in by renderSettingsScreen in app.js, from
+           database.preferences (schema.js). -->
+      <section class="settings-card">
+        <p class="settings-question">Minimum weight raise for new exercises</p>
+        <div class="button-row preset-row" id="defaultLoadIncrementOptions"></div>
+      </section>
+      <section class="settings-card">
+        <p class="settings-question">Rest target</p>
+        <p class="muted-note settings-hint">The rest timer turns green once this much rest has passed.</p>
+        <div class="button-row preset-row" id="restTargetOptions"></div>
+      </section>
+
+      <h2 class="settings-heading">Data</h2>
+      <section class="settings-card">
+        <!-- Same wording as the home screen's backup reminder. -->
+        <p id="settingsBackupStatus" class="settings-question"></p>
+        <button id="viewDataButton" class="secondary-button settings-wide-button">Back up / Import</button>
+      </section>
     </section>
 
 
     <!-- ===================================================================
-         DATA SCREEN: export/import the whole saved database as a JSON
-         file — an occasional backup action, not something needed during
-         ordinary logging, so it's tucked behind Settings rather than on the
-         home screen.
+         DATA SCREEN: back up or import the whole saved database as a JSON
+         file — an occasional action, not something needed during ordinary
+         logging, so it's tucked behind Settings rather than on the home
+         screen. "Back up" is the same action as the home screen's "Back up
+         now" button, so it has the same name.
          =================================================================== -->
     <section id="dataScreen" hidden>
-      <h1>Export / Import</h1>
+      <h1>Back up / Import</h1>
       <div class="button-row">
         <button id="backFromDataButton" class="secondary-button">Back</button>
       </div>
       <div class="button-row">
-        <button id="exportButton">Export</button>
+        <button id="exportButton">Back up</button>
         <button id="importButton">Import</button>
       </div>
       <!-- A real file picker can't be styled to match the other buttons, so

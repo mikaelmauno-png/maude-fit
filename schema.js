@@ -54,7 +54,10 @@
 // Bumped to 16 for the addition of targetRir on each planned exercise
 // (in a WorkoutTemplate, and in Session.addedExercises and
 // Session.catchUpExercises, which share its shape).
-const SCHEMA_VERSION = 16;
+//
+// Bumped to 17 for the addition of preferences.defaultLoadIncrement and
+// preferences.restTargetSeconds (see createEmptyDatabase).
+const SCHEMA_VERSION = 17;
 
 // Every piece of app data lives under this one localStorage key, as a single
 // JSON string. One key is simpler to export, import, and reason about than
@@ -457,8 +460,13 @@ function createEmptyDatabase() {
     deloads: [],               // Deload objects
     preferences: {             // choices made in the app's screens, kept so
                                // they survive closing the app
-      chartRangeWeeks: 12      // how many weeks back the trend charts show
+      chartRangeWeeks: 12,     // how many weeks back the trend charts show
                                // (6, 12 or 24), or null for all-time
+      defaultLoadIncrement: 2.5, // kg; what a new exercise's minimum weight
+                               // raise starts at in the add form
+      restTargetSeconds: null  // rest length (seconds) after which the rest
+                               // timer changes colour to say "ready", or
+                               // null for no target
     },
     lastBackedUpAt: null       // ISO timestamp of the last backup file that
                                // was actually saved or shared; null if never.
@@ -626,6 +634,16 @@ function migrateFrom15To16(database) {
   database.schemaVersion = 16;
 }
 
+// Version 16 preferences have no default minimum raise or rest target.
+// 2.5 kg is what the new-exercise form always started at, and no rest
+// target (null) is how the rest timer has always behaved, so nothing
+// changes until one is chosen in Settings.
+function migrateFrom16To17(database) {
+  database.preferences.defaultLoadIncrement = 2.5;
+  database.preferences.restTargetSeconds = null;
+  database.schemaVersion = 17;
+}
+
 // Keyed by the version each migration upgrades *from*. Versions with no
 // entry here (1-3) are too old to migrate and are still refused.
 const MIGRATIONS = {
@@ -640,7 +658,8 @@ const MIGRATIONS = {
   12: migrateFrom12To13,
   13: migrateFrom13To14,
   14: migrateFrom14To15,
-  15: migrateFrom15To16
+  15: migrateFrom15To16,
+  16: migrateFrom16To17
 };
 
 // Applies migrations one step at a time until the data reaches

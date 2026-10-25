@@ -9,7 +9,7 @@
 // without bumping it, "install" below sees the old cache already exists and
 // never re-fetches anything, so a code change would never actually reach a
 // phone that already has the app installed.
-const CACHE_NAME = "treeniappi-v62";
+const CACHE_NAME = "treeniappi-v63";
 
 const APP_SHELL_FILES = [
   "./",
@@ -22,7 +22,10 @@ const APP_SHELL_FILES = [
   "./manifest.json",
   "./icon.svg",
   "./icon-192.png",
-  "./icon-512.png"
+  "./icon-512.png",
+  // iOS uses this one for the home-screen icon (see index.html), so it
+  // belongs offline with the rest.
+  "./apple-touch-icon.png"
 ];
 
 self.addEventListener("install", (event) => {

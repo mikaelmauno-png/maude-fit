@@ -76,7 +76,7 @@ try {
     "Nothing was deleted: a copy was kept under \"" + backupKey + "\". " +
     "Starting with a blank database." +
     (loadAutoCopy() !== null
-      ? "\n\nAn earlier automatic copy can be restored from Settings → Export / Import."
+      ? "\n\nAn earlier automatic copy can be restored from Settings → Back up / Import."
       : "")
   );
   initialDatabase = createEmptyDatabase();
@@ -263,6 +263,7 @@ function showSettingsScreen() {
   hideAllScreens();
   settingsScreen.hidden = false;
   showBottomNav("settings");
+  renderSettingsScreen();
 }
 
 function showStatsScreen() {
@@ -1567,9 +1568,16 @@ function findUnfinishedExerciseTimers(sessionSets) {
   return timers.sort((a, b) => b.lastSetAt.localeCompare(a.lastSetAt));
 }
 
+// True once the rest target from Settings has passed. With no target set
+// (null), never: the timer then just counts, as it always has.
+function isRestTargetReached(restSeconds) {
+  const targetSeconds = appState.database.preferences.restTargetSeconds;
+  return targetSeconds !== null && restSeconds >= targetSeconds;
+}
+
 function updateRestTimer() {
   restTimerElement.innerHTML = "";
-  restTimerElement.classList.remove("rest-timer-superset");
+  restTimerElement.classList.remove("rest-timer-superset", "rest-target-reached");
   if (appState.activeSessionId === null) {
     return;
   }
@@ -1582,7 +1590,9 @@ function updateRestTimer() {
   const unfinishedExerciseTimers = findUnfinishedExerciseTimers(sessionSets);
   if (unfinishedExerciseTimers.length < 2) {
     const mostRecentSet = findMostRecentSet(sessionSets);
-    restTimerElement.textContent = `Rest: ${formatElapsedTime(secondsSince(mostRecentSet.performedAt))}`;
+    const restSeconds = secondsSince(mostRecentSet.performedAt);
+    restTimerElement.textContent = `Rest: ${formatElapsedTime(restSeconds)}`;
+    restTimerElement.classList.toggle("rest-target-reached", isRestTargetReached(restSeconds));
     return;
   }
 
@@ -1598,7 +1608,10 @@ function updateRestTimer() {
     nameElement.textContent = timer.exerciseName;
 
     const timeElement = document.createElement("span");
-    timeElement.textContent = formatElapsedTime(secondsSince(timer.lastSetAt));
+    const restSeconds = secondsSince(timer.lastSetAt);
+    timeElement.textContent = formatElapsedTime(restSeconds);
+    // Per line: in a superset each exercise's rest is its own.
+    lineElement.classList.toggle("rest-target-reached", isRestTargetReached(restSeconds));
 
     lineElement.append(nameElement, timeElement);
     restTimerElement.appendChild(lineElement);
@@ -3033,7 +3046,7 @@ function showNewExerciseForm() {
   document.getElementById("newExerciseNameInput").value = "";
   document.getElementById("newExerciseGymSpecificCheckbox").checked = false;
   document.getElementById("newExerciseBodyweightCheckbox").checked = false;
-  document.getElementById("newExerciseIncrementInput").value = 2.5;
+  document.getElementById("newExerciseIncrementInput").value = appState.database.preferences.defaultLoadIncrement;
   newExerciseError.hidden = true;
   newExerciseForm.hidden = false;
   document.getElementById("showNewExerciseFormButton").hidden = true;
@@ -6976,7 +6989,57 @@ function chooseReplacementFromPicker(exercise) {
 // Export and import
 // ---------------------------------------------------------------------------
 
-// Export is the same backup as the home screen's "Back up now" button.
+// ---------------------------------------------------------------------------
+// Settings: the preference choices, and the backup status line
+// ---------------------------------------------------------------------------
+
+// Rest targets on offer, in seconds; null is "Off". Short enough for
+// accessory work, long enough for heavy compounds.
+const REST_TARGET_CHOICES = [null, 60, 90, 120, 180, 240];
+
+// "Off", "1:30", "3:00" — the same minutes:seconds look as the timer.
+function describeRestTarget(seconds) {
+  return seconds === null ? "Off" : formatElapsedTime(seconds);
+}
+
+function renderSettingsScreen() {
+  renderPreferenceChoices(
+    document.getElementById("defaultLoadIncrementOptions"),
+    LOAD_INCREMENT_PRESETS,
+    (increment) => `${increment} kg`,
+    "defaultLoadIncrement"
+  );
+  renderPreferenceChoices(
+    document.getElementById("restTargetOptions"),
+    REST_TARGET_CHOICES,
+    describeRestTarget,
+    "restTargetSeconds"
+  );
+  document.getElementById("settingsBackupStatus").textContent = describeLastBackup(appState.database.lastBackedUpAt);
+}
+
+// One row of buttons for one preference: tapping a choice saves it at
+// once (no Save button to forget) and lights it up. `describe` turns a
+// value into its button label.
+function renderPreferenceChoices(containerElement, choices, describe, preferenceKey) {
+  containerElement.innerHTML = "";
+  for (const choice of choices) {
+    const choiceButton = document.createElement("button");
+    choiceButton.type = "button";
+    choiceButton.className = "day-status-option";
+    choiceButton.textContent = describe(choice);
+    choiceButton.dataset.value = choice;
+    choiceButton.addEventListener("click", () => {
+      appState.database.preferences[preferenceKey] = choice;
+      saveDatabase(appState.database);
+      renderSettingsScreen();
+    });
+    containerElement.appendChild(choiceButton);
+  }
+  highlightSelectedButton(containerElement, "value", appState.database.preferences[preferenceKey]);
+}
+
+// "Back up" here is the same backup as the home screen's "Back up now" button.
 document.getElementById("exportButton").addEventListener("click", backUpData);
 
 // Save a backup file off the phone, and remember that it happened, which is
