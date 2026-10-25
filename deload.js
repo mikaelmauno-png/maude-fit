@@ -716,11 +716,9 @@ function reduceSetCountForDeload(targetSets) {
   return Math.max(1, targetSets - Math.round(targetSets / 3));
 }
 
-// The whole-body deload started by hand from the home screen: every
-// exercise in every active workout template, one lighter workout each.
-// `nowIso` is passed in rather than read from the clock here, so a test
-// can choose the time.
-function buildManualWholeBodyDeload(templates, nowIso) {
+// Every exercise in every active workout template, one lighter workout
+// each: what a whole-body deload covers.
+function buildWholeBodyDeloadSlots(templates) {
   const slots = [];
   for (const template of templates) {
     if (template.isArchived) {
@@ -736,11 +734,18 @@ function buildManualWholeBodyDeload(templates, nowIso) {
       });
     }
   }
+  return slots;
+}
+
+// The whole-body deload started by hand from the home screen.
+// `nowIso` is passed in rather than read from the clock here, so a test
+// can choose the time.
+function buildManualWholeBodyDeload(templates, nowIso) {
   return {
     id: crypto.randomUUID(),
     scope: "whole",
     muscles: [],
-    slots,
+    slots: buildWholeBodyDeloadSlots(templates),
     // Started by hand, so it's suggested and accepted in the same moment.
     suggestedAt: nowIso,
     acceptedAt: nowIso,
@@ -849,4 +854,95 @@ function findSlotsGivenDeloadSession(session, deload, sets) {
     }
   }
   return slots;
+}
+
+
+// ---------------------------------------------------------------------------
+// Backstop offer (deload design: "backstop")
+//
+// The drop test only spots fatigue that shows up as weaker lifts. The
+// backstop is the safety net for everything else: if nothing has led to a
+// whole-body deload in 8 weeks, the app offers one anyway. It's only an
+// offer; saying "Not now" brings it back two weeks later.
+// ---------------------------------------------------------------------------
+
+const BACKSTOP_DAYS_AFTER_DELOAD = 8 * 7;
+const BACKSTOP_DAYS_AFTER_DECLINE = 14;
+
+// The newest of a list of ISO timestamps, or null for an empty list. ISO
+// 8601 strings sort correctly as plain text, so no date parsing is needed.
+function findLatestIsoString(isoStrings) {
+  return isoStrings.reduce((latest, candidate) => (latest === null || candidate > latest ? candidate : latest), null);
+}
+
+// Where the 8 weeks count from: the end of the last completed whole-body
+// deload. Before there's ever been one, the first logged workout, since
+// that's as far back as the app knows anything. Null with no finished
+// workout at all: nothing to deload from yet.
+function findBackstopClockStart(database) {
+  const lastDeloadEnd = findLatestIsoString(
+    database.deloads
+      .filter((deload) => deload.scope === "whole" && deload.status === "completed")
+      .map((deload) => deload.completedAt)
+  );
+  if (lastDeloadEnd !== null) {
+    return lastDeloadEnd;
+  }
+  const finishedStarts = database.sessions
+    .filter((session) => session.endedAt !== null)
+    .map((session) => session.startedAt);
+  // The earliest, by sorting a copy and taking the first.
+  return finishedStarts.length > 0 ? finishedStarts.slice().sort()[0] : null;
+}
+
+// The backstop offer waiting for an answer, or null.
+function findPendingBackstopOffer(database) {
+  return database.deloads.find(
+    (deload) => deload.trigger === "backstop" && deload.status === "suggested"
+  ) || null;
+}
+
+// True when a new backstop offer should be made now. Never while a deload
+// is running or an offer is already waiting. A "Not now" given since the
+// clock started holds the next offer back for two weeks; an older one
+// belongs to an earlier stretch and doesn't count.
+function isBackstopOfferDue(database, nowIso) {
+  if (findActiveDeload(database) !== null || findPendingBackstopOffer(database) !== null) {
+    return false;
+  }
+  const clockStart = findBackstopClockStart(database);
+  if (clockStart === null || daysBetween(clockStart, nowIso) < BACKSTOP_DAYS_AFTER_DELOAD) {
+    return false;
+  }
+  const lastDecline = findLatestIsoString(
+    database.deloads
+      .filter((deload) => deload.trigger === "backstop" && deload.status === "declined")
+      .map((deload) => deload.declinedAt)
+  );
+  if (lastDecline !== null && lastDecline > clockStart) {
+    return daysBetween(lastDecline, nowIso) >= BACKSTOP_DAYS_AFTER_DECLINE;
+  }
+  return true;
+}
+
+// The offer, saved as soon as it's made so there's a record of when the
+// app suggested it. Its slots stay empty until it's accepted: the
+// templates can change while it waits, and the deload should cover them
+// as they are when it starts.
+function buildBackstopOffer(nowIso) {
+  return {
+    id: crypto.randomUUID(),
+    scope: "whole",
+    muscles: [],
+    slots: [],
+    suggestedAt: nowIso,
+    acceptedAt: null,
+    declinedAt: null,
+    completedAt: null,
+    cancelledAt: null,
+    trigger: "backstop",
+    // Time-based, so no drop evidence to record.
+    evidence: { historyKeys: [], frozenBaseline: null, windowMeans: [], k: null, sigmaHat: null },
+    status: "suggested"
+  };
 }

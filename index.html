@@ -55,6 +55,17 @@
         <button id="openWeeklyCheckInButton">Weekly check-in</button>
       </section>
 
+      <!-- Idle only, while a backstop deload offer waits for an answer
+           (8 weeks with no whole-body deload). See renderBackstopOfferCards()
+           in app.js. -->
+      <section id="backstopOfferCard" class="deload-offer-card" hidden>
+        <p id="backstopOfferText"></p>
+        <div class="deload-offer-buttons">
+          <button id="acceptBackstopOfferButton">Deload now</button>
+          <button id="declineBackstopOfferButton" class="card-action-button">Not now</button>
+        </div>
+      </section>
+
       <!-- Idle only: starts a whole-body deload by hand, or while one is
            running, shows how many exercises have had their lighter
            workout, with a way to cancel. See renderDeloadCard() in app.js. -->
@@ -95,6 +106,13 @@
       <section id="muscleCounters" hidden>
         <h2>Sets per muscle this week</h2>
         <div id="muscleCounterRows"></div>
+      </section>
+
+      <!-- TEMPORARY: notes to come back to development once enough real
+           data has built up. See DEVELOPMENT_REMINDERS in app.js. -->
+      <section id="developmentReminders" hidden>
+        <h2>Development reminders</h2>
+        <ul id="developmentReminderList"></ul>
       </section>
 
       <!-- Bottom icon bar: the ways off the home screen, pinned to the
@@ -188,6 +206,16 @@
         <div class="check-in-rating-buttons readiness-buttons" id="readinessButtons"></div>
         <p class="readiness-hint">1 = poor · 5 = great</p>
         <div class="readiness-reasons" id="readinessReasonButtons"></div>
+      </section>
+
+      <!-- The same backstop offer as on the home screen, until the first set
+           is logged: accepting makes this workout a deload one. -->
+      <section id="workoutBackstopOfferCard" class="deload-offer-card" hidden>
+        <p id="workoutBackstopOfferText"></p>
+        <div class="deload-offer-buttons">
+          <button id="acceptWorkoutBackstopOfferButton">Deload now</button>
+          <button id="declineWorkoutBackstopOfferButton" class="card-action-button">Not now</button>
+        </div>
       </section>
 
       <!-- Optional at any point during an active workout, and never part of
