@@ -258,7 +258,7 @@
     <section id="settingsScreen" hidden>
       <h1>Settings</h1>
       <div class="button-row">
-        <button id="backFromSettingsButton">Back</button>
+        <button id="backFromSettingsButton" class="secondary-button">Back</button>
       </div>
       <div class="button-stack">
         <button id="manageWorkoutTemplatesButton">Manage workouts</button>
@@ -279,7 +279,7 @@
     <section id="dataScreen" hidden>
       <h1>Export / Import</h1>
       <div class="button-row">
-        <button id="backFromDataButton">Back</button>
+        <button id="backFromDataButton" class="secondary-button">Back</button>
       </div>
       <div class="button-row">
         <button id="exportButton">Export</button>
@@ -358,7 +358,7 @@
 
       <div class="button-row">
         <button id="saveSetButton">Save set</button>
-        <button id="cancelSetButton">Cancel</button>
+        <button id="cancelSetButton" class="secondary-button">Cancel</button>
       </div>
       <!-- Only shown when editing a set that's already logged (tapped from
            a "done" pill), not when logging a new one. -->
@@ -391,7 +391,7 @@
       </label>
       <div class="button-row">
         <button id="saveDayStatusButton">Save</button>
-        <button id="cancelDayStatusButton">Cancel</button>
+        <button id="cancelDayStatusButton" class="secondary-button">Cancel</button>
       </div>
     </section>
 
@@ -402,7 +402,7 @@
     <section id="exercisesScreen" hidden>
       <h1>Exercise library</h1>
       <div class="button-row">
-        <button id="backFromExercisesButton">Back</button>
+        <button id="backFromExercisesButton" class="secondary-button">Back</button>
       </div>
 
       <label class="text-field">
@@ -468,7 +468,7 @@
 
       <div class="button-row">
         <button id="saveMusclesButton">Save</button>
-        <button id="cancelMusclesButton">Cancel</button>
+        <button id="cancelMusclesButton" class="secondary-button">Cancel</button>
       </div>
     </section>
 
@@ -479,7 +479,7 @@
     <section id="gymsScreen" hidden>
       <h1>Gyms</h1>
       <div class="button-row">
-        <button id="backFromGymsButton">Back</button>
+        <button id="backFromGymsButton" class="secondary-button">Back</button>
       </div>
 
       <label class="text-field">
@@ -506,7 +506,7 @@
     <section id="cardioLogScreen" hidden>
       <h1 id="cardioLogHeading">Log cardio</h1>
       <div class="button-row">
-        <button id="backFromCardioLogButton">Back</button>
+        <button id="backFromCardioLogButton" class="secondary-button">Back</button>
       </div>
 
       <h3>Activity</h3>
@@ -585,7 +585,7 @@
     <section id="cardioActivitiesScreen" hidden>
       <h1>Cardio activities</h1>
       <div class="button-row">
-        <button id="backFromCardioActivitiesButton">Back</button>
+        <button id="backFromCardioActivitiesButton" class="secondary-button">Back</button>
       </div>
 
       <label class="text-field">
@@ -612,7 +612,7 @@
       <h1>Which gym?</h1>
       <ul id="gymPickerList"></ul>
       <div class="button-row">
-        <button id="skipGymPickerButton">Skip</button>
+        <button id="skipGymPickerButton" class="secondary-button">Skip</button>
       </div>
     </section>
 
@@ -623,7 +623,7 @@
     <section id="historyScreen" hidden>
       <h1>History</h1>
       <div class="button-row">
-        <button id="backFromHistoryButton">Back</button>
+        <button id="backFromHistoryButton" class="secondary-button">Back</button>
         <button id="viewExerciseStatsButton">Exercise stats</button>
         <button id="viewPersonalBestsButton">Personal bests</button>
         <button id="viewMuscleStatsButton">Muscle stats</button>
@@ -643,7 +643,7 @@
     <section id="weeklyCheckInScreen" hidden>
       <h1>Weekly check-in</h1>
       <div class="button-row">
-        <button id="backFromWeeklyCheckInButton">Back</button>
+        <button id="backFromWeeklyCheckInButton" class="secondary-button">Back</button>
       </div>
       <h2 id="weeklyCheckInHeading"></h2>
       <p class="check-in-scale-hint">1 = low · 5 = high</p>
@@ -657,7 +657,7 @@
              would look like data but say little. -->
         <button id="saveWeeklyCheckInButton">Save</button>
         <!-- Only while editing an earlier week, to go back to this one. -->
-        <button id="cancelCheckInEditButton" hidden>Cancel</button>
+        <button id="cancelCheckInEditButton" class="secondary-button" hidden>Cancel</button>
       </div>
       <h2>All check-ins</h2>
       <ul id="weeklyCheckInList"></ul>
@@ -673,7 +673,7 @@
     <section id="monthlyRecapScreen" hidden>
       <h1>Monthly recap</h1>
       <div class="button-row">
-        <button id="backFromMonthlyRecapButton">Back</button>
+        <button id="backFromMonthlyRecapButton" class="secondary-button">Back</button>
       </div>
       <div class="recap-month-picker">
         <button type="button" id="previousRecapMonthButton" aria-label="Previous month">&lsaquo;</button>
@@ -692,7 +692,7 @@
     <section id="bodyweightScreen" hidden>
       <h1>Bodyweight</h1>
       <div class="button-row">
-        <button id="backFromBodyweightButton">Back</button>
+        <button id="backFromBodyweightButton" class="secondary-button">Back</button>
       </div>
 
       <!-- Set to "Editing <date>" while a past entry (tapped from the list
@@ -711,7 +711,7 @@
         <button id="saveBodyweightButton">Save</button>
         <!-- Only shown while editing a past entry, to back out without
              saving over it. -->
-        <button id="cancelBodyweightEditButton" hidden>Cancel</button>
+        <button id="cancelBodyweightEditButton" class="secondary-button" hidden>Cancel</button>
         <!-- Only shown while editing a past entry — today's entry is edited
              by just logging again, not deleted. -->
         <button id="deleteBodyweightButton" class="destructive-button" hidden>Delete</button>
@@ -739,7 +739,7 @@
     <section id="personalBestsScreen" hidden>
       <h1>Personal bests</h1>
       <div class="button-row">
-        <button id="backFromPersonalBestsButton">Back</button>
+        <button id="backFromPersonalBestsButton" class="secondary-button">Back</button>
       </div>
       <ul id="personalBestsList"></ul>
     </section>
@@ -754,7 +754,7 @@
     <section id="exerciseStatsListScreen" hidden>
       <h1>Exercise stats</h1>
       <div class="button-row">
-        <button id="backFromExerciseStatsListButton">Back</button>
+        <button id="backFromExerciseStatsListButton" class="secondary-button">Back</button>
       </div>
       <ul id="exerciseStatsList"></ul>
     </section>
@@ -768,7 +768,7 @@
          =================================================================== -->
     <section id="exerciseStatsDetailScreen" hidden>
       <div class="button-row">
-        <button id="backFromExerciseStatsDetailButton">Back</button>
+        <button id="backFromExerciseStatsDetailButton" class="secondary-button">Back</button>
       </div>
       <h1 id="exerciseStatsDetailName"></h1>
 
@@ -805,7 +805,7 @@
     <section id="muscleStatsListScreen" hidden>
       <h1>Muscle stats</h1>
       <div class="button-row">
-        <button id="backFromMuscleStatsListButton">Back</button>
+        <button id="backFromMuscleStatsListButton" class="secondary-button">Back</button>
       </div>
 
       <!-- Same weighted completed/projected data as the main screen's "Sets
@@ -834,7 +834,7 @@
 
     <section id="muscleStatsDetailScreen" hidden>
       <div class="button-row">
-        <button id="backFromMuscleStatsDetailButton">Back</button>
+        <button id="backFromMuscleStatsDetailButton" class="secondary-button">Back</button>
       </div>
       <h1 id="muscleStatsDetailName"></h1>
       <div id="muscleStatsRangePicker" class="button-row chart-range-picker"></div>
@@ -852,7 +852,7 @@
     <section id="workoutTemplatesScreen" hidden>
       <h1>Workouts</h1>
       <div class="button-row">
-        <button id="backFromWorkoutTemplatesButton">Back</button>
+        <button id="backFromWorkoutTemplatesButton" class="secondary-button">Back</button>
         <button id="addWorkoutTemplateButton">Add workout</button>
       </div>
       <ul id="workoutTemplatesList"></ul>
@@ -886,7 +886,7 @@
 
       <div class="button-row">
         <button id="saveWorkoutTemplateButton">Save workout</button>
-        <button id="cancelWorkoutTemplateEditButton">Cancel</button>
+        <button id="cancelWorkoutTemplateEditButton" class="secondary-button">Cancel</button>
       </div>
     </section>
 
@@ -901,7 +901,7 @@
       <h1>Choose exercise</h1>
       <div id="exercisePickerGroups"></div>
       <div class="button-row">
-        <button id="cancelExercisePickerButton">Cancel</button>
+        <button id="cancelExercisePickerButton" class="secondary-button">Cancel</button>
       </div>
     </section>
 
@@ -975,7 +975,7 @@
              then the button above means "today only" and this one means
              "today and the template too". -->
         <button id="savePlannedExerciseToTemplateButton" hidden>Today + template</button>
-        <button id="cancelPlannedExerciseButton">Cancel</button>
+        <button id="cancelPlannedExerciseButton" class="secondary-button">Cancel</button>
       </div>
     </section>
 

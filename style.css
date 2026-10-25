@@ -1,3 +1,50 @@
+/* ---------------------------------------------------------------------------
+   Colours. Every colour in this file is named once here and used by name
+   below (var(--color-...)), so changing how something looks is a one-line
+   edit instead of a hunt through the whole file. The names say what a
+   colour is *for*, not what it looks like, so "--color-done" can change
+   shade without any rule that uses it needing to change.
+   --------------------------------------------------------------------------- */
+:root {
+  /* Backgrounds, darkest to lightest: page, cards, things on cards. */
+  --color-page: #121212;
+  --color-nav: #1a1a1a;
+  --color-surface: #1e1e1e;
+  --color-surface-raised: #2a2a2a;
+  --color-surface-pressed: #353535;
+  --color-border: #333333;
+  --color-border-raised: #3a3a3a;
+
+  /* Text, brightest to dimmest. Even the dimmest one used for reading
+     (--color-text-dim) stays bright enough for a glance in bad gym light;
+     only disabled controls go darker than that. */
+  --color-text: #f0f0f0;
+  --color-text-soft: #c0c0c0;
+  --color-text-muted: #b0b0b0;
+  --color-text-dim: #9a9a9a;
+  --color-text-disabled: #808080;
+  --color-on-accent: #ffffff;
+  --color-light-button-pressed: #cfcfcf;
+
+  /* Meanings that repeat across screens. */
+  --color-accent: #2a6df4;
+  --color-accent-pressed: #1d4fb8;
+  --color-done: #3a8a45;
+  --color-done-outline: #3f7a48;
+  --color-status: #9fd39f;
+  --color-suggestion: #7ddc8a;
+  --color-plan: #8fb8ff;
+  --color-plan-background: #1a2638;
+  --color-plan-outline: #3a5a8a;
+  --color-danger: #a33232;
+  --color-danger-pressed: #7a2424;
+  --color-warning: #ff9a5c;
+  --color-order-number: #e0a800;
+  --color-record: #ffd76a;
+  --color-record-background: #4a3a10;
+  --color-record-outline: #7a5f1a;
+}
+
 /* Without this, any element that also has a `display` rule of its own (like
    .stepper-row below) would ignore the `hidden` attribute, because a class
    selector beats the browser's default styling for [hidden]. */
@@ -8,8 +55,8 @@
 /* Dark background: gyms are bright and the phone is held at arm's length,
    so a light page would be hard to read and glare-y. */
 body {
-  background-color: #121212;
-  color: #f0f0f0;
+  background-color: var(--color-page);
+  color: var(--color-text);
   font-family: sans-serif;
   margin: 0;
   padding: 16px;
@@ -45,8 +92,8 @@ ul li {
   width: 100%;
   text-align: left;
   padding: 16px;
-  background-color: #1e1e1e;
-  color: #f0f0f0;
+  background-color: var(--color-surface);
+  color: var(--color-text);
   font-size: 1.1rem;
   border: none;
   border-radius: 8px;
@@ -56,13 +103,13 @@ ul li {
 .exercise-item:disabled {
   /* Disabled means "no workout in progress yet" rather than "broken", so it
      stays legible instead of looking like an error state. */
-  color: #777777;
+  color: var(--color-text-dim);
   cursor: not-allowed;
 }
 
 #workoutStatus {
   min-height: 1.2em;
-  color: #9fd39f;
+  color: var(--color-status);
   font-size: 0.95rem;
 }
 
@@ -75,7 +122,7 @@ ul li {
   position: sticky;
   top: 0;
   z-index: 5;
-  background-color: #121212;
+  background-color: var(--color-page);
   margin: 8px 0 16px;
   padding: 8px 0;
 }
@@ -84,7 +131,7 @@ ul li {
    below it is the number that matters between sets. */
 #workoutClock {
   margin: 0 0 4px;
-  color: #b0b0b0;
+  color: var(--color-text-muted);
   font-size: 0.95rem;
 }
 
@@ -93,7 +140,7 @@ ul li {
 #restTimer {
   min-height: 1.4em;
   margin: 0;
-  color: #f0f0f0;
+  color: var(--color-text);
   font-size: 1.8rem;
   font-weight: bold;
 }
@@ -123,9 +170,9 @@ ul li {
 /* Amber/gold rather than the app's usual blue or green, so a personal best
    reads as a distinct, celebratory moment rather than routine status text. */
 #prBanner {
-  background-color: #4a3a10;
-  color: #ffd76a;
-  border: 1px solid #7a5f1a;
+  background-color: var(--color-record-background);
+  color: var(--color-record);
+  border: 1px solid var(--color-record-outline);
   border-radius: 8px;
   padding: 12px 16px;
   margin-bottom: 16px;
@@ -164,23 +211,36 @@ button {
   font-size: 1.1rem;
   border: none;
   border-radius: 8px;
-  background-color: #2a6df4;
-  color: #ffffff;
+  background-color: var(--color-accent);
+  color: var(--color-on-accent);
   cursor: pointer;
 }
 
 button:active {
-  background-color: #1d4fb8;
+  background-color: var(--color-accent-pressed);
 }
 
 /* Red instead of blue, so a destructive action (deleting a logged set)
    looks visibly different from the ordinary buttons around it. */
 .destructive-button {
-  background-color: #a33232;
+  background-color: var(--color-danger);
 }
 
 .destructive-button:active {
-  background-color: #7a2424;
+  background-color: var(--color-danger-pressed);
+}
+
+/* Grey with an outline instead of blue: for the way out of something
+   (Back, Cancel, Skip). When every button is the same blue, the eye can't
+   find the one that actually does the thing; this leaves blue for that. */
+.secondary-button {
+  background-color: var(--color-surface-raised);
+  color: var(--color-text);
+  box-shadow: inset 0 0 0 1px var(--color-border-raised);
+}
+
+.secondary-button:active {
+  background-color: var(--color-surface-pressed);
 }
 
 /* ---------------------------------------------------------------------------
@@ -210,8 +270,8 @@ button:active {
   overscroll-behavior: contain;
   box-sizing: border-box;
   padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
-  background-color: #1e1e1e;
-  border-top: 1px solid #333333;
+  background-color: var(--color-surface);
+  border-top: 1px solid var(--color-border);
   border-radius: 16px 16px 0 0;
 }
 
@@ -253,8 +313,8 @@ body:has(.bottom-sheet:not([hidden]))::before {
 .inline-set-panel {
   margin: 12px 0;
   padding: 4px 16px 16px;
-  background-color: #2a2a2a;
-  border: 1px solid #3d3d3d;
+  background-color: var(--color-surface-raised);
+  border: 1px solid var(--color-border-raised);
   border-radius: 12px;
   scroll-margin-top: 80px;
 }
@@ -274,20 +334,20 @@ body:has(.bottom-sheet:not([hidden]))::before {
 }
 
 #previousPerformance {
-  color: #b0b0b0;
+  color: var(--color-text-muted);
   font-size: 0.95rem;
 }
 
 /* The same "Last time" line on a workout card, between the green
    suggestion and the set pills. */
 .last-session-line {
-  color: #b0b0b0;
+  color: var(--color-text-muted);
   font-size: 0.95rem;
   margin: 0 0 12px;
 }
 
 #plannedExerciseEntryHint {
-  color: #b0b0b0;
+  color: var(--color-text-muted);
   font-size: 0.95rem;
   margin-top: -8px;
 }
@@ -295,7 +355,7 @@ body:has(.bottom-sheet:not([hidden]))::before {
 /* Distinguishes "what the workout template calls for" from "what you did last time"
    (#previousPerformance above), which sit right next to each other. */
 #plannedTarget {
-  color: #8fb8ff;
+  color: var(--color-plan);
   font-size: 0.95rem;
 }
 
@@ -303,7 +363,7 @@ body:has(.bottom-sheet:not([hidden]))::before {
    set panel. Green so it reads as "do this" at a glance, distinct from the
    blue plan line and the grey last-time line. */
 .progression-suggestion {
-  color: #7ddc8a;
+  color: var(--color-suggestion);
   font-size: 0.95rem;
   margin: -4px 0 12px;
 }
@@ -315,7 +375,7 @@ body:has(.bottom-sheet:not([hidden]))::before {
 /* One card per planned exercise in a template-based workout, holding that
    exercise's row of set pills (see below). */
 .exercise-card {
-  background-color: #1e1e1e;
+  background-color: var(--color-surface);
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 12px;
@@ -368,21 +428,21 @@ body:has(.bottom-sheet:not([hidden]))::before {
 
 /* Logged: green, matching the "done" convention from the reference design. */
 .set-pill-done {
-  background-color: #3a8a45;
-  color: #ffffff;
+  background-color: var(--color-done);
+  color: var(--color-on-accent);
 }
 
 /* Not yet logged: dim grey, so a glance at the card shows what's left. */
 .set-pill-pending {
-  background-color: #2a2a2a;
-  color: #9a9a9a;
+  background-color: var(--color-surface-raised);
+  color: var(--color-text-dim);
 }
 
 /* A set beyond the plan — same shape as the others, but styled like the
    rest of the app's buttons so it reads as "add", not as a set. */
 .set-pill-add {
-  background-color: #2a6df4;
-  color: #ffffff;
+  background-color: var(--color-accent);
+  color: var(--color-on-accent);
   font-size: 1.6rem;
   font-weight: bold;
 }
@@ -397,28 +457,28 @@ body:has(.bottom-sheet:not([hidden]))::before {
   margin-top: 12px;
   padding: 12px;
   font-size: 0.95rem;
-  background-color: #2a2a2a;
-  color: #c0c0c0;
-  border: 1px solid #3a3a3a;
+  background-color: var(--color-surface-raised);
+  color: var(--color-text-soft);
+  border: 1px solid var(--color-border-raised);
   border-radius: 8px;
   cursor: pointer;
 }
 
 .card-action-button:active {
-  background-color: #333333;
+  background-color: var(--color-surface-pressed);
 }
 
 /* One of these four is "selected" at a time (today's dayStatus) — muted
    grey by default, switching to the app's usual blue when active, rather
    than a checkbox/radio look that would be fiddly to tap accurately. */
 .day-status-option {
-  background-color: #2a2a2a;
-  color: #c0c0c0;
+  background-color: var(--color-surface-raised);
+  color: var(--color-text-soft);
 }
 
 .day-status-option-selected {
-  background-color: #2a6df4;
-  color: #ffffff;
+  background-color: var(--color-accent);
+  color: var(--color-on-accent);
 }
 
 .stepper-row {
@@ -466,7 +526,7 @@ body:has(.bottom-sheet:not([hidden]))::before {
 }
 
 .stepper .stepper-value:active {
-  background-color: #2a2a2a;
+  background-color: var(--color-surface-raised);
 }
 
 .stepper-value-input {
@@ -475,10 +535,10 @@ body:has(.bottom-sheet:not([hidden]))::before {
   text-align: center;
   font-size: 1.2rem;
   padding: 8px 4px;
-  border: 1px solid #2a6df4;
+  border: 1px solid var(--color-accent);
   border-radius: 6px;
-  background-color: #1e1e1e;
-  color: #f0f0f0;
+  background-color: var(--color-surface);
+  color: var(--color-text);
 }
 
 .warmup-toggle {
@@ -509,7 +569,7 @@ h1 {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  background-color: #1e1e1e;
+  background-color: var(--color-surface);
   padding: 16px;
   border-radius: 8px;
   margin-bottom: 8px;
@@ -523,7 +583,7 @@ h1 {
    indented under the gym's own row so it reads as belonging to that gym. */
 .gym-detail-row {
   margin-left: 24px;
-  color: #b0b0b0;
+  color: var(--color-text-muted);
 }
 
 /* Wraps a name plus an optional subtitle (e.g. the muscle summary) so they
@@ -576,8 +636,8 @@ h1 {
 
 .small-button:disabled {
   /* Disabled means "already at the top/bottom", not broken. */
-  background-color: #2a2a2a;
-  color: #666666;
+  background-color: var(--color-surface-raised);
+  color: var(--color-text-disabled);
   cursor: not-allowed;
 }
 
@@ -591,7 +651,7 @@ h1 {
    holds several lines (date/workout template, then one line per exercise), so it's a
    plain block rather than a flex row. */
 .history-card {
-  background-color: #1e1e1e;
+  background-color: var(--color-surface);
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 8px;
@@ -603,7 +663,7 @@ h1 {
 }
 
 .history-card-line {
-  color: #b0b0b0;
+  color: var(--color-text-muted);
   font-size: 0.95rem;
   margin-bottom: 4px;
 }
@@ -617,7 +677,7 @@ h1 {
 }
 
 #weeklyWorkoutTemplateSummary {
-  background-color: #1e1e1e;
+  background-color: var(--color-surface);
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 16px;
@@ -649,7 +709,7 @@ h1 {
   width: 100%;
   max-width: 56px;
   height: 120px;
-  background-color: #2a2a2a;
+  background-color: var(--color-surface-raised);
   border-radius: 6px;
   display: flex;
   align-items: flex-end;
@@ -659,7 +719,7 @@ h1 {
 .weekly-bar-fill {
   position: relative;
   width: 100%;
-  background-color: #3a8a45;
+  background-color: var(--color-done);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -668,7 +728,7 @@ h1 {
 }
 
 .weekly-bar-percent {
-  color: #ffffff;
+  color: var(--color-on-accent);
   font-size: 0.8rem;
   font-weight: bold;
 }
@@ -685,24 +745,24 @@ h1 {
   right: 0;
   padding-bottom: 2px;
   text-align: center;
-  color: #f0f0f0;
+  color: var(--color-text);
 }
 
 .weekly-bar-label {
   margin-top: 8px;
   font-size: 0.85rem;
   text-align: center;
-  color: #c0c0c0;
+  color: var(--color-text-soft);
   word-break: break-word;
 }
 
 .weekly-bar-date {
   font-size: 0.75rem;
-  color: #777777;
+  color: var(--color-text-dim);
 }
 
 #muscleCounters {
-  background-color: #1e1e1e;
+  background-color: var(--color-surface);
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 16px;
@@ -729,24 +789,24 @@ h1 {
 }
 
 .muscle-counter-count {
-  color: #9a9a9a;
+  color: var(--color-text-dim);
 }
 
 .muscle-counter-track {
   height: 8px;
-  background-color: #2a2a2a;
+  background-color: var(--color-surface-raised);
   border-radius: 4px;
   overflow: hidden;
 }
 
 .muscle-counter-fill {
   height: 100%;
-  background-color: #3a8a45;
+  background-color: var(--color-done);
 }
 
 /* Holds one hand-drawn inline SVG chart (see buildLineChartSVG in app.js). */
 .stats-chart {
-  background-color: #1e1e1e;
+  background-color: var(--color-surface);
   border-radius: 8px;
   padding: 8px;
   margin-bottom: 24px;
@@ -772,9 +832,9 @@ h1 {
   margin-top: 8px;
   padding: 14px;
   font-size: 1.1rem;
-  background-color: #1e1e1e;
-  color: #f0f0f0;
-  border: 1px solid #333333;
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
 }
 
@@ -801,8 +861,8 @@ h1 {
   justify-content: space-around;
   gap: 4px;
   padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
-  background-color: #1a1a1a;
-  border-top: 1px solid #2a2a2a;
+  background-color: var(--color-nav);
+  border-top: 1px solid var(--color-surface-raised);
 }
 
 /* Undoes the general blue `button` look above: these are quiet icons, not
@@ -819,15 +879,15 @@ h1 {
   justify-content: center;
   gap: 2px;
   background-color: transparent;
-  color: #9a9a9a;
+  color: var(--color-text-dim);
   font-size: 0.7rem;
   border-radius: 12px;
 }
 
 .bottom-nav-button:active,
 .bottom-nav-button-current {
-  background-color: #2a2a2a;
-  color: #ffffff;
+  background-color: var(--color-surface-raised);
+  color: var(--color-on-accent);
 }
 
 /* ---------------------------------------------------------------------------
@@ -852,27 +912,27 @@ h1 {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  background-color: #2a2a2a;
-  color: #f0f0f0;
+  background-color: var(--color-surface-raised);
+  color: var(--color-text);
   border: 3px solid transparent;
   border-radius: 14px;
 }
 
 .workout-tile:active {
-  background-color: #353535;
+  background-color: var(--color-surface-pressed);
 }
 
 /* Same green as the weekly bars' fill, so "done" means one colour
    everywhere on the page. */
 .workout-tile-done,
 .workout-tile-done:active {
-  background-color: #3a8a45;
+  background-color: var(--color-done);
 }
 
 /* An outline rather than a whole new fill colour, so the open tile still
    shows whether it's done. */
 .workout-tile-selected {
-  border-color: #2a6df4;
+  border-color: var(--color-accent);
 }
 
 .workout-tile-full-width {
@@ -891,7 +951,7 @@ h1 {
 
 .workout-tile-panel {
   grid-column: 1 / -1;
-  background-color: #1e1e1e;
+  background-color: var(--color-surface);
   border-radius: 14px;
   padding: 16px;
 }
@@ -903,7 +963,7 @@ h1 {
 
 .workout-tile-panel-status {
   margin: 0 0 16px 0;
-  color: #9a9a9a;
+  color: var(--color-text-dim);
   font-size: 0.9rem;
 }
 
@@ -929,8 +989,8 @@ h1 {
   align-items: center;
   justify-content: center;
   border-radius: 10px;
-  background-color: #e0a800;
-  color: #121212;
+  background-color: var(--color-order-number);
+  color: var(--color-page);
   font-weight: bold;
   font-size: 1.1rem;
 }
@@ -942,21 +1002,21 @@ h1 {
 }
 
 .workout-tile-exercise-text span {
-  color: #c0c0c0;
+  color: var(--color-text-soft);
   font-size: 0.95rem;
 }
 
 /* White on the dark panel: the one thing on it that's meant to be tapped. */
 .workout-tile-start-button {
   width: 100%;
-  background-color: #f0f0f0;
-  color: #121212;
+  background-color: var(--color-text);
+  color: var(--color-page);
   font-weight: bold;
   letter-spacing: 0.03em;
 }
 
 .workout-tile-start-button:active {
-  background-color: #cfcfcf;
+  background-color: var(--color-light-button-pressed);
 }
 
 /* One muscle group in the exercise picker (a <details> box). The <summary>
@@ -968,7 +1028,7 @@ h1 {
 
 .picker-group summary {
   padding: 16px;
-  background-color: #262626;
+  background-color: var(--color-surface-raised);
   border-radius: 8px;
   font-size: 1.1rem;
   font-weight: bold;
@@ -1010,7 +1070,7 @@ h1 {
 
 .readiness-hint {
   margin: 6px 0 10px;
-  color: #b0b0b0;
+  color: var(--color-text-muted);
   font-size: 0.9rem;
 }
 
@@ -1057,7 +1117,7 @@ h1 {
    --------------------------------------------------------------------------- */
 
 #deloadCard {
-  background-color: #1e1e1e;
+  background-color: var(--color-surface);
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 16px;
@@ -1065,7 +1125,7 @@ h1 {
 
 #deloadCard p {
   margin: 0 0 12px;
-  color: #b0b0b0;
+  color: var(--color-text-muted);
 }
 
 #startDeloadButton,
@@ -1076,16 +1136,16 @@ h1 {
 /* The backstop offer: a card like the deload card, with Accept and Not
    now side by side so either is one thumb-reach away. */
 .deload-offer-card {
-  background-color: #1e1e1e;
+  background-color: var(--color-surface);
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 16px;
-  box-shadow: inset 0 0 0 1px #3a5a8a;
+  box-shadow: inset 0 0 0 1px var(--color-plan-outline);
 }
 
 .deload-offer-card p {
   margin: 0 0 12px;
-  color: #d0d0d0;
+  color: var(--color-text-soft);
 }
 
 .deload-offer-buttons {
@@ -1104,7 +1164,7 @@ h1 {
 /* TEMPORARY, like the reminders themselves: quiet, at the bottom of the
    home screen, so it never competes with the workout buttons. */
 #developmentReminders {
-  border: 1px dashed #555555;
+  border: 1px dashed var(--color-border-raised);
   border-radius: 8px;
   padding: 12px 16px;
   margin-top: 24px;
@@ -1112,21 +1172,21 @@ h1 {
 
 #developmentReminders h2 {
   font-size: 1rem;
-  color: #b0b0b0;
+  color: var(--color-text-muted);
   margin: 0 0 8px;
 }
 
 #developmentReminderList {
   margin: 0;
   padding-left: 20px;
-  color: #b0b0b0;
+  color: var(--color-text-muted);
 }
 
 /* Blue like the plan line: it's about what today's plan is, not a warning
    and not a suggestion. */
 .deload-banner {
-  background-color: #1a2638;
-  color: #8fb8ff;
+  background-color: var(--color-plan-background);
+  color: var(--color-plan);
   border-radius: 8px;
   padding: 12px 16px;
   margin: 0 0 16px;
@@ -1136,8 +1196,8 @@ h1 {
   margin-left: 8px;
   padding: 2px 8px;
   border-radius: 4px;
-  background-color: #1a2638;
-  color: #8fb8ff;
+  background-color: var(--color-plan-background);
+  color: var(--color-plan);
   font-size: 0.8rem;
   font-weight: normal;
   vertical-align: middle;
@@ -1153,13 +1213,13 @@ h1 {
 
 #backupStatus p {
   margin: 0 0 12px 0;
-  color: #b0b0b0;
+  color: var(--color-text-muted);
 }
 
 /* Orange rather than the personal-best amber, so "you should do something"
    never gets mistaken for a celebration. */
 #backupStatus p.backup-overdue {
-  color: #ff9a5c;
+  color: var(--color-warning);
   font-weight: bold;
 }
 
@@ -1172,8 +1232,8 @@ h1 {
 /* "Today: Poor sleep" once a status is set: a green outline and text, so
    "done" and "still to do" look different at a glance. */
 .card-action-button.day-status-button-set {
-  color: #7ddc8a;
-  box-shadow: inset 0 0 0 1px #3f7a48;
+  color: var(--color-suggestion);
+  box-shadow: inset 0 0 0 1px var(--color-done-outline);
 }
 
 /* "‹  September 2026  ›" above the monthly recap: two big arrow buttons
@@ -1198,8 +1258,8 @@ h1 {
 }
 
 .recap-month-picker button:disabled {
-  background-color: #2a2a2a;
-  color: #555555;
+  background-color: var(--color-surface-raised);
+  color: var(--color-text-disabled);
 }
 
 /* The one big number at the top of a recap card ("12 workouts"). */
@@ -1212,7 +1272,7 @@ h1 {
 /* The home screen's check-in reminder: a card like the others there, with
    a full-width button for the thumb. */
 #weeklyCheckInPrompt {
-  background-color: #1e1e1e;
+  background-color: var(--color-surface);
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 16px;
@@ -1220,7 +1280,7 @@ h1 {
 
 #weeklyCheckInPrompt p {
   margin: 0 0 12px;
-  color: #b0b0b0;
+  color: var(--color-text-muted);
 }
 
 #openWeeklyCheckInButton {
@@ -1228,7 +1288,7 @@ h1 {
 }
 
 .check-in-scale-hint {
-  color: #b0b0b0;
+  color: var(--color-text-muted);
   margin-top: -8px;
 }
 
@@ -1256,8 +1316,8 @@ h1 {
 }
 
 #saveWeeklyCheckInButton:disabled {
-  background-color: #2a2a2a;
-  color: #777777;
+  background-color: var(--color-surface-raised);
+  color: var(--color-text-dim);
 }
 
 /* A past check-in in the list: a tappable row, like the exercise buttons. */
@@ -1265,14 +1325,14 @@ h1 {
   display: block;
   width: 100%;
   text-align: left;
-  background-color: #1e1e1e;
-  color: #f0f0f0;
+  background-color: var(--color-surface);
+  color: var(--color-text);
   font-size: 1rem;
 }
 
 .check-in-list-item span {
   display: block;
-  color: #b0b0b0;
+  color: var(--color-text-muted);
   font-size: 0.9rem;
   margin-top: 4px;
 }
@@ -1282,7 +1342,7 @@ h1 {
 .muscle-area-label {
   display: block;
   margin-bottom: 6px;
-  color: #9a9a9a;
+  color: var(--color-text-dim);
   font-size: 0.85rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -1319,14 +1379,14 @@ h1 {
 }
 
 #saveCardioButton:disabled {
-  background-color: #2a2a2a;
-  color: #777777;
+  background-color: var(--color-surface-raised);
+  color: var(--color-text-dim);
 }
 
 /* Template editor: which muscles drop detection can't cover (see
    renderSingleSlotMuscleNote). Muted, since it's advice, not an error. */
 #singleSlotMuscleNote {
-  color: #b0b0b0;
+  color: var(--color-text-muted);
   font-size: 0.9rem;
   margin: 0 0 16px;
 }
@@ -1339,7 +1399,7 @@ h1 {
 
 #dropDetectionReadoutList {
   padding-left: 18px;
-  color: #b0b0b0;
+  color: var(--color-text-muted);
   font-size: 0.9rem;
 }
 
