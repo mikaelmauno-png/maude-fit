@@ -498,11 +498,15 @@ body:has(.bottom-sheet:not([hidden]))::before {
 .day-status-option {
   background-color: var(--color-surface-raised);
   color: var(--color-text-soft);
+  /* An outline, so the buttons still show their edges when they sit on a
+     panel of the same grey (the set panel inside a workout card). */
+  box-shadow: inset 0 0 0 1px var(--color-border-raised);
 }
 
 .day-status-option-selected {
   background-color: var(--color-accent);
   color: var(--color-on-accent);
+  box-shadow: none;
 }
 
 .stepper-row {
@@ -563,6 +567,29 @@ body:has(.bottom-sheet:not([hidden]))::before {
   border-radius: 6px;
   background-color: var(--color-surface);
   color: var(--color-text);
+}
+
+/* "RIR" on its own line, then the six value buttons sharing the full
+   width below it — beside the label they'd be too narrow for a thumb. */
+.rir-row {
+  margin-bottom: 12px;
+}
+
+.rir-row .stepper-label {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.rir-buttons button {
+  min-height: 52px;
+}
+
+/* Full width and as tall as the other buttons; blue while switched on
+   (the .day-status-option-selected look), grey while off. */
+.warmup-toggle-button {
+  display: block;
+  width: 100%;
+  margin-bottom: 16px;
 }
 
 .warmup-toggle {

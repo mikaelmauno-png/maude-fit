@@ -348,20 +348,17 @@
       <!-- Hidden instead of removed when a set is marked warmup, so RIR
            isn't lost if the warmup checkbox gets toggled back off before
            saving. -->
-      <div class="stepper-row" id="rirRow">
+      <div class="rir-row" id="rirRow">
         <span class="stepper-label">RIR</span>
-        <div class="stepper">
-          <button type="button" id="rirDecrement">&minus;</button>
-          <button type="button" id="rirValue" class="stepper-value"></button>
-          <input type="number" inputmode="numeric" id="rirValueInput" class="stepper-value-input" hidden>
-          <button type="button" id="rirIncrement">+</button>
-        </div>
+        <!-- One button per value, all visible at once: a single tap, and
+             no need to look at a number while pressing +/-. Built by
+             renderRirButtons in app.js. -->
+        <div class="check-in-rating-buttons rir-buttons" id="rirButtons"></div>
       </div>
 
-      <label class="warmup-toggle">
-        <input type="checkbox" id="warmupCheckbox">
-        Warmup set
-      </label>
+      <!-- A full-width button instead of a small checkbox, which was hard
+           to hit with chalky hands. Highlighted while on. -->
+      <button type="button" id="warmupToggleButton" class="day-status-option warmup-toggle-button" aria-pressed="false">Warmup set</button>
 
       <div class="button-row">
         <button id="saveSetButton">Save set</button>

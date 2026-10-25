@@ -1941,11 +1941,11 @@ const plannedTarget = document.getElementById("plannedTarget");
 const previousPerformance = document.getElementById("previousPerformance");
 const progressionSuggestion = document.getElementById("progressionSuggestion");
 const rirRow = document.getElementById("rirRow");
-const warmupCheckbox = document.getElementById("warmupCheckbox");
+const rirButtonsElement = document.getElementById("rirButtons");
+const warmupToggleButton = document.getElementById("warmupToggleButton");
 
 const loadValueElement = document.getElementById("loadValue");
 const repsValueElement = document.getElementById("repsValue");
-const rirValueElement = document.getElementById("rirValue");
 const saveSetButton = document.getElementById("saveSetButton");
 const deleteSetButton = document.getElementById("deleteSetButton");
 
@@ -2075,9 +2075,43 @@ function findExerciseById(exerciseId) {
 function renderSetDraft() {
   loadValueElement.textContent = formatLoad(appState.setDraft.load, findExerciseById(appState.setDraft.exerciseId));
   repsValueElement.textContent = appState.setDraft.reps;
-  rirValueElement.textContent = appState.setDraft.rir;
+  renderRirButtons(appState.setDraft.rir);
   rirRow.hidden = appState.setDraft.isWarmup;
-  warmupCheckbox.checked = appState.setDraft.isWarmup;
+  warmupToggleButton.classList.toggle("day-status-option-selected", appState.setDraft.isWarmup);
+  // Tells a screen reader the button is on or off, which the colour alone
+  // can't.
+  warmupToggleButton.setAttribute("aria-pressed", String(appState.setDraft.isWarmup));
+}
+
+// The RIR buttons go up to 5: past that, "how many more could I have done"
+// is a guess anyway. A higher value already stored (an older set, or a
+// typed one) gets its own extra button, rather than being shown as 5 —
+// the record must say exactly what was logged.
+const RIR_BUTTON_MAX = 5;
+
+function renderRirButtons(selectedRir) {
+  rirButtonsElement.innerHTML = "";
+  const values = [];
+  for (let value = 0; value <= RIR_BUTTON_MAX; value++) {
+    values.push(value);
+  }
+  if (selectedRir > RIR_BUTTON_MAX) {
+    values.push(selectedRir);
+  }
+
+  for (const value of values) {
+    const rirButton = document.createElement("button");
+    rirButton.type = "button";
+    rirButton.className = "day-status-option";
+    rirButton.textContent = value;
+    rirButton.dataset.value = value;
+    rirButton.addEventListener("click", () => {
+      appState.setDraft.rir = value;
+      renderSetDraft();
+    });
+    rirButtonsElement.appendChild(rirButton);
+  }
+  highlightSelectedButton(rirButtonsElement, "value", selectedRir);
 }
 
 // Guards against a stepper's typed-number input being stuck open from a
@@ -2087,7 +2121,7 @@ function renderSetDraft() {
 // from showing a raw number input instead of its normal button the next
 // time the panel opens.
 function resetSetEntryStepperEditUI() {
-  for (const field of ["load", "reps", "rir"]) {
+  for (const field of ["load", "reps"]) {
     document.getElementById(`${field}ValueInput`).hidden = true;
     document.getElementById(`${field}Value`).hidden = false;
     document.getElementById(`${field}Decrement`).hidden = false;
@@ -2388,10 +2422,6 @@ document.getElementById("repsDecrement").addEventListener("click", () =>
   adjustDraftField(appState.setDraft, "reps", -1, 1, renderSetDraft));
 document.getElementById("repsIncrement").addEventListener("click", () =>
   adjustDraftField(appState.setDraft, "reps", 1, 1, renderSetDraft));
-document.getElementById("rirDecrement").addEventListener("click", () =>
-  adjustDraftField(appState.setDraft, "rir", -1, 0, renderSetDraft));
-document.getElementById("rirIncrement").addEventListener("click", () =>
-  adjustDraftField(appState.setDraft, "rir", 1, 0, renderSetDraft));
 
 makeStepperValueEditable(
   document.getElementById("loadValue"), document.getElementById("loadValueInput"),
@@ -2403,14 +2433,8 @@ makeStepperValueEditable(
   document.getElementById("repsDecrement"), document.getElementById("repsIncrement"),
   () => appState.setDraft, "reps", 1, true, renderSetDraft
 );
-makeStepperValueEditable(
-  document.getElementById("rirValue"), document.getElementById("rirValueInput"),
-  document.getElementById("rirDecrement"), document.getElementById("rirIncrement"),
-  () => appState.setDraft, "rir", 0, true, renderSetDraft
-);
-
-warmupCheckbox.addEventListener("change", () => {
-  appState.setDraft.isWarmup = warmupCheckbox.checked;
+warmupToggleButton.addEventListener("click", () => {
+  appState.setDraft.isWarmup = !appState.setDraft.isWarmup;
   renderSetDraft();
 });
 
