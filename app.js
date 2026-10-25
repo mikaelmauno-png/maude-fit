@@ -883,7 +883,13 @@ function renderTemplateWorkoutCards(template) {
     // One pill per planned set, filled in from whatever's actually been
     // logged so far for it.
     for (let setIndex = 0; setIndex < planned.targetSets; setIndex++) {
-      pillRowElement.appendChild(buildSetPill(loggedSets[setIndex], planned, suggestion, setIndex));
+      const pill = buildSetPill(loggedSets[setIndex], planned, suggestion, setIndex);
+      // Sets fill in from the left, so the first one not logged yet sits
+      // right after the logged ones: that's the one to do next.
+      if (setIndex === loggedSets.length) {
+        pill.classList.add("set-pill-next");
+      }
+      pillRowElement.appendChild(pill);
     }
 
     // Any sets logged beyond the planned count (via the "+" pill below) get
@@ -1286,7 +1292,9 @@ function updateWorkoutControls() {
   renderWorkoutBodyweightButton();
   workoutStatus.textContent = isActive ? "Workout in progress" : "";
   renderStartWorkoutChoices();
-  updateRestTimer();
+  // Both timers, not just rest: otherwise the clock stays blank until the
+  // once-a-second tick, and the screen jumps when it appears.
+  updateWorkoutTimers();
   renderWeeklyWorkoutTemplateSummary();
   renderMuscleCounters();
 }

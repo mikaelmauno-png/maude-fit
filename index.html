@@ -177,9 +177,11 @@
          keeps running in the background; leaving this screen doesn't end it.
          =================================================================== -->
     <section id="activeWorkoutScreen" hidden>
+      <!-- End workout is not up here: it sat right beside Home, the same
+           size, where a slightly-off thumb ended the workout. It's at the
+           bottom of this screen instead. -->
       <div class="button-row">
-        <button id="homeFromWorkoutButton">Home</button>
-        <button id="endWorkoutButton" hidden>End workout</button>
+        <button id="homeFromWorkoutButton" class="secondary-button">Home</button>
       </div>
       <p id="workoutStatus"></p>
       <!-- Pinned to the top of the screen while scrolling (see style.css).
@@ -247,6 +249,11 @@
            pill for a set beyond the plan. Tapping any pill opens the set
            entry panel below, either to log it or to correct it. -->
       <div id="templateWorkoutCards" hidden></div>
+
+      <!-- Last on the screen, after every card, so it's reached on purpose
+           once the work is done rather than brushed by accident. Still one
+           tap, no confirmation (UI rules: none on the common path). -->
+      <button id="endWorkoutButton" class="end-workout-button" hidden>End workout</button>
     </section>
 
 
