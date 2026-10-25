@@ -652,21 +652,59 @@ h1 {
   flex: none;
 }
 
-/* An exercise in the library: details on top at full width, buttons in a
-   wrapping row below (see renderExercisesManageList in app.js). */
-.exercise-manage-row {
-  flex-direction: column;
-  align-items: stretch;
-}
-
 .exercise-manage-name {
   font-weight: bold;
 }
 
-.exercise-manage-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+/* "Gym-specific" / "Bodyweight" after an exercise's name: small, blue-grey
+   and boxed, so it reads as a label rather than part of the name. */
+.exercise-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background-color: var(--color-plan-background);
+  color: var(--color-plan);
+  font-size: 0.75rem;
+  font-weight: normal;
+  vertical-align: middle;
+}
+
+/* A form that folds out on a screen (the library's "New exercise"): a card
+   so it reads as one unit, separate from the list below. */
+.form-card {
+  background-color: var(--color-surface);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.form-card h2 {
+  margin-top: 0;
+}
+
+/* What needs fixing in a form, shown in place of a browser pop-up. */
+.form-error {
+  color: var(--color-warning);
+  margin: 0 0 12px;
+}
+
+.muted-note {
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+}
+
+/* A row of short preset choices ("1 kg", "2.5 kg" ...): narrower than the
+   usual button-row minimum, so four fit across a phone. */
+.preset-row button {
+  min-width: 0;
+  padding: 12px 4px;
+}
+
+/* A quiet button for something that removes, like archiving: the muted
+   card-action look, with warning-coloured text to say what it does. */
+.danger-text-button {
+  color: var(--color-warning);
 }
 
 /* Overrides button's flex:1/full-padding defaults for the small "Edit" /

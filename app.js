@@ -105,6 +105,9 @@ const appState = {
   dayStatusEditingSessionId: null, // which session the open day-status panel is editing (active or a past one); null when the panel is closed
   muscleEditorExerciseId: null,   // which exercise's muscle editor is open; null otherwise
   muscleDraft: null,              // { mainMuscle, secondaryMuscles } while the muscle editor is open; null otherwise
+  exerciseEditDraft: null,        // { exerciseId, name, minimumLoadIncrement, isGymSpecific, isBodyweight } while the exercise edit panel is open; null otherwise
+  textEntryRequest: null,         // { onSave } while the text entry panel is open; onSave(text) returns an error message, or null when saved
+  exerciseSearchText: "",         // what's typed in the exercise library's search box
   checkInDraft: null,               // { weekStart, fatigue, stress, motivation, recovery, notes } while the weekly check-in screen is open; a rating is null until answered
   isCheckInOpenedFromStats: false, // true when the check-in screen was opened from Stats, so saving stays there instead of going home
   cardioDraft: null,                // the cardio session being logged or edited while the Log cardio screen is open (see startNewCardioDraft); null otherwise
@@ -168,6 +171,8 @@ const setEntryPanel = document.getElementById("setEntryPanel");
 // (a past session's "Edit status" button).
 const dayStatusPanel = document.getElementById("dayStatusPanel");
 const removeExercisePanel = document.getElementById("removeExercisePanel");
+const exerciseEditPanel = document.getElementById("exerciseEditPanel");
+const textEntryPanel = document.getElementById("textEntryPanel");
 
 // Every top-level screen, so each show*Screen() function below can hide all
 // of them and then reveal just its own, without repeating this list six times.
@@ -177,7 +182,7 @@ const allScreens = [
   gymPickerScreen, setEntryPanel, exerciseStatsListScreen, exerciseStatsDetailScreen, muscleEditorPanel,
   personalBestsScreen, muscleStatsListScreen, muscleStatsDetailScreen, dayStatusPanel,
   bodyweightScreen, removeExercisePanel, monthlyRecapScreen, weeklyCheckInScreen,
-  cardioActivitiesScreen, cardioLogScreen, statsScreen
+  cardioActivitiesScreen, cardioLogScreen, statsScreen, exerciseEditPanel, textEntryPanel
 ];
 
 // Hides the bottom bar too: most screens don't have it, so the four that
@@ -288,6 +293,10 @@ function showWorkoutTemplateEditorScreen() {
 function showExercisesScreen() {
   hideAllScreens();
   exercisesScreen.hidden = false;
+  // A fresh visit: no edit left half-open from before (it would pop back
+  // up when the muscle editor closes), and the add form folded away.
+  appState.exerciseEditDraft = null;
+  hideNewExerciseForm();
   renderExercisesManageList();
 }
 
@@ -1021,28 +1030,34 @@ function buildMachineMaxButton(exercise, gymId) {
     ? `Max weight at ${gym.name}: ${currentMax} kg`
     : `Set max weight at ${gym.name}`;
   button.addEventListener("click", () => {
-    const answer = prompt(
-      `Heaviest weight (kg) for ${exercise.name} at ${gym.name}. Leave empty for no limit.`,
-      typeof currentMax === "number" ? String(currentMax) : ""
-    );
-    if (answer === null) {
-      return;
-    }
-    if (answer.trim() === "") {
-      delete gym.machineMaxLoads[exercise.id];
-    } else {
-      // Same rule as a load increment: any positive number of kilograms.
-      const maxLoad = parseLoadIncrement(answer);
-      if (maxLoad === null) {
-        alert("Enter the weight as a number of kilograms, e.g. 120.");
-        return;
-      }
-      gym.machineMaxLoads[exercise.id] = maxLoad;
-    }
-    saveDatabase(appState.database);
-    renderExerciseArea();
+    openTextEntryPanel({
+      heading: `Max weight at ${gym.name}`,
+      label: `Heaviest weight (kg) for ${exercise.name}. Leave empty for no limit.`,
+      initialValue: typeof currentMax === "number" ? String(currentMax) : "",
+      placeholder: "e.g. 120",
+      isNumber: true,
+      onSave: (typedText) => saveMachineMaxLoad(gym, exercise.id, typedText)
+    });
   });
   return button;
+}
+
+// Empty clears the limit. Returns an error message for the text entry
+// panel, or null once saved.
+function saveMachineMaxLoad(gym, exerciseId, typedText) {
+  if (typedText.trim() === "") {
+    delete gym.machineMaxLoads[exerciseId];
+  } else {
+    // Same rule as a load increment: any positive number of kilograms.
+    const maxLoad = parseLoadIncrement(typedText);
+    if (maxLoad === null) {
+      return "Enter the weight as a number of kilograms, e.g. 120.";
+    }
+    gym.machineMaxLoads[exerciseId] = maxLoad;
+  }
+  saveDatabase(appState.database);
+  renderExerciseArea();
+  return null;
 }
 
 // "Instead of Leg press", under a replacement's name, so it's clear why
@@ -2103,16 +2118,27 @@ function formatLoadsAndReps(sets) {
 }
 
 
-// "Leg press (gym-specific)", "Pull-up (bodyweight)", or just the name.
-function describeExerciseNameWithKind(exercise) {
-  const kinds = [];
+// The exercise's name followed by small tags ("Gym-specific",
+// "Bodyweight") for the kinds that change how it's logged. Tags rather
+// than "(gym-specific)" in the name itself, so the name reads cleanly and
+// the kind still stands out. Returns elements to append, not text.
+function buildExerciseNameWithTags(exercise) {
+  const fragment = document.createDocumentFragment();
+  fragment.append(exercise.name);
   if (exercise.isGymSpecific) {
-    kinds.push("gym-specific");
+    fragment.append(buildExerciseTag("Gym-specific"));
   }
   if (exercise.isBodyweight) {
-    kinds.push("bodyweight");
+    fragment.append(buildExerciseTag("Bodyweight"));
   }
-  return kinds.length > 0 ? `${exercise.name} (${kinds.join(", ")})` : exercise.name;
+  return fragment;
+}
+
+function buildExerciseTag(label) {
+  const tagElement = document.createElement("span");
+  tagElement.className = "exercise-tag";
+  tagElement.textContent = label;
+  return tagElement;
 }
 
 function findExerciseById(exerciseId) {
@@ -2618,9 +2644,12 @@ function describeMuscles(muscles) {
 }
 
 // The library, in the same collapsible main-muscle groups as the exercise
-// picker (see groupExercisesByMainMuscle). Every button below redraws the
-// whole list, which would snap every open group shut each time, so the
-// groups open before the redraw are found first and opened again after.
+// picker (see groupExercisesByMainMuscle). Every change redraws the whole
+// list, which would snap every open group shut each time, so the groups
+// open before the redraw are found first and opened again after.
+// While something is typed in the search box, only matching exercises are
+// listed, and their groups open by themselves so the matches are visible
+// without extra taps.
 function renderExercisesManageList() {
   const listElement = document.getElementById("exercisesManageList");
   const openGroupLabels = new Set(
@@ -2628,12 +2657,18 @@ function renderExercisesManageList() {
   );
   listElement.innerHTML = "";
 
+  const searchText = appState.exerciseSearchText.trim().toLowerCase();
+  const isSearching = searchText !== "";
   const activeExercises = appState.database.exercises.filter((candidate) => !candidate.isArchived);
-  for (const group of groupExercisesByMainMuscle(activeExercises)) {
+  const shownExercises = isSearching
+    ? activeExercises.filter((exercise) => exercise.name.toLowerCase().includes(searchText))
+    : activeExercises;
+
+  for (const group of groupExercisesByMainMuscle(shownExercises)) {
     const groupElement = document.createElement("details");
     groupElement.className = "picker-group";
     groupElement.dataset.groupLabel = group.label;
-    groupElement.open = openGroupLabels.has(group.label);
+    groupElement.open = isSearching || openGroupLabels.has(group.label);
 
     const summaryElement = document.createElement("summary");
     summaryElement.textContent = `${group.label} (${group.exercises.length})`;
@@ -2646,23 +2681,29 @@ function renderExercisesManageList() {
     groupElement.appendChild(groupListElement);
     listElement.appendChild(groupElement);
   }
+
+  document.getElementById("exerciseSearchEmptyMessage").hidden = !isSearching || shownExercises.length > 0;
 }
 
-// One exercise in the library, with its buttons.
+document.getElementById("exerciseSearchInput").addEventListener("input", (event) => {
+  appState.exerciseSearchText = event.target.value;
+  renderExercisesManageList();
+});
+
+// One exercise in the library: its name, tags and details, and a single
+// Edit button. Everything that can be changed lives in the edit panel
+// (openExerciseEditPanel), rather than six equal buttons on every row
+// where Archive looked just like Rename.
 function buildExerciseManageRow(exercise) {
-  // Stacked rather than side by side: the name and details get the full
-  // width on top, with the buttons in their own row underneath. Side by
-  // side, five buttons left the text a narrow column that wrapped
-  // nearly every word onto its own line.
   const rowElement = document.createElement("li");
-  rowElement.className = "list-row exercise-manage-row";
+  rowElement.className = "list-row";
 
   const infoElement = document.createElement("div");
   infoElement.className = "list-row-info";
 
   const nameSpan = document.createElement("span");
   nameSpan.className = "exercise-manage-name";
-  nameSpan.textContent = describeExerciseNameWithKind(exercise);
+  nameSpan.append(buildExerciseNameWithTags(exercise));
   infoElement.appendChild(nameSpan);
 
   const incrementSpan = document.createElement("span");
@@ -2678,93 +2719,221 @@ function buildExerciseManageRow(exercise) {
     infoElement.appendChild(muscleSpan);
   }
 
-  const renameButton = document.createElement("button");
-  renameButton.type = "button";
-  renameButton.className = "small-button";
-  renameButton.textContent = "Rename";
-  renameButton.addEventListener("click", () => {
-    // Only Exercise.name changes here — the id (used by every set and
-    // workout template that references this exercise) is stable per schema.js and
-    // is never touched by a rename.
-    const newName = prompt("Rename exercise", exercise.name);
-    if (newName === null) {
-      return;
-    }
-    const trimmedName = newName.trim();
-    if (trimmedName === "") {
-      alert("Name can't be empty.");
-      return;
-    }
-    exercise.name = trimmedName;
-    saveDatabase(appState.database);
-    renderExercisesManageList();
-  });
+  const editButton = document.createElement("button");
+  editButton.type = "button";
+  editButton.className = "small-button secondary-button";
+  editButton.textContent = "Edit";
+  editButton.addEventListener("click", () => openExerciseEditPanel(exercise.id));
 
-  const incrementButton = document.createElement("button");
-  incrementButton.type = "button";
-  incrementButton.className = "small-button";
-  incrementButton.textContent = "Min raise";
-  incrementButton.addEventListener("click", () => {
-    const typedIncrement = prompt("Smallest weight raise for this exercise (kg)", exercise.minimumLoadIncrement);
-    if (typedIncrement === null) {
-      return;
-    }
-    const newIncrement = parseLoadIncrement(typedIncrement);
-    if (newIncrement === null) {
-      alert("Enter a weight above 0, e.g. 2.5.");
-      return;
-    }
-    exercise.minimumLoadIncrement = newIncrement;
-    saveDatabase(appState.database);
-    renderExercisesManageList();
-  });
-
-  const musclesButton = document.createElement("button");
-  musclesButton.type = "button";
-  musclesButton.className = "small-button";
-  musclesButton.textContent = "Set muscles";
-  musclesButton.addEventListener("click", () => openMuscleEditor(exercise.id));
-
-  const gymToggleButton = document.createElement("button");
-  gymToggleButton.type = "button";
-  gymToggleButton.className = "small-button";
-  gymToggleButton.textContent = exercise.isGymSpecific ? "Unmark" : "Mark gym-specific";
-  gymToggleButton.addEventListener("click", () => {
-    exercise.isGymSpecific = !exercise.isGymSpecific;
-    saveDatabase(appState.database);
-    renderExercisesManageList();
-  });
-
-  const bodyweightToggleButton = document.createElement("button");
-  bodyweightToggleButton.type = "button";
-  bodyweightToggleButton.className = "small-button";
-  bodyweightToggleButton.textContent = exercise.isBodyweight ? "Not bodyweight" : "Mark bodyweight";
-  bodyweightToggleButton.addEventListener("click", () => {
-    exercise.isBodyweight = !exercise.isBodyweight;
-    saveDatabase(appState.database);
-    renderExercisesManageList();
-  });
-
-  const archiveButton = document.createElement("button");
-  archiveButton.type = "button";
-  archiveButton.className = "small-button";
-  archiveButton.textContent = "Archive";
-  archiveButton.addEventListener("click", () => {
-    // Archiving instead of deleting keeps past sets and workout templates that
-    // reference this exercise resolvable.
-    exercise.isArchived = true;
-    saveDatabase(appState.database);
-    renderExercisesManageList();
-    renderArchivedExercisesList();
-  });
-
-  const actionsElement = document.createElement("div");
-  actionsElement.className = "exercise-manage-actions";
-  actionsElement.append(musclesButton, renameButton, incrementButton, gymToggleButton, bodyweightToggleButton, archiveButton);
-
-  rowElement.append(infoElement, actionsElement);
+  rowElement.append(infoElement, editButton);
   return rowElement;
 }
+
+// ---------------------------------------------------------------------------
+// Text entry panel: the app's own replacement for the browser's prompt()
+// box, used wherever one value has to be typed (renaming a gym or a cardio
+// activity, a machine's heaviest weight).
+// ---------------------------------------------------------------------------
+
+const textEntryInput = document.getElementById("textEntryInput");
+const textEntryError = document.getElementById("textEntryError");
+
+// `onSave(text)` gets what was typed. It does the saving itself and
+// returns null when that worked, or a message saying what to fix, which
+// is shown in the panel while it stays open. `isNumber` brings up the
+// phone's number keyboard instead of letters.
+function openTextEntryPanel({ heading, label, initialValue, placeholder = "", isNumber = false, onSave }) {
+  appState.textEntryRequest = { onSave };
+  document.getElementById("textEntryHeading").textContent = heading;
+  document.getElementById("textEntryLabel").textContent = label;
+  textEntryInput.value = initialValue;
+  textEntryInput.placeholder = placeholder;
+  textEntryInput.inputMode = isNumber ? "decimal" : "text";
+  textEntryError.hidden = true;
+  textEntryPanel.hidden = false;
+  textEntryInput.focus();
+}
+
+function closeTextEntryPanel() {
+  appState.textEntryRequest = null;
+  textEntryPanel.hidden = true;
+}
+
+function saveTextEntry() {
+  const errorMessage = appState.textEntryRequest.onSave(textEntryInput.value);
+  if (errorMessage) {
+    textEntryError.textContent = errorMessage;
+    textEntryError.hidden = false;
+    return;
+  }
+  closeTextEntryPanel();
+}
+
+document.getElementById("saveTextEntryButton").addEventListener("click", saveTextEntry);
+document.getElementById("cancelTextEntryButton").addEventListener("click", closeTextEntryPanel);
+// The keyboard's own Enter/Go key saves too, so there's no reaching past
+// the keyboard for the Save button.
+textEntryInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    saveTextEntry();
+  }
+});
+
+// The shared rename check: Gym, CardioActivity and Exercise all only
+// change their name, never their id, so history follows the new name.
+// Returns the error message for openTextEntryPanel, or null once renamed.
+function renameItem(item, typedName, rerender) {
+  const trimmedName = typedName.trim();
+  if (trimmedName === "") {
+    return "The name can't be empty.";
+  }
+  item.name = trimmedName;
+  saveDatabase(appState.database);
+  rerender();
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Exercise edit panel
+// ---------------------------------------------------------------------------
+
+const exerciseEditNameInput = document.getElementById("exerciseEditNameInput");
+const exerciseEditIncrementInput = document.getElementById("exerciseEditIncrementInput");
+const exerciseEditError = document.getElementById("exerciseEditError");
+
+// Plate and weight-stack jumps common enough to offer as one-tap presets.
+// Anything else (an odd machine's 2.27 kg) can still be typed.
+const LOAD_INCREMENT_PRESETS = [1, 1.25, 2.5, 5];
+
+// Works on a copy (appState.exerciseEditDraft), so Cancel leaves the
+// exercise exactly as it was. The stored exercise only changes on Save.
+function openExerciseEditPanel(exerciseId) {
+  const exercise = findExerciseById(exerciseId);
+  appState.exerciseEditDraft = {
+    exerciseId,
+    name: exercise.name,
+    minimumLoadIncrement: exercise.minimumLoadIncrement,
+    isGymSpecific: exercise.isGymSpecific,
+    isBodyweight: exercise.isBodyweight
+  };
+  document.getElementById("exerciseEditHeading").textContent = exercise.name;
+  exerciseEditNameInput.value = exercise.name;
+  exerciseEditIncrementInput.value = exercise.minimumLoadIncrement;
+  exerciseEditError.hidden = true;
+  renderExerciseEditPanel();
+  exerciseEditPanel.scrollTop = 0;
+  // Over the library, not instead of it, like the other bottom sheets.
+  exerciseEditPanel.hidden = false;
+}
+
+// Redraws the toggles and preset highlights from the draft. The two text
+// boxes aren't redrawn here: rewriting a box while it's being typed in
+// would move the cursor.
+function renderExerciseEditPanel() {
+  const draft = appState.exerciseEditDraft;
+  setToggleButtonState(document.getElementById("exerciseEditGymSpecificToggle"), draft.isGymSpecific);
+  setToggleButtonState(document.getElementById("exerciseEditBodyweightToggle"), draft.isBodyweight);
+
+  const presetsElement = document.getElementById("exerciseEditIncrementPresets");
+  presetsElement.innerHTML = "";
+  for (const increment of LOAD_INCREMENT_PRESETS) {
+    const presetButton = document.createElement("button");
+    presetButton.type = "button";
+    presetButton.className = "day-status-option";
+    presetButton.textContent = `${increment} kg`;
+    presetButton.dataset.value = increment;
+    presetButton.addEventListener("click", () => {
+      draft.minimumLoadIncrement = increment;
+      exerciseEditIncrementInput.value = increment;
+      renderExerciseEditPanel();
+    });
+    presetsElement.appendChild(presetButton);
+  }
+  highlightSelectedButton(presetsElement, "value", draft.minimumLoadIncrement);
+}
+
+// A grey/blue on-off button: blue and aria-pressed="true" while on.
+function setToggleButtonState(buttonElement, isOn) {
+  buttonElement.classList.toggle("day-status-option-selected", isOn);
+  buttonElement.setAttribute("aria-pressed", String(isOn));
+}
+
+function closeExerciseEditPanel() {
+  appState.exerciseEditDraft = null;
+  exerciseEditPanel.hidden = true;
+}
+
+function showExerciseEditError(message) {
+  exerciseEditError.textContent = message;
+  exerciseEditError.hidden = false;
+}
+
+exerciseEditNameInput.addEventListener("input", () => {
+  appState.exerciseEditDraft.name = exerciseEditNameInput.value;
+});
+
+// Kept as typed until Save, which checks it: a half-typed "1," shouldn't
+// be rejected mid-keystroke.
+exerciseEditIncrementInput.addEventListener("input", () => {
+  appState.exerciseEditDraft.minimumLoadIncrement = parseLoadIncrement(exerciseEditIncrementInput.value);
+  renderExerciseEditPanel();
+});
+
+document.getElementById("exerciseEditGymSpecificToggle").addEventListener("click", () => {
+  appState.exerciseEditDraft.isGymSpecific = !appState.exerciseEditDraft.isGymSpecific;
+  renderExerciseEditPanel();
+});
+
+document.getElementById("exerciseEditBodyweightToggle").addEventListener("click", () => {
+  appState.exerciseEditDraft.isBodyweight = !appState.exerciseEditDraft.isBodyweight;
+  renderExerciseEditPanel();
+});
+
+// The muscle editor saves on its own, straight to the exercise. This
+// panel steps aside while it's open and comes back when it closes (see
+// closeMuscleEditor), with the draft untouched.
+document.getElementById("exerciseEditMusclesButton").addEventListener("click", () => {
+  exerciseEditPanel.hidden = true;
+  openMuscleEditor(appState.exerciseEditDraft.exerciseId);
+});
+
+document.getElementById("saveExerciseEditButton").addEventListener("click", () => {
+  const draft = appState.exerciseEditDraft;
+  const trimmedName = draft.name.trim();
+  if (trimmedName === "") {
+    showExerciseEditError("The name can't be empty.");
+    return;
+  }
+  if (draft.minimumLoadIncrement === null) {
+    showExerciseEditError("Enter a minimum weight raise above 0, e.g. 2.5.");
+    return;
+  }
+
+  // Only these fields change. The id, which every set and workout points
+  // at, never does (schema.js), so a rename keeps all the history.
+  const exercise = findExerciseById(draft.exerciseId);
+  exercise.name = trimmedName;
+  exercise.minimumLoadIncrement = draft.minimumLoadIncrement;
+  exercise.isGymSpecific = draft.isGymSpecific;
+  exercise.isBodyweight = draft.isBodyweight;
+  saveDatabase(appState.database);
+  closeExerciseEditPanel();
+  renderExercisesManageList();
+});
+
+document.getElementById("cancelExerciseEditButton").addEventListener("click", closeExerciseEditPanel);
+
+// Archiving instead of deleting keeps past sets and workout templates that
+// reference this exercise resolvable. Unsaved edits in the panel are
+// dropped: archiving is the decision being made.
+document.getElementById("archiveExerciseButton").addEventListener("click", () => {
+  const exercise = findExerciseById(appState.exerciseEditDraft.exerciseId);
+  exercise.isArchived = true;
+  saveDatabase(appState.database);
+  closeExerciseEditPanel();
+  renderExercisesManageList();
+  renderArchivedExercisesList();
+});
 
 // Collapsed by default (see the toggle button below) — archiving something
 // with no way back through the UI would defeat the reason it's archived
@@ -2854,6 +3023,36 @@ function parseLoadIncrement(text) {
   return parsed;
 }
 
+// The add form starts folded away, so the list is the first thing on the
+// screen. Opening it fills in a clean form, with the minimum raise at the
+// default chosen in Settings.
+const newExerciseForm = document.getElementById("newExerciseForm");
+const newExerciseError = document.getElementById("newExerciseError");
+
+function showNewExerciseForm() {
+  document.getElementById("newExerciseNameInput").value = "";
+  document.getElementById("newExerciseGymSpecificCheckbox").checked = false;
+  document.getElementById("newExerciseBodyweightCheckbox").checked = false;
+  document.getElementById("newExerciseIncrementInput").value = 2.5;
+  newExerciseError.hidden = true;
+  newExerciseForm.hidden = false;
+  document.getElementById("showNewExerciseFormButton").hidden = true;
+  document.getElementById("newExerciseNameInput").focus();
+}
+
+function hideNewExerciseForm() {
+  newExerciseForm.hidden = true;
+  document.getElementById("showNewExerciseFormButton").hidden = false;
+}
+
+function showNewExerciseError(message) {
+  newExerciseError.textContent = message;
+  newExerciseError.hidden = false;
+}
+
+document.getElementById("showNewExerciseFormButton").addEventListener("click", showNewExerciseForm);
+document.getElementById("cancelNewExerciseButton").addEventListener("click", hideNewExerciseForm);
+
 document.getElementById("addExerciseButton").addEventListener("click", () => {
   const nameInput = document.getElementById("newExerciseNameInput");
   const gymSpecificCheckbox = document.getElementById("newExerciseGymSpecificCheckbox");
@@ -2861,19 +3060,19 @@ document.getElementById("addExerciseButton").addEventListener("click", () => {
   const incrementInput = document.getElementById("newExerciseIncrementInput");
   const name = nameInput.value.trim();
   if (name === "") {
-    alert("Enter a name for the exercise.");
+    showNewExerciseError("Enter a name for the exercise.");
     return;
   }
 
   const minimumLoadIncrement = parseLoadIncrement(incrementInput.value);
   if (minimumLoadIncrement === null) {
-    alert("Enter a minimum weight raise above 0, e.g. 2.5.");
+    showNewExerciseError("Enter a minimum weight raise above 0, e.g. 2.5.");
     return;
   }
 
   const id = makeUniqueIdFromName(name, appState.database.exercises);
   if (id === "") {
-    alert("That name needs at least one letter or number.");
+    showNewExerciseError("That name needs at least one letter or number.");
     return;
   }
 
@@ -2889,10 +3088,7 @@ document.getElementById("addExerciseButton").addEventListener("click", () => {
     minimumLoadIncrement
   });
   saveDatabase(appState.database);
-  nameInput.value = "";
-  gymSpecificCheckbox.checked = false;
-  bodyweightCheckbox.checked = false;
-  incrementInput.value = "2.5";
+  hideNewExerciseForm();
   renderExercisesManageList();
   // Straight on to its muscles, so a new exercise doesn't sit in "No main
   // muscle set" just because that's a separate button. The same editor as
@@ -2925,11 +3121,12 @@ document.getElementById("addBuiltInExercisesButton").addEventListener("click", (
   saveDatabase(appState.database);
   renderExercisesManageList();
 
-  if (missingExercises.length === 0) {
-    alert("You already have all the built-in exercises.");
-  } else {
-    alert(`Added ${missingExercises.length} exercises.`);
-  }
+  // Said right under the button rather than in a pop-up.
+  const resultElement = document.getElementById("addBuiltInExercisesResult");
+  resultElement.textContent = missingExercises.length === 0
+    ? "You already have all the built-in exercises."
+    : `Added ${missingExercises.length} exercises.`;
+  resultElement.hidden = false;
 });
 
 // ---------------------------------------------------------------------------
@@ -3093,6 +3290,11 @@ function closeMuscleEditor() {
   appState.muscleEditorExerciseId = null;
   appState.muscleDraft = null;
   muscleEditorPanel.hidden = true;
+  // Opened from the exercise edit panel ("Set muscles"): back to it, with
+  // whatever was already changed there still in place.
+  if (appState.exerciseEditDraft) {
+    exerciseEditPanel.hidden = false;
+  }
 }
 
 document.getElementById("saveMusclesButton").addEventListener("click", () => {
@@ -3141,18 +3343,12 @@ function renderGymsManageList() {
     renameButton.addEventListener("click", () => {
       // Only Gym.name changes — the id (referenced by Session.gymId) is
       // never touched by a rename.
-      const newName = prompt("Rename gym", gym.name);
-      if (newName === null) {
-        return;
-      }
-      const trimmedName = newName.trim();
-      if (trimmedName === "") {
-        alert("Name can't be empty.");
-        return;
-      }
-      gym.name = trimmedName;
-      saveDatabase(appState.database);
-      renderGymsManageList();
+      openTextEntryPanel({
+        heading: "Rename gym",
+        label: "Name",
+        initialValue: gym.name,
+        onSave: (typedName) => renameItem(gym, typedName, renderGymsManageList)
+      });
     });
 
     const archiveButton = document.createElement("button");
@@ -4852,10 +5048,9 @@ function renderExerciseStatsList() {
     const buttonElement = document.createElement("button");
     buttonElement.type = "button";
     buttonElement.className = "exercise-item";
-    // Same "(gym-specific)" convention the Manage Exercises list already
-    // uses — otherwise it's not obvious why only some exercises' detail
-    // screens show a gym picker.
-    buttonElement.textContent = describeExerciseNameWithKind(exercise);
+    // Same tags the exercise library uses — otherwise it's not obvious why
+    // only some exercises' detail screens show a gym picker.
+    buttonElement.append(buildExerciseNameWithTags(exercise));
     buttonElement.addEventListener("click", () => showExerciseStatsDetailScreen(exercise.id));
     itemElement.appendChild(buttonElement);
     listElement.appendChild(itemElement);
@@ -7125,18 +7320,12 @@ function buildSmallButton(label, onClick) {
 // Only CardioActivity.name changes: the id, which cardio sessions point at,
 // stays the same, so history follows the activity under its new name.
 function renameCardioActivity(activity) {
-  const newName = prompt("Rename activity", activity.name);
-  if (newName === null) {
-    return;
-  }
-  const trimmedName = newName.trim();
-  if (trimmedName === "") {
-    alert("Name can't be empty.");
-    return;
-  }
-  activity.name = trimmedName;
-  saveDatabase(appState.database);
-  renderCardioActivitiesList();
+  openTextEntryPanel({
+    heading: "Rename activity",
+    label: "Name",
+    initialValue: activity.name,
+    onSave: (typedName) => renameItem(activity, typedName, renderCardioActivitiesList)
+  });
 }
 
 // Archiving rather than deleting keeps past cardio sessions of this

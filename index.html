@@ -354,55 +354,131 @@
       </div>
     </section>
 
-
     <!-- ===================================================================
-         EXERCISE LIBRARY SCREEN: add new exercises, archive old ones.
+         EXERCISE LIBRARY SCREEN: find, edit and add exercises, archive old
+         ones. The list comes first; the add form stays folded away behind
+         "New exercise" until it's wanted.
          =================================================================== -->
     <section id="exercisesScreen" hidden>
       <h1>Exercise library</h1>
       <div class="button-row">
         <button id="backFromExercisesButton" class="secondary-button">Back</button>
+        <button id="showNewExerciseFormButton">New exercise</button>
       </div>
 
-      <label class="text-field">
-        New exercise name
-        <input type="text" id="newExerciseNameInput" placeholder="e.g. Incline dumbbell press">
-      </label>
-      <label class="warmup-toggle">
-        <input type="checkbox" id="newExerciseGymSpecificCheckbox">
-        Machine/gym-specific (load isn't comparable between gyms)
-      </label>
-      <label class="warmup-toggle">
-        <input type="checkbox" id="newExerciseBodyweightCheckbox">
-        Bodyweight exercise (log only the weight added, e.g. pull-ups)
-      </label>
-      <!-- The smallest weight jump this equipment allows. Training
-           suggestions raise or lower the load by exactly this much, so a
-           5 kg machine stack never gets told to add 2.5 kg. -->
-      <label class="text-field">
-        Minimum weight raise (kg)
-        <input type="number" inputmode="decimal" id="newExerciseIncrementInput" value="2.5" min="0.25" step="0.25">
-      </label>
-      <div class="button-row">
-        <button id="addExerciseButton">Add exercise</button>
-      </div>
+      <section id="newExerciseForm" class="form-card" hidden>
+        <h2>New exercise</h2>
+        <label class="text-field">
+          Name
+          <input type="text" id="newExerciseNameInput" placeholder="e.g. Incline dumbbell press">
+        </label>
+        <label class="warmup-toggle">
+          <input type="checkbox" id="newExerciseGymSpecificCheckbox">
+          Machine/gym-specific (load isn't comparable between gyms)
+        </label>
+        <label class="warmup-toggle">
+          <input type="checkbox" id="newExerciseBodyweightCheckbox">
+          Bodyweight exercise (log only the weight added, e.g. pull-ups)
+        </label>
+        <!-- The smallest weight jump this equipment allows. Training
+             suggestions raise or lower the load by exactly this much, so a
+             5 kg machine stack never gets told to add 2.5 kg. Starts at the
+             default from Settings. -->
+        <label class="text-field">
+          Minimum weight raise (kg)
+          <input type="number" inputmode="decimal" id="newExerciseIncrementInput" value="2.5" min="0.25" step="0.25">
+        </label>
+        <!-- Shown instead of a pop-up when something in the form needs
+             fixing. -->
+        <p id="newExerciseError" class="form-error" hidden></p>
+        <div class="button-row">
+          <button id="addExerciseButton">Add exercise</button>
+          <button id="cancelNewExerciseButton" class="secondary-button">Cancel</button>
+        </div>
+      </section>
 
-      <!-- Pulls in any built-in exercises (schema.js STARTER_EXERCISES) not
-           already in the library. Safe to press again: it never duplicates
-           or changes an existing exercise. -->
-      <div class="button-row">
-        <button id="addBuiltInExercisesButton">Add built-in exercises</button>
-      </div>
+      <!-- Filters the groups below as you type; matching groups open by
+           themselves. See renderExercisesManageList in app.js. -->
+      <label class="text-field">
+        Search
+        <input type="search" id="exerciseSearchInput" placeholder="e.g. press">
+      </label>
 
       <!-- Collapsible groups by main muscle, filled in by
            renderExercisesManageList in app.js. -->
       <div id="exercisesManageList"></div>
+      <p id="exerciseSearchEmptyMessage" class="muted-note" hidden>No exercises match.</p>
 
       <!-- Collapsed by default so the common view (active exercises) isn't
            cluttered — archiving with no way back would defeat the point of
            archiving instead of deleting. -->
       <button id="toggleArchivedExercisesButton" class="card-action-button">Show archived</button>
       <ul id="archivedExercisesList" hidden></ul>
+
+      <!-- Pulls in any built-in exercises (schema.js STARTER_EXERCISES) not
+           already in the library. Safe to press again: it never duplicates
+           or changes an existing exercise. Rarely needed, so it's last. -->
+      <button id="addBuiltInExercisesButton" class="card-action-button">Add built-in exercises</button>
+      <p id="addBuiltInExercisesResult" class="muted-note" hidden></p>
+    </section>
+
+
+    <!-- ===================================================================
+         EXERCISE EDIT PANEL: everything about one exercise in one place
+         (name, minimum raise, gym-specific, bodyweight, muscles, archive),
+         instead of six buttons on every row of the library. Nothing is
+         saved until Save. Filled in by openExerciseEditPanel in app.js.
+         =================================================================== -->
+    <section id="exerciseEditPanel" class="bottom-sheet" hidden>
+      <h2 id="exerciseEditHeading"></h2>
+      <label class="text-field">
+        Name
+        <input type="text" id="exerciseEditNameInput">
+      </label>
+
+      <label class="text-field">
+        Minimum weight raise (kg)
+        <input type="number" inputmode="decimal" id="exerciseEditIncrementInput" min="0.25" step="0.25">
+      </label>
+      <!-- The common plate and stack jumps, so most exercises need no
+           typing at all. Built by openExerciseEditPanel. -->
+      <div class="button-row preset-row" id="exerciseEditIncrementPresets"></div>
+
+      <div class="button-stack">
+        <button type="button" id="exerciseEditGymSpecificToggle" class="day-status-option" aria-pressed="false">Machine / gym-specific</button>
+        <button type="button" id="exerciseEditBodyweightToggle" class="day-status-option" aria-pressed="false">Bodyweight exercise</button>
+        <button type="button" id="exerciseEditMusclesButton" class="card-action-button">Set muscles</button>
+      </div>
+
+      <p id="exerciseEditError" class="form-error" hidden></p>
+      <div class="button-row">
+        <button id="saveExerciseEditButton">Save</button>
+        <button id="cancelExerciseEditButton" class="secondary-button">Cancel</button>
+      </div>
+      <!-- Its own row, away from Save, so it isn't hit by mistake.
+           Reversible from "Show archived", so no confirmation. -->
+      <button id="archiveExerciseButton" class="card-action-button danger-text-button">Archive exercise</button>
+    </section>
+
+
+    <!-- ===================================================================
+         TEXT ENTRY PANEL: one text or number box with Save and Cancel, for
+         the few things that need typing (renaming a gym or a cardio
+         activity, a machine's heaviest weight). Replaces the browser's own
+         pop-up box, which looked out of place and was clumsy on a phone.
+         See openTextEntryPanel in app.js.
+         =================================================================== -->
+    <section id="textEntryPanel" class="bottom-sheet" hidden>
+      <h2 id="textEntryHeading"></h2>
+      <label class="text-field">
+        <span id="textEntryLabel"></span>
+        <input type="text" id="textEntryInput">
+      </label>
+      <p id="textEntryError" class="form-error" hidden></p>
+      <div class="button-row">
+        <button id="saveTextEntryButton">Save</button>
+        <button id="cancelTextEntryButton" class="secondary-button">Cancel</button>
+      </div>
     </section>
 
 
