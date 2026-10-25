@@ -1172,7 +1172,6 @@ updateWorkoutTimers();
 // ---------------------------------------------------------------------------
 
 const prBannerElement = document.getElementById("prBanner");
-let prBannerTimeoutId = null;
 
 function checkForPersonalBest(exerciseId, newSet) {
   if (newSet.isWarmup) {
@@ -1223,19 +1222,19 @@ function showPersonalBestBanner(exerciseName, personalBest) {
   prBannerElement.textContent = message;
   prBannerElement.hidden = false;
 
-  if (prBannerTimeoutId) {
-    clearTimeout(prBannerTimeoutId);
+  if (appState.personalBestBannerTimeoutId) {
+    clearTimeout(appState.personalBestBannerTimeoutId);
   }
-  prBannerTimeoutId = setTimeout(() => {
+  appState.personalBestBannerTimeoutId = setTimeout(() => {
     prBannerElement.hidden = true;
-    prBannerTimeoutId = null;
+    appState.personalBestBannerTimeoutId = null;
   }, 6000);
 }
 
 function hidePersonalBestBanner() {
-  if (prBannerTimeoutId) {
-    clearTimeout(prBannerTimeoutId);
-    prBannerTimeoutId = null;
+  if (appState.personalBestBannerTimeoutId) {
+    clearTimeout(appState.personalBestBannerTimeoutId);
+    appState.personalBestBannerTimeoutId = null;
   }
   prBannerElement.hidden = true;
 }

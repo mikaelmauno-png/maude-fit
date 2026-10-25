@@ -1,6 +1,7 @@
 // ---------------------------------------------------------------------------
-// Home-screen cards: the deload card, the backstop deload offer, the
-// development reminders, and the backup reminder.
+// Home-screen cards: the deload card, the backstop deload offer, and the
+// development reminders. (The backup reminder card sits in settings.js,
+// next to the backup code its button runs.)
 //
 // The app's code is split over several files only to keep each one readable.
 // They're plain <script> files, not modules, so they all share one global

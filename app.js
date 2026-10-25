@@ -9,8 +9,10 @@
 // home-cards.js, settings.js. They're plain <script> files sharing one
 // global scope, so a function in one can call a function in any other. This
 // file comes first because it loads the saved data and creates appState,
-// which everything else uses; it also holds the screen switching and the
-// text entry panel that every area shares.
+// which everything else uses. It also holds what every area shares or what
+// must exist from the very first line: screen switching, the text entry
+// panel, and watching for app updates (the service worker registration
+// just below starts that straight away).
 // ---------------------------------------------------------------------------
 
 // Registers service-worker.js, which caches the app's own files so it still
@@ -122,7 +124,8 @@ const appState = {
   bodyweightDraftWeightKg: null,    // value shown on the bodyweight stepper; null only before the Bodyweight screen has been opened once
   editingBodyweightEntryId: null,   // id of a past entry being corrected, or null while logging today's weight
   isBodyweightOpenedFromWorkout: false, // true when the Bodyweight screen was opened from the active workout, so Back and Save return there instead of home
-  bodyDiagramView: "front"          // which side of the muscle-diagram body outline is showing, "front" or "back"
+  bodyDiagramView: "front",         // which side of the muscle-diagram body outline is showing, "front" or "back"
+  personalBestBannerTimeoutId: null // the pending timer that hides the personal-best banner, so a newer banner can cancel it; null when none is pending
 };
 
 // On a brand-new install the exercise library is empty. Fill it with the

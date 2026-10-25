@@ -1,6 +1,7 @@
 // ---------------------------------------------------------------------------
-// Settings: export and import, preferences, restoring the automatic copy,
-// app updates — and, at the very end, the startup code.
+// Settings: export and import, preferences, the home screen's backup
+// reminder, restoring the automatic copy — and, at the very end, the
+// startup code.
 //
 // The app's code is split over several files only to keep each one readable.
 // They're plain <script> files, not modules, so they all share one global
