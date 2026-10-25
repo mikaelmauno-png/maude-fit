@@ -890,12 +890,13 @@ h1 {
 }
 
 /* ---------------------------------------------------------------------------
-   Bottom icon bar (home screen only)
+   Bottom icon bar (Home, History, Bodyweight, Settings)
    --------------------------------------------------------------------------- */
 
-/* Room at the bottom of the home screen so its last section can scroll up
-   clear of the fixed bar instead of ending up hidden underneath it. */
-#mainScreen {
+/* Room at the bottom of the page, whenever the bar is showing, so the last
+   section can scroll up clear of the fixed bar instead of ending up hidden
+   underneath it. */
+body:has(#bottomNavBar:not([hidden])) main {
   padding-bottom: 96px;
 }
 
@@ -1334,6 +1335,25 @@ h1 {
   font-size: 1.4rem;
   font-weight: bold;
   margin-bottom: 8px;
+}
+
+/* The first-run welcome: the same card look as the check-in reminder
+   below, with an accent outline since it's the one thing to do first. */
+#firstRunHint {
+  background-color: var(--color-surface);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: inset 0 0 0 1px var(--color-plan-outline);
+}
+
+#firstRunHint p {
+  margin: 0 0 12px;
+  color: var(--color-text-muted);
+}
+
+#firstRunCreateWorkoutButton {
+  width: 100%;
 }
 
 /* The home screen's check-in reminder: a card like the others there, with

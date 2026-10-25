@@ -106,7 +106,7 @@ const appState = {
   muscleEditorExerciseId: null,   // which exercise's muscle editor is open; null otherwise
   muscleDraft: null,              // { mainMuscle, secondaryMuscles } while the muscle editor is open; null otherwise
   checkInDraft: null,               // { weekStart, fatigue, stress, motivation, recovery, notes } while the weekly check-in screen is open; a rating is null until answered
-  isCheckInOpenedFromHistory: false, // true when the check-in screen was opened from History, so saving stays there instead of going home
+  isCheckInOpenedFromStats: false, // true when the check-in screen was opened from Stats, so saving stays there instead of going home
   cardioDraft: null,                // the cardio session being logged or edited while the Log cardio screen is open (see startNewCardioDraft); null otherwise
   recapMonth: null,                 // { year, monthIndex } the monthly recap is showing (monthIndex 0 = January); null until it's first opened
   exerciseStatsSelectedGymId: null, // which gym's data the stats charts are scoped to, when the exercise is gym-specific and used at more than one gym
@@ -156,6 +156,7 @@ const cardioLogScreen = document.getElementById("cardioLogScreen");
 const muscleStatsListScreen = document.getElementById("muscleStatsListScreen");
 const muscleStatsDetailScreen = document.getElementById("muscleStatsDetailScreen");
 const bodyweightScreen = document.getElementById("bodyweightScreen");
+const statsScreen = document.getElementById("statsScreen");
 // A top-level section (not nested in another screen) so it can be shown
 // over either activeWorkoutScreen or historyScreen — see the comment above
 // it in index.html for why. Declared here, with the other screens, rather
@@ -176,18 +177,40 @@ const allScreens = [
   gymPickerScreen, setEntryPanel, exerciseStatsListScreen, exerciseStatsDetailScreen, muscleEditorPanel,
   personalBestsScreen, muscleStatsListScreen, muscleStatsDetailScreen, dayStatusPanel,
   bodyweightScreen, removeExercisePanel, monthlyRecapScreen, weeklyCheckInScreen,
-  cardioActivitiesScreen, cardioLogScreen
+  cardioActivitiesScreen, cardioLogScreen, statsScreen
 ];
 
+// Hides the bottom bar too: most screens don't have it, so the four that
+// do turn it back on themselves with showBottomNav.
 function hideAllScreens() {
   for (const screen of allScreens) {
     screen.hidden = true;
+  }
+  bottomNavBar.hidden = true;
+}
+
+// The bottom bar, and which of its four buttons to light up as "you are
+// here". Keys are the nav button ids.
+const bottomNavBar = document.getElementById("bottomNavBar");
+const bottomNavButtonIds = {
+  home: "navHomeButton",
+  history: "viewHistoryButton",
+  bodyweight: "viewBodyweightButton",
+  settings: "viewSettingsButton"
+};
+
+function showBottomNav(currentPlace) {
+  bottomNavBar.hidden = false;
+  for (const [place, buttonId] of Object.entries(bottomNavButtonIds)) {
+    document.getElementById(buttonId).classList.toggle("bottom-nav-button-current", place === currentPlace);
   }
 }
 
 function showMainScreen() {
   hideAllScreens();
   mainScreen.hidden = false;
+  showBottomNav("home");
+  renderFirstRunHint();
   renderStartWorkoutChoices();
   completeDeloadIfFinished();
   makeBackstopOfferIfDue();
@@ -222,9 +245,26 @@ function leaveBodyweightScreen() {
   }
 }
 
+// A brand-new install has no workouts, which leaves the home screen with
+// little more than "Start free-form workout". Once any workout exists
+// (archived ones count: whoever made one knows where they live), the hint
+// is gone for good.
+function renderFirstRunHint() {
+  const hasAnyWorkoutTemplate = appState.database.workoutTemplates.length > 0;
+  document.getElementById("firstRunHint").hidden = hasAnyWorkoutTemplate || appState.activeSessionId !== null;
+}
+
 function showSettingsScreen() {
   hideAllScreens();
   settingsScreen.hidden = false;
+  showBottomNav("settings");
+}
+
+function showStatsScreen() {
+  hideAllScreens();
+  statsScreen.hidden = false;
+  // Stats is reached from History, so History stays the lit-up place.
+  showBottomNav("history");
 }
 
 function showDataScreen() {
@@ -254,6 +294,7 @@ function showExercisesScreen() {
 function showHistoryScreen() {
   hideAllScreens();
   historyScreen.hidden = false;
+  showBottomNav("history");
   renderHistoryList();
 }
 
@@ -310,12 +351,17 @@ function showBodyweightScreen(isOpenedFromWorkout) {
   hideAllScreens();
   appState.isBodyweightOpenedFromWorkout = isOpenedFromWorkout;
   bodyweightScreen.hidden = false;
+  // From a workout: no bottom bar (it never shows during one), just a way
+  // back to the workout. Otherwise the bar is the way out.
+  document.getElementById("backFromBodyweightButton").hidden = !isOpenedFromWorkout;
+  if (!isOpenedFromWorkout) {
+    showBottomNav("bodyweight");
+  }
   resetBodyweightEntryToToday();
   renderBodyweightScreen();
 }
 
 document.getElementById("viewSettingsButton").addEventListener("click", showSettingsScreen);
-document.getElementById("backFromSettingsButton").addEventListener("click", showMainScreen);
 document.getElementById("manageWorkoutTemplatesButton").addEventListener("click", showWorkoutTemplatesScreen);
 // These three "Back" buttons return to Settings, not the main screen —
 // Settings is where each of these screens was actually opened from now.
@@ -323,13 +369,17 @@ document.getElementById("backFromWorkoutTemplatesButton").addEventListener("clic
 document.getElementById("manageExercisesButton").addEventListener("click", showExercisesScreen);
 document.getElementById("backFromExercisesButton").addEventListener("click", showSettingsScreen);
 document.getElementById("viewHistoryButton").addEventListener("click", showHistoryScreen);
-document.getElementById("backFromHistoryButton").addEventListener("click", showMainScreen);
+document.getElementById("viewStatsButton").addEventListener("click", showStatsScreen);
+document.getElementById("backFromStatsButton").addEventListener("click", showHistoryScreen);
 document.getElementById("viewBodyweightButton").addEventListener("click", () => showBodyweightScreen(false));
-// The bottom bar only exists on the home screen, so "Home" is always where
-// you already are — it scrolls back up to the workouts instead, which is
-// what tapping the current tab does in most phone apps.
+// Already home: scroll back up to the workouts instead, which is what
+// tapping the current tab does in most phone apps.
 document.getElementById("navHomeButton").addEventListener("click", () => {
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  if (mainScreen.hidden) {
+    showMainScreen();
+  } else {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 });
 document.getElementById("backFromBodyweightButton").addEventListener("click", leaveBodyweightScreen);
 document.getElementById("manageGymsButton").addEventListener("click", showGymsScreen);
@@ -4886,7 +4936,7 @@ function renderExerciseStatsDetail(exerciseId) {
 }
 
 document.getElementById("viewExerciseStatsButton").addEventListener("click", showExerciseStatsListScreen);
-document.getElementById("backFromExerciseStatsListButton").addEventListener("click", showHistoryScreen);
+document.getElementById("backFromExerciseStatsListButton").addEventListener("click", showStatsScreen);
 document.getElementById("backFromExerciseStatsDetailButton").addEventListener("click", showExerciseStatsListScreen);
 
 
@@ -4977,7 +5027,7 @@ function renderPersonalBestsList() {
 }
 
 document.getElementById("viewPersonalBestsButton").addEventListener("click", showPersonalBestsScreen);
-document.getElementById("backFromPersonalBestsButton").addEventListener("click", showHistoryScreen);
+document.getElementById("backFromPersonalBestsButton").addEventListener("click", showStatsScreen);
 
 
 // ---------------------------------------------------------------------------
@@ -5343,7 +5393,7 @@ function buildCheckInRecapCard(range) {
 }
 
 document.getElementById("viewMonthlyRecapButton").addEventListener("click", showMonthlyRecapScreen);
-document.getElementById("backFromMonthlyRecapButton").addEventListener("click", showHistoryScreen);
+document.getElementById("backFromMonthlyRecapButton").addEventListener("click", showStatsScreen);
 document.getElementById("previousRecapMonthButton").addEventListener("click", () => stepRecapMonth(-1));
 document.getElementById("nextRecapMonthButton").addEventListener("click", () => stepRecapMonth(1));
 
@@ -5410,9 +5460,9 @@ function startCheckInDraft(weekStart) {
   }
 }
 
-function showWeeklyCheckInScreen(isOpenedFromHistory) {
+function showWeeklyCheckInScreen(isOpenedFromStats) {
   hideAllScreens();
-  appState.isCheckInOpenedFromHistory = isOpenedFromHistory;
+  appState.isCheckInOpenedFromStats = isOpenedFromStats;
   startCheckInDraft(getCurrentWeekStartKey());
   weeklyCheckInScreen.hidden = false;
   renderWeeklyCheckInScreen();
@@ -5420,8 +5470,8 @@ function showWeeklyCheckInScreen(isOpenedFromHistory) {
 
 function leaveWeeklyCheckInScreen() {
   appState.checkInDraft = null;
-  if (appState.isCheckInOpenedFromHistory) {
-    showHistoryScreen();
+  if (appState.isCheckInOpenedFromStats) {
+    showStatsScreen();
   } else {
     showMainScreen();
   }
@@ -5552,11 +5602,11 @@ checkInNotesInput.addEventListener("input", () => {
 });
 
 // From the home screen's reminder, saving is the end of the errand, so it
-// goes straight back home (where the reminder is now gone). From History,
+// goes straight back home (where the reminder is now gone). From Stats,
 // it stays here with the list updated, back on this week's form.
 saveWeeklyCheckInButton.addEventListener("click", () => {
   saveCheckInDraft();
-  if (!appState.isCheckInOpenedFromHistory) {
+  if (!appState.isCheckInOpenedFromStats) {
     leaveWeeklyCheckInScreen();
     return;
   }
@@ -5678,7 +5728,7 @@ function renderMuscleStatsDetail(muscle) {
 }
 
 document.getElementById("viewMuscleStatsButton").addEventListener("click", showMuscleStatsListScreen);
-document.getElementById("backFromMuscleStatsListButton").addEventListener("click", showHistoryScreen);
+document.getElementById("backFromMuscleStatsListButton").addEventListener("click", showStatsScreen);
 document.getElementById("backFromMuscleStatsDetailButton").addEventListener("click", showMuscleStatsListScreen);
 
 
@@ -5789,7 +5839,9 @@ document.getElementById("toggleArchivedWorkoutTemplatesButton").addEventListener
   }
 });
 
-document.getElementById("addWorkoutTemplateButton").addEventListener("click", () => {
+// Opens the editor on a blank workout. Shared by Workouts' "Add workout"
+// and the home screen's first-run "Create a workout".
+function startNewWorkoutTemplate() {
   appState.workoutTemplateDraft = {
     id: crypto.randomUUID(),
     name: "",
@@ -5797,7 +5849,10 @@ document.getElementById("addWorkoutTemplateButton").addEventListener("click", ()
     plannedExercises: []
   };
   showWorkoutTemplateEditorScreen();
-});
+}
+
+document.getElementById("addWorkoutTemplateButton").addEventListener("click", startNewWorkoutTemplate);
+document.getElementById("firstRunCreateWorkoutButton").addEventListener("click", startNewWorkoutTemplate);
 
 
 // ---------------------------------------------------------------------------

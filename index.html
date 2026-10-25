@@ -32,6 +32,14 @@
     <section id="mainScreen">
       <h1>Treeniappi</h1>
 
+      <!-- Only while there are no workouts to start yet (a brand-new
+           install), so the empty home screen says where to begin. See
+           renderFirstRunHint in app.js. -->
+      <section id="firstRunHint" hidden>
+        <p>Welcome! Start by creating a workout: pick its exercises and set targets, then it shows up here, ready to start.</p>
+        <button id="firstRunCreateWorkoutButton">Create a workout</button>
+      </section>
+
       <!-- Idle only: one tile per active workout template, green if done
            this week, grey if not. Tapping a tile opens a panel directly
            under its row with the planned exercises and a Start button —
@@ -115,56 +123,6 @@
         <ul id="developmentReminderList"></ul>
       </section>
 
-      <!-- Bottom icon bar: the ways off the home screen, pinned to the
-           bottom edge where a thumb reaches without shifting grip. It lives
-           inside mainScreen on purpose, so it disappears along with it —
-           in particular it is never shown over the active workout screen,
-           where tapping away mid-set by accident should be hard.
-           Icons are hand-drawn inline SVG (nothing may load from a CDN).
-           stroke="currentColor" makes each icon take the button's text
-           colour, so one CSS rule colours icon and label together. -->
-      <nav id="bottomNavBar" class="bottom-nav-bar">
-        <button id="navHomeButton" class="bottom-nav-button bottom-nav-button-current" type="button">
-          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <rect x="3" y="3" width="7" height="7" rx="1.5"/>
-            <rect x="14" y="3" width="7" height="7" rx="1.5"/>
-            <rect x="3" y="14" width="7" height="7" rx="1.5"/>
-            <rect x="14" y="14" width="7" height="7" rx="1.5"/>
-          </svg>
-          <span>Home</span>
-        </button>
-        <button id="viewHistoryButton" class="bottom-nav-button" type="button">
-          <!-- A page with text lines: the log of past workouts. -->
-          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-            <path d="M6 2h9l4 4v16H6z"/>
-            <line x1="9" y1="11" x2="16" y2="11"/>
-            <line x1="9" y1="15" x2="16" y2="15"/>
-            <line x1="9" y1="19" x2="13" y2="19"/>
-          </svg>
-          <span>History</span>
-        </button>
-        <button id="viewBodyweightButton" class="bottom-nav-button" type="button">
-          <!-- A bathroom scale: square body with a dial and needle. -->
-          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-            <rect x="3" y="3" width="18" height="18" rx="4"/>
-            <path d="M8 10a4 4 0 0 1 8 0"/>
-            <line x1="12" y1="10" x2="14" y2="7.5"/>
-          </svg>
-          <span>Bodyweight</span>
-        </button>
-        <button id="viewSettingsButton" class="bottom-nav-button" type="button">
-          <!-- Three sliders — simpler to draw legibly at this size than a gear. -->
-          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-            <line x1="4" y1="6" x2="20" y2="6"/>
-            <line x1="4" y1="12" x2="20" y2="12"/>
-            <line x1="4" y1="18" x2="20" y2="18"/>
-            <circle cx="9" cy="6" r="2" fill="#1a1a1a"/>
-            <circle cx="15" cy="12" r="2" fill="#1a1a1a"/>
-            <circle cx="7" cy="18" r="2" fill="#1a1a1a"/>
-          </svg>
-          <span>Settings</span>
-        </button>
-      </nav>
     </section>
 
 
@@ -264,9 +222,6 @@
          =================================================================== -->
     <section id="settingsScreen" hidden>
       <h1>Settings</h1>
-      <div class="button-row">
-        <button id="backFromSettingsButton" class="secondary-button">Back</button>
-      </div>
       <div class="button-stack">
         <button id="manageWorkoutTemplatesButton">Manage workouts</button>
         <button id="manageExercisesButton">Manage exercises</button>
@@ -626,15 +581,32 @@
          =================================================================== -->
     <section id="historyScreen" hidden>
       <h1>History</h1>
+      <!-- One way into every stats screen, instead of five buttons in three
+           rows pushing the list of workouts off the screen. -->
       <div class="button-row">
-        <button id="backFromHistoryButton" class="secondary-button">Back</button>
+        <button id="viewStatsButton">Stats</button>
+      </div>
+      <ul id="historyList"></ul>
+    </section>
+
+
+    <!-- ===================================================================
+         STATS SCREEN: the hub for every stats screen, opened from History.
+         Each screen listed here comes back to this one with its Back
+         button.
+         =================================================================== -->
+    <section id="statsScreen" hidden>
+      <h1>Stats</h1>
+      <div class="button-row">
+        <button id="backFromStatsButton" class="secondary-button">Back to history</button>
+      </div>
+      <div class="button-stack">
         <button id="viewExerciseStatsButton">Exercise stats</button>
         <button id="viewPersonalBestsButton">Personal bests</button>
         <button id="viewMuscleStatsButton">Muscle stats</button>
         <button id="viewMonthlyRecapButton">Monthly recap</button>
         <button id="viewWeeklyCheckInsButton">Weekly check-ins</button>
       </div>
-      <ul id="historyList"></ul>
     </section>
 
 
@@ -696,7 +668,10 @@
     <section id="bodyweightScreen" hidden>
       <h1>Bodyweight</h1>
       <div class="button-row">
-        <button id="backFromBodyweightButton" class="secondary-button">Back</button>
+        <!-- Only when opened from a workout: the bottom bar is hidden
+             then, so this is the way back. Opened from the bar, the bar
+             itself is the way out. -->
+        <button id="backFromBodyweightButton" class="secondary-button" hidden>Back to workout</button>
       </div>
 
       <!-- Set to "Editing <date>" while a past entry (tapped from the list
@@ -1004,6 +979,58 @@
     </section>
 
   </main>
+
+  <!-- Bottom icon bar: the four main places (Home, History, Bodyweight,
+       Settings), pinned to the bottom edge where a thumb reaches without
+       shifting grip. It sits outside every screen so the same bar can show
+       on all four; app.js shows or hides it with each screen (see
+       showBottomNav). It is never shown over the active workout screen,
+       where tapping away mid-set by accident should be hard.
+       Icons are hand-drawn inline SVG (nothing may load from a CDN).
+       stroke="currentColor" makes each icon take the button's text
+       colour, so one CSS rule colours icon and label together. -->
+  <nav id="bottomNavBar" class="bottom-nav-bar">
+    <button id="navHomeButton" class="bottom-nav-button bottom-nav-button-current" type="button">
+      <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <rect x="3" y="3" width="7" height="7" rx="1.5"/>
+        <rect x="14" y="3" width="7" height="7" rx="1.5"/>
+        <rect x="3" y="14" width="7" height="7" rx="1.5"/>
+        <rect x="14" y="14" width="7" height="7" rx="1.5"/>
+      </svg>
+      <span>Home</span>
+    </button>
+    <button id="viewHistoryButton" class="bottom-nav-button" type="button">
+      <!-- A page with text lines: the log of past workouts. -->
+      <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <path d="M6 2h9l4 4v16H6z"/>
+        <line x1="9" y1="11" x2="16" y2="11"/>
+        <line x1="9" y1="15" x2="16" y2="15"/>
+        <line x1="9" y1="19" x2="13" y2="19"/>
+      </svg>
+      <span>History</span>
+    </button>
+    <button id="viewBodyweightButton" class="bottom-nav-button" type="button">
+      <!-- A bathroom scale: square body with a dial and needle. -->
+      <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <rect x="3" y="3" width="18" height="18" rx="4"/>
+        <path d="M8 10a4 4 0 0 1 8 0"/>
+        <line x1="12" y1="10" x2="14" y2="7.5"/>
+      </svg>
+      <span>Bodyweight</span>
+    </button>
+    <button id="viewSettingsButton" class="bottom-nav-button" type="button">
+      <!-- Three sliders — simpler to draw legibly at this size than a gear. -->
+      <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <line x1="4" y1="6" x2="20" y2="6"/>
+        <line x1="4" y1="12" x2="20" y2="12"/>
+        <line x1="4" y1="18" x2="20" y2="18"/>
+        <circle cx="9" cy="6" r="2" style="fill: var(--color-nav)"/>
+        <circle cx="15" cy="12" r="2" style="fill: var(--color-nav)"/>
+        <circle cx="7" cy="18" r="2" style="fill: var(--color-nav)"/>
+      </svg>
+      <span>Settings</span>
+    </button>
+  </nav>
 
   <!-- schema.js must load first: app.js calls functions like loadDatabase()
        that schema.js defines. Both scripts sit at the end of the body so
