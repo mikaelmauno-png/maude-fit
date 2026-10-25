@@ -1053,6 +1053,48 @@ h1 {
 }
 
 /* ---------------------------------------------------------------------------
+   Deload (home-screen card, workout banner and card tag)
+   --------------------------------------------------------------------------- */
+
+#deloadCard {
+  background-color: #1e1e1e;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+#deloadCard p {
+  margin: 0 0 12px;
+  color: #b0b0b0;
+}
+
+#startDeloadButton,
+#cancelDeloadButton {
+  width: 100%;
+}
+
+/* Blue like the plan line: it's about what today's plan is, not a warning
+   and not a suggestion. */
+.deload-banner {
+  background-color: #1a2638;
+  color: #8fb8ff;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin: 0 0 16px;
+}
+
+.deload-tag {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background-color: #1a2638;
+  color: #8fb8ff;
+  font-size: 0.8rem;
+  font-weight: normal;
+  vertical-align: middle;
+}
+
+/* ---------------------------------------------------------------------------
    Backup reminder (home screen)
    --------------------------------------------------------------------------- */
 

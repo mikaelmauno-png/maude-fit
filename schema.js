@@ -349,7 +349,8 @@ const DAY_STATUSES = ["normal", "poorSleep", "ill", "stressed"];
 
 // Deload — one suggested or accepted lighter stretch of training: fewer
 // sets at the same weight, stopping further from failure. Rules in the
-// deload design (v5); nothing creates these yet.
+// deload design (v5) and in deload.js. So far only a whole-body deload
+// started by hand creates these ("Start a deload" on the home screen).
 //
 // {
 //   id:          "7c2e...",                // crypto.randomUUID()
@@ -370,6 +371,7 @@ const DAY_STATUSES = ["normal", "poorSleep", "ill", "stressed"];
 //   acceptedAt:  null,                     // each null until it happens
 //   declinedAt:  null,                     // (also set when it expires)
 //   completedAt: null,
+//   cancelledAt: null,                     // set when cancelled by hand
 //   trigger:     "drop",                   // see DELOAD_TRIGGERS
 //   evidence: {                            // why it was suggested, kept so
 //     historyKeys:    [],                  // the decision can be checked
@@ -391,7 +393,10 @@ const DAY_STATUSES = ["normal", "poorSleep", "ill", "stressed"];
 // read back months later, a lighter workout and a deload look alike.
 const DELOAD_SCOPES = ["muscle", "whole"];
 const DELOAD_TRIGGERS = ["drop", "wellness+drop", "backstop", "manual"];
-const DELOAD_STATUSES = ["suggested", "accepted", "declined", "expired", "completed", "superseded"];
+// "cancelled" is an accepted deload stopped by hand before it was done.
+// It and cancelledAt were added without a version bump: nothing created
+// Deload records before they existed, so there's no older data to migrate.
+const DELOAD_STATUSES = ["suggested", "accepted", "declined", "expired", "completed", "superseded", "cancelled"];
 const CARDIO_EFFORT_MIN = 1;
 const CARDIO_EFFORT_MAX = 10;
 

@@ -58,6 +58,10 @@ function formatLoad(load, exercise) {
 // results say nothing about how to approach the heavy day. When today's
 // workout isn't known (free-form), there's nothing to scope to, and every
 // session of the exercise counts.
+//
+// A session where this exercise was done as deload sets is left out too:
+// those sets were easy on purpose, so judging progress on them would
+// drop the weight after every deload.
 function findRecentSessions(database, exercise, activeSession, sessionCount, isScopedToWorkout) {
   const scopeToGymId = exercise.isGymSpecific && activeSession && activeSession.gymId
     ? activeSession.gymId
@@ -85,6 +89,12 @@ function findRecentSessions(database, exercise, activeSession, sessionCount, isS
       return false;
     }
     if (activeSession && session.id === activeSession.id) {
+      return false;
+    }
+    // wasDoneAsDeload is in deload.js, which loads after this file. That's
+    // fine: it's only called once the app is running, by which time every
+    // file has loaded.
+    if (wasDoneAsDeload(session, exercise.id)) {
       return false;
     }
     if (scopeToGymId !== null && session.gymId !== scopeToGymId) {
@@ -186,8 +196,13 @@ function missedTwiceAtSameLoad(recentSessions, repsMin, repsMax) {
 // - `reason` is one short sentence for the screen
 // - `basedOnSessionStartedAt` is the start time of the session the
 //   suggestion was worked out from
+// - `isDeload` is true when it's a deload workout's suggestion, which the
+//   app treats as more important than a goal set by hand
 // Returns null when there's no past data to base it on.
-function suggestNextTarget(database, exerciseId, repsMin, repsMax, activeSession) {
+//
+// `isDeload` says this exercise is done as deload sets today (see
+// Session.deload in schema.js); the app works that out.
+function suggestNextTarget(database, exerciseId, repsMin, repsMax, activeSession, isDeload) {
   const exercise = database.exercises.find((candidate) => candidate.id === exerciseId);
 
   // Two sessions are needed at most: the latest, plus the one before it to
@@ -197,6 +212,12 @@ function suggestNextTarget(database, exerciseId, repsMin, repsMax, activeSession
   const recentSessions = findRecentSessions(database, exercise, activeSession, 2, true);
   if (recentSessions.length === 0) {
     return null;
+  }
+
+  if (isDeload) {
+    const deloadSuggestion = buildDeloadSuggestion(recentSessions[0], repsMin, repsMax, exercise);
+    deloadSuggestion.basedOnSessionStartedAt = recentSessions[0].session.startedAt;
+    return deloadSuggestion;
   }
 
   const maxLoad = findMachineMaxLoad(database, exercise, activeSession);
@@ -334,6 +355,48 @@ function buildRepsOnlySuggestion(topLoadSets) {
     repsPerSet,
     reason: `${lastLoad} kg is this machine's heaviest, so add a rep instead: one more on set ${weakestSetIndex + 1}.`
   };
+}
+
+
+// At or below this top of the rep range, a deload also lowers the weight.
+// In a 1–3 rep slot, "same weight, bottom of the range" would be a single
+// at the weight normally done for 2–3: still close to a max effort, so
+// it wouldn't make the workout any lighter.
+const DELOAD_LOW_REP_RANGE_MAX = 3;
+
+// How many of the exercise's minimum raises a low-rep deload takes off.
+// Two is clearly lighter without being so light the lift feels new: about
+// 5 kg on a barbell, 10 kg on a machine with 5 kg plates.
+const DELOAD_LOW_REP_LOAD_STEPS_DOWN = 2;
+
+// A deload workout's targets: the weight of the last normal session (its
+// heaviest sets), with every set at the bottom of the rep range, so the
+// sets stop 1–2 reps further from failure than usual. Deload sessions
+// never count as "last normal session": findRecentSessions leaves them
+// out. For a bodyweight exercise the load is only the weight added, so
+// it's only that which comes down, and never below none.
+function buildDeloadSuggestion(lastNormalSession, repsMin, repsMax, exercise) {
+  const topLoadSets = findTopLoadSets(lastNormalSession.workingSets);
+  const lastLoad = topLoadSets[0].load;
+  const setCount = topLoadSets.length;
+
+  if (repsMax <= DELOAD_LOW_REP_RANGE_MAX) {
+    const loadDrop = DELOAD_LOW_REP_LOAD_STEPS_DOWN * exercise.minimumLoadIncrement;
+    const lighterLoad = Math.max(roundLoad(lastLoad - loadDrop), 0);
+    const suggestion = buildUniformSuggestion(
+      lighterLoad, repsMin, setCount,
+      `Deload: ${formatLoad(lastLoad, exercise)} minus ${loadDrop} kg, ${repsMin} ${repsMin === 1 ? "rep" : "reps"} a set.`
+    );
+    suggestion.isDeload = true;
+    return suggestion;
+  }
+
+  const suggestion = buildUniformSuggestion(
+    lastLoad, repsMin, setCount,
+    `Deload: same weight as last time, ${repsMin} reps a set, stop 1–2 reps further from failure.`
+  );
+  suggestion.isDeload = true;
+  return suggestion;
 }
 
 

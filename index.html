@@ -55,6 +55,15 @@
         <button id="openWeeklyCheckInButton">Weekly check-in</button>
       </section>
 
+      <!-- Idle only: starts a whole-body deload by hand, or while one is
+           running, shows how many exercises have had their lighter
+           workout, with a way to cancel. See renderDeloadCard() in app.js. -->
+      <section id="deloadCard" hidden>
+        <p id="deloadCardText"></p>
+        <button id="startDeloadButton" hidden>Start a deload</button>
+        <button id="cancelDeloadButton" class="card-action-button" hidden>Cancel deload</button>
+      </section>
+
       <!-- Idle only, once at least one workout is finished: how long since
            the last backup (in a warning colour after a week), plus a
            "Back up now" button whenever a workout has been finished since

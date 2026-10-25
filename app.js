@@ -188,6 +188,8 @@ function showMainScreen() {
   hideAllScreens();
   mainScreen.hidden = false;
   renderStartWorkoutChoices();
+  completeDeloadIfFinished();
+  renderDeloadCard();
   renderWeeklyCheckInPrompt();
   renderBackupStatus();
   renderWeeklyWorkoutTemplateSummary();
@@ -378,10 +380,13 @@ function buildCatchUpTemplate(session) {
 // for that workout only (see Session in schema.js), with any exercise this
 // gym can't do swapped for its replacement. An added exercise with a
 // listPosition goes back in at that place; the rest go at the end.
+//
+// In a deload workout, the template's exercises also get their deload's
+// smaller set count (see applyDeloadSetCount).
 function getSessionPlannedExercises(session, template) {
   const dayList = template.plannedExercises
     .filter((planned) => !session.removedExerciseIds.includes(planned.exerciseId))
-    .map((planned) => applyReplacement(session, planned));
+    .map((planned) => applyDeloadSetCount(session, applyReplacement(session, planned)));
 
   // Put back in ascending order, so each insert lands where it was when
   // its position was recorded (every earlier one is already in place).
@@ -432,6 +437,71 @@ function applyReplacement(session, planned) {
     targetLoadSetAt: null,
     replacesExerciseId: planned.exerciseId
   };
+}
+
+// The Deload a workout was part of, or null for a normal workout.
+function findSessionDeload(session) {
+  if (!session.deload) {
+    return null;
+  }
+  return appState.database.deloads.find((deload) => deload.id === session.deload.deloadId) || null;
+}
+
+// True when this exercise is done as deload sets in this workout. Takes
+// the exercise as done (a gym swap's own id), same as the sets.
+function isDeloadExerciseInSession(session, exerciseId) {
+  return session.deload !== null && session.deload.exerciseIds.includes(exerciseId);
+}
+
+// The planned entry with the deload's smaller set count, when it's done as
+// deload sets in this workout. The count comes from the Deload record,
+// which saved it when the deload started, so a past deload workout still
+// reads with the sets it planned even if the template changed since.
+//
+// A catch-up workout keeps its own counts: they're the sets still missing,
+// worked out from workouts that were already cut down.
+function applyDeloadSetCount(session, planned) {
+  const deload = findSessionDeload(session);
+  if (!deload || session.catchUpExercises || !isDeloadExerciseInSession(session, planned.exerciseId)) {
+    return planned;
+  }
+  const originalExerciseId = planned.replacesExerciseId || planned.exerciseId;
+  const slot = findDeloadSlot(deload, session.templateId, originalExerciseId);
+  return slot ? { ...planned, targetSets: slot.plannedSets } : planned;
+}
+
+// The plan a workout's deload exercises are chosen from (see
+// chooseDeloadExerciseIds in deload.js): the template's own list, or the
+// catch-up plan.
+function findPlanForDeloadChoice(session) {
+  if (session.catchUpExercises) {
+    return session.catchUpExercises;
+  }
+  const template = appState.database.workoutTemplates.find((candidate) => candidate.id === session.templateId);
+  return template ? template.plannedExercises : [];
+}
+
+// Session.deload for a workout starting now: which deload it's part of and
+// which of its exercises are done as deload sets, or null when there's no
+// deload running or none of this workout's exercises are in it. A
+// free-form workout is never part of one: it has no slots.
+function chooseSessionDeload(session) {
+  const deload = findActiveDeload(appState.database);
+  if (!deload || (!session.templateId && !session.catchUpExercises)) {
+    return null;
+  }
+  const exerciseIds = chooseDeloadExerciseIds(session, findPlanForDeloadChoice(session), deload);
+  return exerciseIds.length > 0 ? { deloadId: deload.id, exerciseIds } : null;
+}
+
+// After a gym swap is made or undone mid-workout, the exercise done for a
+// slot changes, and Session.deload.exerciseIds has to follow it: it lists
+// the exercises as done, since that's what the sets carry.
+function refreshSessionDeloadExerciseIds(session) {
+  const deload = findSessionDeload(session);
+  if (deload) {
+    session.deload.exerciseIds = chooseDeloadExerciseIds(session, findPlanForDeloadChoice(session), deload);
+  }
 }
 
 function isAddedForThisWorkoutOnly(session, exerciseId) {
@@ -690,8 +760,10 @@ function decrementLoggedSetReps(setId) {
 // Today's progression suggestion for one planned exercise in the active
 // workout template, or null when the exercise has no past sessions to go on.
 function getSuggestionForPlanned(planned) {
+  const session = getActiveSession();
   return suggestNextTarget(
-    appState.database, planned.exerciseId, planned.targetRepsMin, planned.targetRepsMax, getActiveSession()
+    appState.database, planned.exerciseId, planned.targetRepsMin, planned.targetRepsMax, session,
+    isDeloadExerciseInSession(session, planned.exerciseId)
   );
 }
 
@@ -707,8 +779,11 @@ function getSuggestionForPlanned(planned) {
 //
 // ISO 8601 timestamps compare correctly as plain text, same as the session
 // sort in progression.js.
+//
+// A deload suggestion always wins: a goal was set for a normal workout,
+// and following it would undo the deload.
 function isGoalOverride(planned, suggestion) {
-  if (suggestion === null || planned.targetLoadSetAt === null) {
+  if (suggestion === null || suggestion.isDeload || planned.targetLoadSetAt === null) {
     return false;
   }
   return planned.targetLoadSetAt > suggestion.basedOnSessionStartedAt;
@@ -748,6 +823,9 @@ function buildSuggestionLine(planned, suggestion) {
 function renderTemplateWorkoutCards(template) {
   templateWorkoutCardsElement.innerHTML = "";
   const session = getActiveSession();
+  if (session.deload !== null) {
+    templateWorkoutCardsElement.appendChild(buildDeloadBanner());
+  }
 
   for (const planned of getSessionPlannedExercises(session, template)) {
     const exercise = appState.database.exercises.find((candidate) => candidate.id === planned.exerciseId);
@@ -765,6 +843,14 @@ function renderTemplateWorkoutCards(template) {
 
     const headingElement = document.createElement("h3");
     headingElement.textContent = exercise.name;
+    // Not every card in a deload workout is a deload one: an exercise added
+    // for today, or one whose deload was already done, is trained as usual.
+    if (isDeloadExerciseInSession(session, planned.exerciseId)) {
+      const deloadTag = document.createElement("span");
+      deloadTag.className = "deload-tag";
+      deloadTag.textContent = "Deload";
+      headingElement.appendChild(deloadTag);
+    }
     cardElement.appendChild(headingElement);
 
     if (planned.replacesExerciseId) {
@@ -845,6 +931,18 @@ function renderTemplateWorkoutCards(template) {
   }
 
   templateWorkoutCardsElement.appendChild(buildWorkoutEditControls());
+}
+
+// One line above the cards, so the lighter targets never look like a
+// mistake. The weight exception is spelled out in each card's own
+// suggestion line (see buildDeloadSuggestion in progression.js).
+function buildDeloadBanner() {
+  const banner = document.createElement("p");
+  banner.className = "deload-banner";
+  banner.textContent =
+    "Deload workout: fewer sets, stop 1–2 reps further from failure. " +
+    "Same weight, except a little lighter in 1–3 rep exercises.";
+  return banner;
 }
 
 // Sets the heaviest this gym's machine goes for this exercise, which turns
@@ -1260,6 +1358,9 @@ function startWorkout(templateId, gymId, isCatchUp = false) {
     replacedExercises: chooseReplacementsForNewWorkout(plan, gymId),
     catchUpExercises: isCatchUp ? plan : null
   };
+  // Needs the rest of the session first: it reads the template, the
+  // catch-up plan and the gym swaps.
+  session.deload = chooseSessionDeload(session);
   appState.database.sessions.push(session);
   appState.isEditingWorkoutExercises = false;
   appState.activeSessionId = session.id;
@@ -1300,6 +1401,7 @@ function finishActiveWorkout() {
     deleteSessionAndItsSets(session.id);
   } else {
     session.endedAt = new Date().toISOString();
+    countDeloadSessionsDone(session);
   }
   saveDatabase(appState.database);
   closeSetEntryPanel();
@@ -1311,6 +1413,21 @@ function finishActiveWorkout() {
   showMainScreen();
   updateWorkoutControls();
   renderExerciseArea();
+}
+
+
+// Each deload slot this workout gave its lighter workout to is marked as
+// having had it. The exercise ids are refreshed first in case the template
+// lost an exercise mid-workout ("Remove from workout template").
+function countDeloadSessionsDone(session) {
+  const deload = findSessionDeload(session);
+  if (!deload) {
+    return;
+  }
+  refreshSessionDeloadExerciseIds(session);
+  for (const slot of findSlotsGivenDeloadSession(session, deload, appState.database.sets)) {
+    slot.sessionsDone += 1;
+  }
 }
 
 
@@ -3723,6 +3840,83 @@ function findMostRecentFinishedSessionThisWeek(templateId) {
 }
 
 // ---------------------------------------------------------------------------
+// Deload card (home screen)
+//
+// Starts a whole-body deload by hand, and shows how far along a running
+// one is. The rules for what a deload does are in deload.js; this part
+// only saves the Deload record and draws the card.
+// ---------------------------------------------------------------------------
+
+const deloadCard = document.getElementById("deloadCard");
+const deloadCardText = document.getElementById("deloadCardText");
+const startDeloadButton = document.getElementById("startDeloadButton");
+const cancelDeloadButton = document.getElementById("cancelDeloadButton");
+
+// Marks a running deload completed once every slot is settled (see
+// isDeloadSlotSettled). Runs whenever the home screen is shown, because a
+// slot can settle with no workout at all, just by time passing.
+function completeDeloadIfFinished() {
+  const deload = findActiveDeload(appState.database);
+  const nowIso = new Date().toISOString();
+  if (deload && isDeloadFinished(deload, appState.database.workoutTemplates, nowIso)) {
+    deload.status = "completed";
+    deload.completedAt = nowIso;
+    saveDatabase(appState.database);
+  }
+}
+
+// Hidden during a workout, like the other home-screen cards: a deload
+// starting halfway through one would change nothing until the next. Also
+// hidden with no active workout template, since there'd be nothing to
+// deload.
+function renderDeloadCard() {
+  const hasActiveTemplate = appState.database.workoutTemplates.some((template) => !template.isArchived);
+  if (appState.activeSessionId !== null || !hasActiveTemplate) {
+    deloadCard.hidden = true;
+    return;
+  }
+  deloadCard.hidden = false;
+
+  const deload = findActiveDeload(appState.database);
+  startDeloadButton.hidden = deload !== null;
+  cancelDeloadButton.hidden = deload === null;
+  if (deload === null) {
+    deloadCardText.textContent =
+      "Run down or stalling? A deload gives each exercise one lighter workout: " +
+      "about a third fewer sets, stopping 1–2 reps further from failure.";
+    return;
+  }
+  const settledCount = countSettledDeloadSlots(deload, appState.database.workoutTemplates, new Date().toISOString());
+  deloadCardText.textContent =
+    `Deload in progress: ${settledCount} of ${deload.slots.length} exercises done. ` +
+    "It ends by itself once each one has had its lighter workout.";
+}
+
+// One tap, no confirmation: starting is easy to undo with Cancel, and
+// nothing is changed until a workout is actually started.
+startDeloadButton.addEventListener("click", () => {
+  const deload = buildManualWholeBodyDeload(appState.database.workoutTemplates, new Date().toISOString());
+  appState.database.deloads.push(deload);
+  saveDatabase(appState.database);
+  renderDeloadCard();
+});
+
+// Cancelling does ask: unlike starting, it can't be taken back, since a
+// new deload would start every exercise over. The sets already done stay
+// marked as deload sets, because that's what they were.
+cancelDeloadButton.addEventListener("click", () => {
+  if (!confirm("Cancel the deload? The rest of your workouts go back to normal.")) {
+    return;
+  }
+  const deload = findActiveDeload(appState.database);
+  deload.status = "cancelled";
+  deload.cancelledAt = new Date().toISOString();
+  saveDatabase(appState.database);
+  renderDeloadCard();
+});
+
+
+// ---------------------------------------------------------------------------
 // Catch-up workout: this week's planned sets that weren't done
 // ---------------------------------------------------------------------------
 
@@ -3737,7 +3931,7 @@ function isThisWeek(isoString) {
 function getEverythingPlannedForSession(session, template) {
   const skipped = template.plannedExercises
     .filter((planned) => session.removedExerciseIds.includes(planned.exerciseId))
-    .map((planned) => applyReplacement(session, planned));
+    .map((planned) => applyDeloadSetCount(session, applyReplacement(session, planned)));
   return getSessionPlannedExercises(session, template).concat(skipped);
 }
 
@@ -6238,6 +6432,7 @@ restoreOriginalExerciseButton.addEventListener("click", () => {
     (replacement) => replacement.exerciseId !== originalExerciseId
   );
   forgetGymReplacement(session.gymId, originalExerciseId);
+  refreshSessionDeloadExerciseIds(session);
   saveDatabase(appState.database);
   closeRemoveExercisePanel();
 });
@@ -6254,6 +6449,7 @@ function replaceExerciseAtThisGym(cardExerciseId, replacementExercise) {
   session.replacedExercises = session.replacedExercises
     .filter((replacement) => replacement.exerciseId !== originalExerciseId)
     .concat({ ...newReplacement });
+  refreshSessionDeloadExerciseIds(session);
 
   const gym = appState.database.gyms.find((candidate) => candidate.id === session.gymId);
   gym.exerciseReplacements = gym.exerciseReplacements

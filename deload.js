@@ -9,8 +9,10 @@
 // from how noisy your own logged sessions actually are.
 //
 // Like progression.js, everything here only *reads* the database. Nothing
-// is suggested to the user yet: this step exists so the rules can be
-// watched on real data before they're allowed to suggest anything.
+// is suggested to the user yet: the drop rules are watched on real data
+// before they're allowed to suggest anything. A deload can already be
+// started by hand, though; the rules for applying one are at the end of
+// this file.
 //
 // Words used below:
 // - slot:        one exercise in one workout template ("bench in Treeni 1").
@@ -687,4 +689,164 @@ function analyzeDropDetection(database) {
     muscles.push(analyzeMuscle(muscle, [], [], noiseByPool));
   }
   return { noiseByPool, muscles };
+}
+
+
+// ---------------------------------------------------------------------------
+// Applying a deload
+//
+// Once a deload is accepted, each slot it covers gets one lighter workout:
+// about a third fewer sets, and stopping 1–2 reps further from failure.
+// The weight stays the same, except in slots with a top of range of 3 reps
+// or fewer (see buildDeloadSuggestion in progression.js).
+//
+// Like the rest of this file, the functions here only work things out. The
+// app (app.js) is what saves the Deload record and the sessions.
+// ---------------------------------------------------------------------------
+
+// How long a slot can go untrained before the deload stops waiting for it.
+// Three weeks is two full rotations of a three-workout program: a slot not
+// done by then has been dropped or paused, and holding the deload open for
+// it would keep the rest of the program in "deload" for no reason.
+const DELOAD_SLOT_LAPSE_DAYS = 21;
+
+// Fewer sets: a third of them cut, rounded, but never down to nothing.
+// 3 sets → 2, 4 → 3, 5 → 3, 2 → 1, 1 → 1.
+function reduceSetCountForDeload(targetSets) {
+  return Math.max(1, targetSets - Math.round(targetSets / 3));
+}
+
+// The whole-body deload started by hand from the home screen: every
+// exercise in every active workout template, one lighter workout each.
+// `nowIso` is passed in rather than read from the clock here, so a test
+// can choose the time.
+function buildManualWholeBodyDeload(templates, nowIso) {
+  const slots = [];
+  for (const template of templates) {
+    if (template.isArchived) {
+      continue;
+    }
+    for (const planned of template.plannedExercises) {
+      slots.push({
+        templateId: template.id,
+        originalExerciseId: planned.exerciseId,
+        sessionsRequired: 1,
+        sessionsDone: 0,
+        plannedSets: reduceSetCountForDeload(planned.targetSets)
+      });
+    }
+  }
+  return {
+    id: crypto.randomUUID(),
+    scope: "whole",
+    muscles: [],
+    slots,
+    // Started by hand, so it's suggested and accepted in the same moment.
+    suggestedAt: nowIso,
+    acceptedAt: nowIso,
+    declinedAt: null,
+    completedAt: null,
+    cancelledAt: null,
+    trigger: "manual",
+    // A manual deload has no drop behind it, so nothing to record here.
+    evidence: { historyKeys: [], frozenBaseline: null, windowMeans: [], k: null, sigmaHat: null },
+    status: "accepted"
+  };
+}
+
+// The deload in progress, or null. Only one can run at a time: the app
+// offers "Start a deload" only while none is.
+function findActiveDeload(database) {
+  return database.deloads.find((deload) => deload.status === "accepted") || null;
+}
+
+function findDeloadSlot(deload, templateId, originalExerciseId) {
+  return deload.slots.find(
+    (slot) => slot.templateId === templateId && slot.originalExerciseId === originalExerciseId
+  ) || null;
+}
+
+function hasSlotHadItsDeloadSessions(slot) {
+  return slot.sessionsDone >= slot.sessionsRequired;
+}
+
+// True when the deload no longer needs to wait for this slot: it's had its
+// lighter workout, or it can't get one any more because its workout was
+// archived or the exercise was taken out of it, or it's lapsed (see
+// DELOAD_SLOT_LAPSE_DAYS).
+function isDeloadSlotSettled(slot, deload, templates, nowIso) {
+  if (hasSlotHadItsDeloadSessions(slot)) {
+    return true;
+  }
+  const template = templates.find((candidate) => candidate.id === slot.templateId);
+  if (!template || template.isArchived) {
+    return true;
+  }
+  if (!template.plannedExercises.some((planned) => planned.exerciseId === slot.originalExerciseId)) {
+    return true;
+  }
+  return daysBetween(deload.acceptedAt, nowIso) >= DELOAD_SLOT_LAPSE_DAYS;
+}
+
+function countSettledDeloadSlots(deload, templates, nowIso) {
+  return deload.slots.filter((slot) => isDeloadSlotSettled(slot, deload, templates, nowIso)).length;
+}
+
+function isDeloadFinished(deload, templates, nowIso) {
+  return countSettledDeloadSlots(deload, templates, nowIso) === deload.slots.length;
+}
+
+// The exercise that will actually be done for a template exercise in one
+// workout: its gym swap if there is one, otherwise itself.
+function findPerformedExerciseId(session, originalExerciseId) {
+  const replacement = session.replacedExercises.find(
+    (candidate) => candidate.exerciseId === originalExerciseId
+  );
+  return replacement ? replacement.replacementExerciseId : originalExerciseId;
+}
+
+// Which exercises in one workout are done as deload sets, as the ids that
+// its sets will carry (a gym swap's own id, not the template's). This is
+// what Session.deload.exerciseIds stores.
+//
+// A template workout covers its slots that still need their lighter
+// workout; one that's had it is back to normal training. A catch-up
+// workout covers every slot of the deload, done or not: it's making up
+// sets during a deload week, so they're done the deload way too, but they
+// don't count as the slot's deload workout (see countDeloadSessionsDone).
+function chooseDeloadExerciseIds(session, plannedExercises, deload) {
+  const exerciseIds = [];
+  for (const planned of plannedExercises) {
+    const templateId = session.catchUpExercises ? planned.fromTemplateId : session.templateId;
+    const slot = findDeloadSlot(deload, templateId, planned.exerciseId);
+    if (!slot) {
+      continue;
+    }
+    if (!session.catchUpExercises && hasSlotHadItsDeloadSessions(slot)) {
+      continue;
+    }
+    exerciseIds.push(findPerformedExerciseId(session, planned.exerciseId));
+  }
+  return exerciseIds;
+}
+
+// The slots one finished template workout gave their deload workout to:
+// a deload exercise with at least one working set. An exercise skipped
+// that day doesn't count, so its slot still waits for one. Catch-up
+// workouts never count (see chooseDeloadExerciseIds).
+function findSlotsGivenDeloadSession(session, deload, sets) {
+  if (session.catchUpExercises || !session.deload || session.deload.deloadId !== deload.id) {
+    return [];
+  }
+  const slots = [];
+  for (const performedExerciseId of session.deload.exerciseIds) {
+    const hasWorkingSet = sets.some(
+      (set) => set.sessionId === session.id && set.exerciseId === performedExerciseId && !set.isWarmup
+    );
+    const slot = findDeloadSlot(deload, session.templateId, findOriginalExerciseId(session, performedExerciseId));
+    if (hasWorkingSet && slot) {
+      slots.push(slot);
+    }
+  }
+  return slots;
 }
