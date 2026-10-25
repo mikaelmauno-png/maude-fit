@@ -92,6 +92,7 @@ const appState = {
   selectedWorkoutTileTemplateId: null, // which home-screen workout tile's details panel is open; null when none
   workoutTemplateDraft: null,  // in-progress copy of the workout template being edited
   plannedExerciseDraft: null,  // in-progress values for a planned exercise
+  isTargetRirSetByHand: false, // true once the open planned-exercise panel's target RIR was changed by hand, or came from an existing plan; until then it follows the rep range (see renderPlannedExerciseDraftAfterRepsChange)
   pendingTemplateId: null,     // workout template chosen at Start Workout, held while the gym picker is open
   isPendingCatchUp: false,     // true while the gym picker is open for starting a catch-up workout
   isEditingWorkoutExercises: false, // true while the active workout shows its "Add exercise" and "Remove" buttons
@@ -698,6 +699,7 @@ function buildSetPill(loggedSet, planned, suggestion, setIndex) {
         load: planned.targetLoad,
         repsMin: planned.targetRepsMin,
         repsMax: planned.targetRepsMax,
+        targetRir: planned.targetRir,
         suggestion,
         isGoalOverride: goalOverrides,
         setIndex
@@ -765,7 +767,7 @@ function decrementLoggedSetReps(setId) {
 function getSuggestionForPlanned(planned) {
   const session = getActiveSession();
   return suggestNextTarget(
-    appState.database, planned.exerciseId, planned.targetRepsMin, planned.targetRepsMax, session,
+    appState.database, planned.exerciseId, planned.targetRepsMin, planned.targetRepsMax, planned.targetRir, session,
     isDeloadExerciseInSession(session, planned.exerciseId)
   );
 }
@@ -1265,7 +1267,7 @@ function formatRepRange(repsMin, repsMax) {
 function formatPlannedTarget(planned) {
   const repRange = formatRepRange(planned.targetRepsMin, planned.targetRepsMax);
   const loadText = typeof planned.targetLoad === "number" ? ` (${planned.targetLoad} kg)` : "";
-  return `${planned.targetSets} × ${repRange}${loadText}`;
+  return `${planned.targetSets} × ${repRange}${loadText}, RIR ${planned.targetRir}`;
 }
 
 // "22 Sep" — a tile is too narrow for the year, and within the current
@@ -2118,7 +2120,9 @@ function openSetEntryPanel(exerciseId, planTarget = null) {
   deleteSetButton.hidden = true;
 
   if (planTarget) {
-    plannedTarget.textContent = `Planned: ${formatRepRange(planTarget.repsMin, planTarget.repsMax)} reps @ ${formatLoad(planTarget.load, exercise)}`;
+    plannedTarget.textContent =
+      `Planned: ${formatRepRange(planTarget.repsMin, planTarget.repsMax)} reps @ ${formatLoad(planTarget.load, exercise)}, ` +
+      `RIR ${planTarget.targetRir}`;
     plannedTarget.hidden = false;
   } else {
     plannedTarget.hidden = true;
@@ -4181,6 +4185,7 @@ function findMissedSetsThisWeek() {
           targetRepsMin: planned.targetRepsMin,
           targetRepsMax: planned.targetRepsMax,
           targetLoad: planned.targetLoad,
+          targetRir: planned.targetRir,
           // A goal set by hand belongs to its template, not to this plan.
           targetLoadSetAt: null
         });
@@ -5790,7 +5795,7 @@ function renderWorkoutTemplateEditor() {
 
     const detailSpan = document.createElement("span");
     detailSpan.textContent =
-      `${exercise.name}: ${planned.targetSets} × ${formatRepRange(planned.targetRepsMin, planned.targetRepsMax)} @ ${planned.targetLoad} kg`;
+      `${exercise.name}: ${planned.targetSets} × ${formatRepRange(planned.targetRepsMin, planned.targetRepsMax)} @ ${planned.targetLoad} kg, RIR ${planned.targetRir}`;
 
     // Swaps this entry with its neighbor in the array — order in
     // plannedExercises is display order, nothing more, so a swap is enough.
@@ -5847,11 +5852,10 @@ function renderSingleSlotMuscleNote() {
   noteElement.hidden = singleSlotMuscles.length === 0;
   const muscleNames = singleSlotMuscles.map((muscle) => MUSCLE_GROUP_LABELS[muscle]).join(", ");
   const isOneMuscle = singleSlotMuscles.length === 1;
-  const lowestRepsMinAllowed = DROP_E1RM_MAX_REPS_PLUS_RIR - TARGET_RIR_ASSUMED;
   noteElement.textContent =
     "Spotting a performance drop takes two exercises, in any of your workouts, " +
-    "that mainly train a muscle and give a usable strength estimate (a rep range " +
-    `starting at ${lowestRepsMinAllowed} or fewer, and a logged bodyweight for ` +
+    "that mainly train a muscle and give a usable strength estimate (minimum reps " +
+    `plus target RIR at most ${DROP_E1RM_MAX_REPS_PLUS_RIR}, and a logged bodyweight for ` +
     `bodyweight exercises). Only one does for: ${muscleNames}. Until there's a ` +
     `second, only whole-body deloads will cover ${isOneMuscle ? "it" : "them"}.`;
 }
@@ -6072,10 +6076,12 @@ function buildExercisePickerItem(exercise) {
       targetRepsMin: 8,
       targetRepsMax: 10,
       targetLoad: 20,
+      targetRir: defaultTargetRir(10),
       // A workout template's first target is a starting point, not a goal set by
       // hand, so it never overrides a progression suggestion.
       targetLoadSetAt: null
     };
+    appState.isTargetRirSetByHand = false;
     document.getElementById("plannedExerciseEntryName").textContent = exercise.name;
     renderPlannedExerciseDraft();
     exercisePickerScreen.hidden = true;
@@ -6137,8 +6143,12 @@ function openNextGoalEditor(templateId, exerciseId) {
     targetSets: planned.targetSets,
     targetRepsMin: planned.targetRepsMin,
     targetRepsMax: planned.targetRepsMax,
-    targetLoad: currentLoad
+    targetLoad: currentLoad,
+    targetRir: planned.targetRir
   };
+  // An existing exercise's target was already chosen, so changing its rep
+  // range shouldn't quietly move it.
+  appState.isTargetRirSetByHand = true;
 
   document.getElementById("plannedExerciseEntryName").textContent = exercise.name;
   plannedExerciseEntryHint.textContent =
@@ -6158,6 +6168,7 @@ function renderPlannedExerciseDraft() {
   document.getElementById("targetRepsMinValue").textContent = draft.targetRepsMin;
   document.getElementById("targetRepsMaxValue").textContent = draft.targetRepsMax;
   document.getElementById("targetLoadValue").textContent = `${draft.targetLoad} kg`;
+  document.getElementById("targetRirValue").textContent = draft.targetRir;
 }
 
 document.getElementById("targetSetsDecrement").addEventListener("click", () =>
@@ -6169,9 +6180,32 @@ document.getElementById("targetRepsMinDecrement").addEventListener("click", () =
 document.getElementById("targetRepsMinIncrement").addEventListener("click", () =>
   adjustDraftField(appState.plannedExerciseDraft, "targetRepsMin", 1, 1, renderPlannedExerciseDraft));
 document.getElementById("targetRepsMaxDecrement").addEventListener("click", () =>
-  adjustDraftField(appState.plannedExerciseDraft, "targetRepsMax", -1, 1, renderPlannedExerciseDraft));
+  adjustDraftField(appState.plannedExerciseDraft, "targetRepsMax", -1, 1, renderPlannedExerciseDraftAfterRepsChange));
 document.getElementById("targetRepsMaxIncrement").addEventListener("click", () =>
-  adjustDraftField(appState.plannedExerciseDraft, "targetRepsMax", 1, 1, renderPlannedExerciseDraft));
+  adjustDraftField(appState.plannedExerciseDraft, "targetRepsMax", 1, 1, renderPlannedExerciseDraftAfterRepsChange));
+
+// Until the target RIR is touched, it follows the rep range's default (see
+// defaultTargetRir in schema.js), so picking 12-15 reps gives RIR 1
+// without a second thing to remember. Once it's been set by hand, it stays.
+function renderPlannedExerciseDraftAfterRepsChange() {
+  const draft = appState.plannedExerciseDraft;
+  if (!appState.isTargetRirSetByHand) {
+    draft.targetRir = defaultTargetRir(draft.targetRepsMax);
+  }
+  renderPlannedExerciseDraft();
+}
+
+// Not adjustDraftField: that only has a floor, and the target RIR has a
+// ceiling too (TARGET_RIR_MAX in schema.js).
+function adjustTargetRir(step) {
+  const draft = appState.plannedExerciseDraft;
+  draft.targetRir = Math.min(Math.max(draft.targetRir + step, TARGET_RIR_MIN), TARGET_RIR_MAX);
+  appState.isTargetRirSetByHand = true;
+  renderPlannedExerciseDraft();
+}
+
+document.getElementById("targetRirDecrement").addEventListener("click", () => adjustTargetRir(-1));
+document.getElementById("targetRirIncrement").addEventListener("click", () => adjustTargetRir(1));
 document.getElementById("targetLoadDecrement").addEventListener("click", () =>
   adjustDraftField(
     appState.plannedExerciseDraft, "targetLoad", -getLoadStep(appState.plannedExerciseDraft.exerciseId), 0, renderPlannedExerciseDraft
@@ -6194,7 +6228,7 @@ makeStepperValueEditable(
 makeStepperValueEditable(
   document.getElementById("targetRepsMaxValue"), document.getElementById("targetRepsMaxValueInput"),
   document.getElementById("targetRepsMaxDecrement"), document.getElementById("targetRepsMaxIncrement"),
-  () => appState.plannedExerciseDraft, "targetRepsMax", 1, true, renderPlannedExerciseDraft
+  () => appState.plannedExerciseDraft, "targetRepsMax", 1, true, renderPlannedExerciseDraftAfterRepsChange
 );
 makeStepperValueEditable(
   document.getElementById("targetLoadValue"), document.getElementById("targetLoadValueInput"),
@@ -6225,6 +6259,7 @@ document.getElementById("savePlannedExerciseButton").addEventListener("click", (
     planned.targetSets = draft.targetSets;
     planned.targetRepsMin = draft.targetRepsMin;
     planned.targetRepsMax = draft.targetRepsMax;
+    planned.targetRir = draft.targetRir;
 
     // Only a load that was actually changed counts as a goal set by hand.
     // Saving just to adjust sets or reps shouldn't lock in the current
@@ -6380,6 +6415,7 @@ function chooseTargetsForAddingToWorkout(exercise, template) {
     targetRepsMin: 8,
     targetRepsMax: 10,
     targetLoad: previous ? previous.load : defaultStartingLoad(exercise),
+    targetRir: defaultTargetRir(10),
     targetLoadSetAt: null
   };
 }
@@ -6388,6 +6424,9 @@ function openTargetPanelForAddingToWorkout(exercise) {
   const template = getActiveTemplate();
   appState.isAddingExerciseToWorkout = true;
   appState.plannedExerciseDraft = chooseTargetsForAddingToWorkout(exercise, template);
+  // A copy of the template's own targets already has a chosen RIR; a fresh
+  // one still follows its rep range.
+  appState.isTargetRirSetByHand = template.plannedExercises.some((planned) => planned.exerciseId === exercise.id);
 
   document.getElementById("plannedExerciseEntryName").textContent = exercise.name;
   plannedExerciseEntryHint.textContent = template.isCatchUp

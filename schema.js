@@ -50,7 +50,11 @@
 //
 // Bumped to 15 for the addition of Deload, Session.deload and
 // Exercise.isBodyweight below.
-const SCHEMA_VERSION = 15;
+//
+// Bumped to 16 for the addition of targetRir on each planned exercise
+// (in a WorkoutTemplate, and in Session.addedExercises and
+// Session.catchUpExercises, which share its shape).
+const SCHEMA_VERSION = 16;
 
 // Every piece of app data lives under this one localStorage key, as a single
 // JSON string. One key is simpler to export, import, and reason about than
@@ -236,6 +240,13 @@ const DAY_STATUSES = ["normal", "poorSleep", "ill", "stressed"];
 //       targetRepsMin: 8,
 //       targetRepsMax: 10,
 //       targetLoad:    60,         // kilograms
+//       targetRir:     2,          // how many reps in reserve each set
+//                                   // aims to finish with, 0-4. Double
+//                                   // progression (progression.js) steers
+//                                   // towards it, and the drop test
+//                                   // (deload.js) uses it to judge which
+//                                   // rep ranges give a usable e1RM. New
+//                                   // exercises get defaultTargetRir below.
 //       targetLoadSetAt: "2026-09-23T18:10:00.000Z"
 //                                   // when targetLoad was last set by hand
 //                                   // via "Set goal for next time", or null
@@ -397,6 +408,23 @@ const DELOAD_TRIGGERS = ["drop", "wellness+drop", "backstop", "manual"];
 // It and cancelledAt were added without a version bump: nothing created
 // Deload records before they existed, so there's no older data to migrate.
 const DELOAD_STATUSES = ["suggested", "accepted", "declined", "expired", "completed", "superseded", "cancelled"];
+// The highest target RIR that can be chosen. Above about 4, reps-in-reserve
+// guesses get too unreliable for the progression rules to steer by (see
+// PROGRESSION_RIR_COUNTED_MAX in progression.js).
+const TARGET_RIR_MIN = 0;
+const TARGET_RIR_MAX = 4;
+
+// Rep ranges topping out above this aim 1 rep closer to failure. High-rep
+// sets are where people most underestimate how many reps they had left,
+// and taking them closer to failure costs little extra fatigue.
+const HIGH_REP_RANGE_MAX_ABOVE = 10;
+
+// The target RIR an exercise starts with, from its rep range. Only a
+// starting point: it can be changed in the template editor.
+function defaultTargetRir(targetRepsMax) {
+  return targetRepsMax > HIGH_REP_RANGE_MAX_ABOVE ? 1 : 2;
+}
+
 const CARDIO_EFFORT_MIN = 1;
 const CARDIO_EFFORT_MAX = 10;
 
@@ -571,6 +599,33 @@ function migrateFrom14To15(database) {
   database.schemaVersion = 15;
 }
 
+// Version 15 planned exercises have no target RIR. Nothing recorded one,
+// so each gets the same default a new exercise would, from its rep range.
+// Unlike a missing readiness answer, this isn't a measurement being made
+// up: it's a plan setting, and a sensible default is what the editor
+// would have shown anyway. Setting only what's missing makes running it
+// twice harmless.
+function addMissingTargetRir(plannedExercises) {
+  for (const planned of plannedExercises) {
+    if (planned.targetRir === undefined) {
+      planned.targetRir = defaultTargetRir(planned.targetRepsMax);
+    }
+  }
+}
+
+function migrateFrom15To16(database) {
+  for (const template of database.workoutTemplates) {
+    addMissingTargetRir(template.plannedExercises);
+  }
+  for (const session of database.sessions) {
+    addMissingTargetRir(session.addedExercises);
+    if (session.catchUpExercises) {
+      addMissingTargetRir(session.catchUpExercises);
+    }
+  }
+  database.schemaVersion = 16;
+}
+
 // Keyed by the version each migration upgrades *from*. Versions with no
 // entry here (1-3) are too old to migrate and are still refused.
 const MIGRATIONS = {
@@ -584,7 +639,8 @@ const MIGRATIONS = {
   11: migrateFrom11To12,
   12: migrateFrom12To13,
   13: migrateFrom13To14,
-  14: migrateFrom14To15
+  14: migrateFrom14To15,
+  15: migrateFrom15To16
 };
 
 // Applies migrations one step at a time until the data reaches

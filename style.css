@@ -1346,3 +1346,10 @@ h1 {
 #dropDetectionReadoutList li {
   margin-bottom: 8px;
 }
+
+/* The target RIR stepper's number is plain text, not a tap-to-type button
+   (only five values), so it needs centring that a button gets for free. */
+span.stepper-value {
+  display: inline-block;
+  text-align: center;
+}

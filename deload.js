@@ -42,10 +42,6 @@ const DROP_THRESHOLD_K = 1.5;
 // the usual 10) because each slot is only ever compared with itself at the
 // same rep range, so the formula's error at high reps mostly cancels out.
 const DROP_E1RM_MAX_REPS_PLUS_RIR = 15;
-// Templates don't store a target RIR yet, so a slot's rep range is judged
-// against the most cautious one in use (3 reps in reserve). Replace with the
-// real target once goal settings exist.
-const TARGET_RIR_ASSUMED = 3;
 // Slots aimed at more than 10 reps (by the middle of their rep range) wobble
 // more from session to session, so they get their own noise estimate.
 const HIGH_REP_MIDPOINT_ABOVE = 10;
@@ -190,10 +186,10 @@ function describeHistoryKey(session, performedExercise) {
 }
 
 // Whether a slot can ever produce a usable e1RM: its rep range has to fit
-// under the cap (judged at the assumed target RIR), and a bodyweight
+// under the cap (judged at the slot's own target RIR), and a bodyweight
 // exercise needs a bodyweight to add its load to.
 function canSlotGiveEstimatedOneRepMax(planned, exercise, hasBodyweightLog) {
-  const fitsUnderCap = planned.targetRepsMin + TARGET_RIR_ASSUMED <= DROP_E1RM_MAX_REPS_PLUS_RIR;
+  const fitsUnderCap = planned.targetRepsMin + planned.targetRir <= DROP_E1RM_MAX_REPS_PLUS_RIR;
   const hasLoad = !exercise.isBodyweight || hasBodyweightLog;
   return fitsUnderCap && hasLoad;
 }

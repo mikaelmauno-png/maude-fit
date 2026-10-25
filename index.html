@@ -957,6 +957,18 @@
         </div>
       </div>
 
+      <!-- Reps in reserve each set aims to finish with, 0-4. Starts from
+           the rep range's default and follows it until changed here. No
+           tap-to-type: five values are quicker to step through. -->
+      <div class="stepper-row">
+        <span class="stepper-label">Target RIR</span>
+        <div class="stepper">
+          <button type="button" id="targetRirDecrement">&minus;</button>
+          <span id="targetRirValue" class="stepper-value"></span>
+          <button type="button" id="targetRirIncrement">+</button>
+        </div>
+      </div>
+
       <div class="button-row">
         <button id="savePlannedExerciseButton">Add to workout</button>
         <!-- Only shown when adding an exercise to a workout in progress:

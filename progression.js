@@ -7,6 +7,14 @@
 // drops the reps back towards the bottom of the range, and the cycle
 // repeats.
 //
+// Each planned exercise also has a target RIR (reps in reserve: how many
+// more reps each set could have done). The logged RIR steers the steps:
+// a session clearly easier than the target moves faster (more reps at
+// once, or two weight steps), one harder than the target holds back. And
+// before adding weight, the rules check the new weight still allows the
+// bottom of the range, so a small exercise isn't given a jump too big for
+// it (see canAddWeight).
+//
 // Everything here only *reads* the database and returns a suggestion. It
 // never changes logged sets or workout templates; the app decides what to do with the
 // suggestion (show it, pre-fill a stepper).
@@ -146,28 +154,64 @@ function findTopLoadSets(workingSets) {
 }
 
 
-// Sorts one session's top-load sets into one of four outcomes:
+// RIR answers above this are counted as this. Reps-in-reserve guesses are
+// fairly accurate close to failure (within about a rep) but get much
+// vaguer further away, where people tend to underestimate what's left. A
+// logged RIR of 6 is too uncertain to act on as "6", so the rules treat it
+// as "4 or more".
+const PROGRESSION_RIR_COUNTED_MAX = 4;
+
+// A session this many reps in reserve away from the target (on average,
+// above or below) counts as clearly off target, not just a normal day's
+// wobble: one rep either way is within how accurately RIR can be guessed.
+const PROGRESSION_CLEARLY_OFF_TARGET_RIR = 2;
+
+// The most weight steps one suggestion adds at once, even after a session
+// that was far too easy: a bigger jump rests on an estimate stretched too
+// far to trust.
+const PROGRESSION_MAX_INCREMENTS_AT_ONCE = 2;
+
+// When a weight step is too big for an exercise (see canAddWeight), reps
+// keep going up past the top of the range instead. Once they reach this
+// many times the top, the weight goes up anyway: the strength estimate
+// that decides is least accurate at high reps, so it shouldn't hold the
+// weight back forever.
+const PROGRESSION_REPS_PAST_TOP_FACTOR = 1.5;
+
+
+// The RIR the rules act on for one set. A missing RIR (sets logged before
+// it was asked) counts as 0, so a set with no answer is never treated as
+// easy.
+function countedRir(set) {
+  if (typeof set.rir !== "number") {
+    return 0;
+  }
+  return Math.min(set.rir, PROGRESSION_RIR_COUNTED_MAX);
+}
+
+// How far last session's heaviest sets were from the target RIR, on
+// average: +2 means 2 more reps in reserve than planned (too easy), -1
+// means 1 rep closer to failure than planned (too hard).
+function findRirGap(topLoadSets, targetRir) {
+  const totalRir = topLoadSets.reduce((sum, set) => sum + countedRir(set), 0);
+  return totalRir / topLoadSets.length - targetRir;
+}
+
+
+// Sorts one session's top-load sets into one of three outcomes:
 //
-// - "missedRange":         at least one set fell short of the minimum reps
-// - "readyToProgress":     every set reached the maximum reps, with at least
-//                          1 rep in reserve
-// - "topOfRangeAtFailure": every set reached the maximum reps, but at least
-//                          one needed everything (RIR 0), so the weight isn't
-//                          mastered yet
-// - "withinRange":         everything else: inside the range, room to add reps
+// - "missedRange":  at least one set fell short of the minimum reps
+// - "reachedTop":   every set reached the maximum reps
+// - "withinRange":  everything else: inside the range, room to add reps
+//
+// How hard the sets were (RIR) is judged separately, by findRirGap.
 function classifySessionOutcome(topLoadSets, repsMin, repsMax) {
   if (topLoadSets.some((set) => set.reps < repsMin)) {
     return "missedRange";
   }
-
-  const everySetReachedTop = topLoadSets.every((set) => set.reps >= repsMax);
-  if (everySetReachedTop) {
-    // `set.rir >= 1` is false for a missing (null) RIR too, so a set with
-    // no RIR recorded is treated cautiously rather than as easy.
-    const everySetHadRepsInReserve = topLoadSets.every((set) => set.rir >= 1);
-    return everySetHadRepsInReserve ? "readyToProgress" : "topOfRangeAtFailure";
+  if (topLoadSets.every((set) => set.reps >= repsMax)) {
+    return "reachedTop";
   }
-
   return "withinRange";
 }
 
@@ -200,9 +244,10 @@ function missedTwiceAtSameLoad(recentSessions, repsMin, repsMax) {
 //   app treats as more important than a goal set by hand
 // Returns null when there's no past data to base it on.
 //
-// `isDeload` says this exercise is done as deload sets today (see
-// Session.deload in schema.js); the app works that out.
-function suggestNextTarget(database, exerciseId, repsMin, repsMax, activeSession, isDeload) {
+// `targetRir` is the planned exercise's target (see WorkoutTemplate in
+// schema.js). `isDeload` says this exercise is done as deload sets today
+// (see Session.deload in schema.js); the app works that out.
+function suggestNextTarget(database, exerciseId, repsMin, repsMax, targetRir, activeSession, isDeload) {
   const exercise = database.exercises.find((candidate) => candidate.id === exerciseId);
 
   // Two sessions are needed at most: the latest, plus the one before it to
@@ -220,8 +265,16 @@ function suggestNextTarget(database, exerciseId, repsMin, repsMax, activeSession
     return deloadSuggestion;
   }
 
-  const maxLoad = findMachineMaxLoad(database, exercise, activeSession);
-  const suggestion = chooseSuggestion(recentSessions, exercise.minimumLoadIncrement, repsMin, repsMax, maxLoad, exercise);
+  const rules = {
+    increment: exercise.minimumLoadIncrement,
+    repsMin,
+    repsMax,
+    targetRir,
+    maxLoad: findMachineMaxLoad(database, exercise, activeSession),
+    exercise,
+    bodyweightKg: findLatestBodyweightKg(database)
+  };
+  const suggestion = chooseSuggestion(recentSessions, rules);
   suggestion.basedOnSessionStartedAt = recentSessions[0].session.startedAt;
   return suggestion;
 }
@@ -239,73 +292,230 @@ function findMachineMaxLoad(database, exercise, activeSession) {
   return typeof maxLoad === "number" ? maxLoad : null;
 }
 
+// The most recent weigh-in, or null with none. Today's suggestion is
+// about today, so the latest weight is the right one (the drop test, which
+// looks back at old sessions, uses each session's own date instead).
+function findLatestBodyweightKg(database) {
+  let latest = null;
+  for (const entry of database.bodyweightEntries) {
+    if (latest === null || entry.loggedAt > latest.loggedAt) {
+      latest = entry;
+    }
+  }
+  return latest === null ? null : latest.weightKg;
+}
+
+
+// ---------------------------------------------------------------------------
+// Will a heavier weight still fit the rep range?
+//
+// Before adding weight, the rules check that the bottom of the range is
+// still reachable at the target RIR with it. That's what stops a 2.5 kg
+// step on a 10 kg lateral raise (25% heavier): last session's sets give a
+// strength estimate, and the estimate says how many reps the new weight
+// would allow.
+// ---------------------------------------------------------------------------
+
+// The weight a set actually moved: for a bodyweight exercise the stored
+// load is only what's added (see Exercise.isBodyweight in schema.js), so
+// the lifter's own weight goes on top. Null when that weight isn't known.
+function findTotalLoad(load, exercise, bodyweightKg) {
+  if (!exercise.isBodyweight) {
+    return load;
+  }
+  return bodyweightKg === null ? null : load + bodyweightKg;
+}
+
+// Epley's estimate of a one-rep max from a set taken `repsToFailure` reps
+// from failure (reps done plus reps in reserve). The drop test in
+// deload.js uses the same formula.
+function epleyOneRepMax(totalLoad, repsToFailure) {
+  return totalLoad * (1 + repsToFailure / 30);
+}
+
+// Epley turned around: how many reps to failure a weight allows, for a
+// given one-rep max.
+function repsToFailureAt(totalLoad, oneRepMax) {
+  return 30 * (oneRepMax / totalLoad - 1);
+}
+
+// Last session's strength, as the average estimate over its heaviest sets.
+// Uses the counted RIR, so a guessed RIR of 6 can't inflate it.
+function estimateSessionOneRepMax(topLoadSets, totalLoad) {
+  const estimates = topLoadSets.map((set) => epleyOneRepMax(totalLoad, set.reps + countedRir(set)));
+  return estimates.reduce((sum, estimate) => sum + estimate, 0) / estimates.length;
+}
+
+// True when `newLoad` still allows the bottom of the rep range at the
+// target RIR. When the lifter's total weight isn't known (a bodyweight
+// exercise with no weigh-in), there's nothing to estimate from, so the
+// plain double-progression step is allowed.
+function canAddWeight(topLoadSets, newLoad, rules) {
+  const lastTotal = findTotalLoad(topLoadSets[0].load, rules.exercise, rules.bodyweightKg);
+  const newTotal = findTotalLoad(newLoad, rules.exercise, rules.bodyweightKg);
+  if (lastTotal === null || newTotal === null || newTotal <= 0) {
+    return true;
+  }
+  const oneRepMax = estimateSessionOneRepMax(topLoadSets, lastTotal);
+  return repsToFailureAt(newTotal, oneRepMax) - rules.targetRir >= rules.repsMin;
+}
+
+
+// ---------------------------------------------------------------------------
+// Choosing the suggestion
+// ---------------------------------------------------------------------------
 
 // Applies the double-progression rules to the latest session's results.
-// Returns `{ load, reps, repsPerSet, reason }`. `maxLoad` is the
-// machine's heaviest weight, or null for no limit. `exercise` is only for
-// wording the reason ("Stay at BW" for a pull-up, not "Stay at 0 kg").
-function chooseSuggestion(recentSessions, increment, repsMin, repsMax, maxLoad, exercise) {
+// Returns `{ load, reps, repsPerSet, reason }`. `rules` holds the planned
+// exercise's targets and limits (see suggestNextTarget); `maxLoad` in it
+// is the machine's heaviest weight, or null for no limit.
+function chooseSuggestion(recentSessions, rules) {
   // In the order they were done, so "set 3" in the targets means the
   // third set, same as on the workout card.
   const topLoadSets = findTopLoadSets(recentSessions[0].workingSets).sort((a, b) => a.order - b.order);
-  const lastLoad = topLoadSets[0].load;
-  const setCount = topLoadSets.length;
-  const outcome = classifySessionOutcome(topLoadSets, repsMin, repsMax);
+  const outcome = classifySessionOutcome(topLoadSets, rules.repsMin, rules.repsMax);
+  const rirGap = findRirGap(topLoadSets, rules.targetRir);
 
-  // Already at the machine's heaviest weight, the top of the range can't
-  // lead to more weight, so the reps keep climbing past it instead. That
-  // includes "withinRange": once some sets are past the top, cutting them
-  // back to it would be a step backwards.
-  const isAtMaxLoad = maxLoad !== null && lastLoad >= maxLoad;
-  if (isAtMaxLoad && (outcome === "readyToProgress" || outcome === "withinRange")) {
-    return buildRepsOnlySuggestion(topLoadSets);
+  if (outcome === "missedRange") {
+    return chooseAfterMissedRange(recentSessions, topLoadSets, rules);
   }
-  if (isAtMaxLoad && outcome === "topOfRangeAtFailure") {
+  if (rules.maxLoad !== null && topLoadSets[0].load >= rules.maxLoad) {
+    return chooseAtMachineMax(topLoadSets, rirGap, rules);
+  }
+  if (outcome === "reachedTop") {
+    return chooseAfterReachingTop(topLoadSets, rirGap, rules);
+  }
+  return chooseWithinRange(topLoadSets, rirGap, rules);
+}
+
+// Fell short of the bottom of the range: stay, and only drop the weight
+// when it happens twice in a row at the same load.
+function chooseAfterMissedRange(recentSessions, topLoadSets, rules) {
+  const lastLoad = topLoadSets[0].load;
+  if (missedTwiceAtSameLoad(recentSessions, rules.repsMin, rules.repsMax)) {
+    return buildUniformSuggestion(
+      Math.max(roundLoad(lastLoad - rules.increment), 0), rules.repsMin, topLoadSets.length,
+      `Fell short of ${rules.repsMin} reps twice in a row, so drop ${rules.increment} kg.`
+    );
+  }
+  return buildUniformSuggestion(
+    lastLoad, rules.repsMin, topLoadSets.length,
+    `Fell short of ${rules.repsMin} reps last time. Stay at ${formatLoad(lastLoad, rules.exercise)}.`
+  );
+}
+
+// Already at the machine's heaviest weight, more weight isn't an option,
+// so reps keep climbing past the range instead — unless last time was
+// harder than the target, in which case those reps are repeated first.
+function chooseAtMachineMax(topLoadSets, rirGap, rules) {
+  const lastLoad = topLoadSets[0].load;
+  if (rirGap < 0) {
     return {
       load: lastLoad,
       reps: Math.min(...topLoadSets.map((set) => set.reps)),
       repsPerSet: topLoadSets.map((set) => set.reps),
-      reason: `${lastLoad} kg is this machine's heaviest. Last time took everything (RIR 0), so repeat those reps.`
+      reason: `${lastLoad} kg is this machine's heaviest. Last time was past your target RIR ${rules.targetRir}, so repeat those reps.`
     };
   }
+  return buildRepsOnlySuggestion(
+    topLoadSets,
+    `${lastLoad} kg is this machine's heaviest, so add a rep instead`
+  );
+}
 
-  // One step short of the max: go up to it, rather than past it to a
-  // weight the machine doesn't have.
-  if (outcome === "readyToProgress" && maxLoad !== null && lastLoad + increment > maxLoad) {
+// Every set reached the top of the range. If that took more effort than
+// the target, repeat it until it doesn't. Otherwise add weight: two steps
+// after a session that was far too easy, one normally, and none (reps
+// instead) when even one step is too big a jump for this exercise.
+function chooseAfterReachingTop(topLoadSets, rirGap, rules) {
+  const lastLoad = topLoadSets[0].load;
+  const setCount = topLoadSets.length;
+
+  if (rirGap < 0) {
     return buildUniformSuggestion(
-      maxLoad, repsMin, setCount,
-      `All sets reached ${repsMax} reps last time, so go up to ${maxLoad} kg, this machine's heaviest.`
+      lastLoad, rules.repsMax, setCount,
+      `Reached ${rules.repsMax} reps, but closer to failure than your target RIR ${rules.targetRir}. ` +
+      `Repeat ${formatLoad(lastLoad, rules.exercise)} before adding weight.`
     );
   }
 
-  if (outcome === "readyToProgress") {
+  // One step short of the machine's max: go up to it, rather than past it
+  // to a weight the machine doesn't have.
+  if (rules.maxLoad !== null && lastLoad + rules.increment > rules.maxLoad) {
     return buildUniformSuggestion(
-      roundLoad(lastLoad + increment), repsMin, setCount,
-      `All sets reached ${repsMax} reps last time, so add ${increment} kg.`
+      rules.maxLoad, rules.repsMin, setCount,
+      `All sets reached ${rules.repsMax} reps last time, so go up to ${rules.maxLoad} kg, this machine's heaviest.`
     );
   }
 
-  if (outcome === "topOfRangeAtFailure") {
+  const isFarTooEasy = rirGap >= PROGRESSION_CLEARLY_OFF_TARGET_RIR;
+  const doubleStepLoad = roundLoad(lastLoad + PROGRESSION_MAX_INCREMENTS_AT_ONCE * rules.increment);
+  const isDoubleStepAllowed = rules.maxLoad === null || doubleStepLoad <= rules.maxLoad;
+  if (isFarTooEasy && isDoubleStepAllowed && canAddWeight(topLoadSets, doubleStepLoad, rules)) {
     return buildUniformSuggestion(
-      lastLoad, repsMax, setCount,
-      `Reached ${repsMax} reps but at RIR 0. Repeat ${formatLoad(lastLoad, exercise)} before adding weight.`
+      doubleStepLoad, rules.repsMin, setCount,
+      `All sets reached ${rules.repsMax} reps with reps to spare (target RIR ${rules.targetRir}), ` +
+      `so add ${roundLoad(PROGRESSION_MAX_INCREMENTS_AT_ONCE * rules.increment)} kg.`
     );
   }
 
-  if (outcome === "missedRange") {
-    if (missedTwiceAtSameLoad(recentSessions, repsMin, repsMax)) {
-      return buildUniformSuggestion(
-        Math.max(roundLoad(lastLoad - increment), 0), repsMin, setCount,
-        `Fell short of ${repsMin} reps twice in a row, so drop ${increment} kg.`
-      );
-    }
+  const singleStepLoad = roundLoad(lastLoad + rules.increment);
+  const fewestReps = Math.min(...topLoadSets.map((set) => set.reps));
+  const hasRepsHitTheirCap = fewestReps >= Math.ceil(PROGRESSION_REPS_PAST_TOP_FACTOR * rules.repsMax);
+  if (canAddWeight(topLoadSets, singleStepLoad, rules) || hasRepsHitTheirCap) {
     return buildUniformSuggestion(
-      lastLoad, repsMin, setCount,
-      `Fell short of ${repsMin} reps last time. Stay at ${formatLoad(lastLoad, exercise)}.`
+      singleStepLoad, rules.repsMin, setCount,
+      `All sets reached ${rules.repsMax} reps last time, so add ${rules.increment} kg.`
     );
   }
 
-  return buildOneMoreRepSuggestion(topLoadSets, repsMax, exercise);
+  return buildRepsOnlySuggestion(
+    topLoadSets,
+    `${rules.increment} kg more would be too big a jump to still get ${rules.repsMin} reps, so add a rep instead`
+  );
+}
+
+// Inside the range. Normally one more rep on the weakest set. After a
+// session clearly easier than the target, every set jumps towards the
+// reps that would have hit the target; after one clearly harder, the same
+// reps are repeated.
+function chooseWithinRange(topLoadSets, rirGap, rules) {
+  const lastLoad = topLoadSets[0].load;
+  if (rirGap >= PROGRESSION_CLEARLY_OFF_TARGET_RIR) {
+    return buildRepsToTargetSuggestion(topLoadSets, rules);
+  }
+  if (rirGap <= -PROGRESSION_CLEARLY_OFF_TARGET_RIR) {
+    const repsPerSet = topLoadSets.map((set) => set.reps);
+    return {
+      load: lastLoad,
+      reps: Math.min(...repsPerSet),
+      repsPerSet,
+      reason: `Last time was closer to failure than your target RIR ${rules.targetRir}. ` +
+        `Repeat ${formatLoad(lastLoad, rules.exercise)} with the same reps.`
+    };
+  }
+  return buildOneMoreRepSuggestion(topLoadSets, rules.repsMax, rules.exercise);
+}
+
+// Each set's reps raised by the reps it had to spare beyond the target
+// ("8 reps at RIR 4, target 2" → 10), up to the top of the range, and
+// always at least one rep more somewhere.
+function buildRepsToTargetSuggestion(topLoadSets, rules) {
+  const repsPerSet = topLoadSets.map((set) =>
+    Math.min(set.reps + Math.max(countedRir(set) - rules.targetRir, 0), rules.repsMax)
+  );
+  const hasAnySetGoneUp = repsPerSet.some((reps, index) => reps > topLoadSets[index].reps);
+  if (!hasAnySetGoneUp) {
+    return buildOneMoreRepSuggestion(topLoadSets, rules.repsMax, rules.exercise);
+  }
+  const lastLoad = topLoadSets[0].load;
+  return {
+    load: lastLoad,
+    reps: Math.min(...repsPerSet),
+    repsPerSet,
+    reason: `Stay at ${formatLoad(lastLoad, rules.exercise)}. Last time had reps to spare ` +
+      `(target RIR ${rules.targetRir}), so more reps on each set.`
+  };
 }
 
 // The same rep target on every set: after a weight change, or when last
@@ -339,10 +549,11 @@ function buildOneMoreRepSuggestion(topLoadSets, repsMax, exercise) {
 }
 
 
-// At the machine's heaviest weight: same as buildOneMoreRepSuggestion, but
-// with no top of the range, since more weight isn't an option. Reps past
-// the range are the only way left to make the weight harder.
-function buildRepsOnlySuggestion(topLoadSets) {
+// Same as buildOneMoreRepSuggestion, but with no top of the range: for
+// when more weight isn't an option (the machine's heaviest) or would be
+// too big a jump. Reps past the range are the way left to make the weight
+// harder. `reasonStart` says why; the rest of the sentence is added here.
+function buildRepsOnlySuggestion(topLoadSets, reasonStart) {
   const repsPerSet = topLoadSets.map((set) => set.reps);
   const fewestReps = Math.min(...repsPerSet);
   const weakestSetIndex = repsPerSet.indexOf(fewestReps);
@@ -353,7 +564,7 @@ function buildRepsOnlySuggestion(topLoadSets) {
     load: lastLoad,
     reps: Math.min(...repsPerSet),
     repsPerSet,
-    reason: `${lastLoad} kg is this machine's heaviest, so add a rep instead: one more on set ${weakestSetIndex + 1}.`
+    reason: `${reasonStart}: one more on set ${weakestSetIndex + 1}.`
   };
 }
 
