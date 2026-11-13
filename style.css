@@ -133,7 +133,7 @@ ul li {
    timer (or the whole block, when both are empty) takes no space. */
 #workoutClock:empty,
 #restTimer:empty,
-#workoutTimers:has(#workoutClock:empty):has(#restTimer:empty) {
+#workoutTimers:has(#workoutClock:empty):has(#restTimer:empty):has(#prBanner[hidden]) {
   display: none;
 }
 
@@ -193,7 +193,7 @@ ul li {
   border: 1px solid var(--color-record-outline);
   border-radius: 8px;
   padding: 12px 16px;
-  margin-bottom: 16px;
+  margin: 8px 0 0;
   font-weight: bold;
   font-size: 1rem;
 }
