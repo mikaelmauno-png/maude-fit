@@ -158,8 +158,9 @@ function renderFreeformReview() {
 // between an already-logged set and one still waiting to be done).
 // `suggestion` is today's progression suggestion for this exercise (see
 // progression.js), or null. When there is one, a not-yet-logged pill shows
-// the suggested load instead of the workout template's fixed target load, unless a
-// goal set by hand overrides it (see isGoalOverride).
+// the suggested load instead of the workout template's fixed target load
+// (with a goal set by hand, that's the goal's weight; see
+// getSuggestionForPlanned).
 // `setIndex` is this pill's position on the card, counting from 0, which
 // picks that set's own rep target out of the suggestion.
 function buildSetPill(loggedSet, planned, suggestion, setIndex) {
@@ -169,16 +170,15 @@ function buildSetPill(loggedSet, planned, suggestion, setIndex) {
 
   const weightSpan = document.createElement("span");
   weightSpan.className = "set-pill-weight";
-  const goalOverrides = isGoalOverride(planned, suggestion);
-  const pendingLoad = suggestion && !goalOverrides ? suggestion.load : planned.targetLoad;
+  const pendingLoad = suggestion ? suggestion.load : planned.targetLoad;
   weightSpan.textContent = formatLoad(loggedSet ? loggedSet.load : pendingLoad, findExerciseById(planned.exerciseId));
 
   // This set's own target from the suggestion ("7"), or the template's rep
   // range ("6-8") when there's no suggestion to follow.
   const repsSpan = document.createElement("span");
   repsSpan.className = "set-pill-reps";
-  const repTarget = suggestion && !goalOverrides
-    ? `${targetRepsForSet(suggestion, setIndex)}`
+  const repTarget = suggestion
+    ?`${targetRepsForSet(suggestion, setIndex)}`
     : formatRepRange(planned.targetRepsMin, planned.targetRepsMax);
   repsSpan.textContent = loggedSet ? `${loggedSet.reps}/${repTarget}` : repTarget;
 
@@ -202,7 +202,6 @@ function buildSetPill(loggedSet, planned, suggestion, setIndex) {
         repsMax: planned.targetRepsMax,
         targetRir: planned.targetRir,
         suggestion,
-        isGoalOverride: goalOverrides,
         setIndex
       });
     });
@@ -265,16 +264,26 @@ function decrementLoggedSetReps(setId) {
 
 // Today's progression suggestion for one planned exercise in the active
 // workout template, or null when the exercise has no past sessions to go on.
+// While a goal set by hand applies (isGoalOverride), it's the suggestion
+// at the goal's weight: the goal picks the weight, the rules still pick
+// the reps (see suggestAtGoalLoad in progression.js).
 function getSuggestionForPlanned(planned) {
   const session = getActiveSession();
-  return suggestNextTarget(
+  const suggestion = suggestNextTarget(
     appState.database, planned.exerciseId, planned.targetRepsMin, planned.targetRepsMax, planned.targetRir, session,
     isDeloadExerciseInSession(session, planned.exerciseId)
+  );
+  if (!isGoalOverride(planned, suggestion)) {
+    return suggestion;
+  }
+  return suggestAtGoalLoad(
+    appState.database, suggestion, planned.targetLoad, planned.targetRepsMin, planned.targetRepsMax,
+    planned.targetRir, session, planned.exerciseId
   );
 }
 
 // True when a goal set by hand ("Set goal for next time") should be used
-// instead of the progression suggestion.
+// instead of the progression suggestion's weight.
 //
 // The rule: a goal wins if it was set *after* the session the suggestion
 // is based on, because then it's a deliberate decision made with that
@@ -296,15 +305,10 @@ function isGoalOverride(planned, suggestion) {
 }
 
 // The one-line text for the green suggestion line, shared by the workout
-// card and the set panel. While a goal overrides the suggestion, the
-// suggestion is still mentioned, so it's visible what the rules would
-// have said.
-function describeProgression(suggestion, goalLoad, goalOverrides, exercise) {
-  const repsText = describeSuggestedReps(suggestion);
-  if (goalOverrides) {
-    return `Your goal: ${formatLoad(goalLoad, exercise)} (suggestion was ${formatLoad(suggestion.load, exercise)} × ${repsText}).`;
-  }
-  return `Suggested: ${formatLoad(suggestion.load, exercise)} × ${repsText}. ${suggestion.reason}`;
+// card and the set panel.
+function describeProgression(suggestion, exercise) {
+  const label = suggestion.isGoal ? "Your goal" : "Suggested";
+  return `${label}: ${formatLoad(suggestion.load, exercise)} × ${describeSuggestedReps(suggestion)}. ${suggestion.reason}`;
 }
 
 // "8" when every set has the same target, "8 · 7 · 7" when they differ.
@@ -318,9 +322,7 @@ function describeSuggestedReps(suggestion) {
 function buildSuggestionLine(planned, suggestion) {
   const lineElement = document.createElement("p");
   lineElement.className = "progression-suggestion";
-  lineElement.textContent = describeProgression(
-    suggestion, planned.targetLoad, isGoalOverride(planned, suggestion), findExerciseById(planned.exerciseId)
-  );
+  lineElement.textContent = describeProgression(suggestion, findExerciseById(planned.exerciseId));
   return lineElement;
 }
 
@@ -1660,13 +1662,13 @@ function resetSetEntryStepperEditUI() {
 }
 
 // `planTarget` (optional) is `{ load, repsMin, repsMax, suggestion,
-// isGoalOverride }` from a workout template's plan, passed in when opened from a
+// setIndex }` from a workout template's plan, passed in when opened from a
 // pending set pill. When present, load/reps default to the plan rather than
 // to past performance, since the plan is what today is supposed to follow.
 // If progression.js produced a suggestion, that takes priority over the
 // plan's fixed load, because it's the plan's rep range applied to what
-// actually happened last time. The exception is a goal set by hand after
-// that suggestion's session (isGoalOverride), which wins over both.
+// actually happened last time. A goal set by hand is already part of the
+// suggestion by now (see getSuggestionForPlanned).
 function openSetEntryPanel(exerciseId, planTarget = null) {
   const exercise = appState.database.exercises.find((candidate) => candidate.id === exerciseId);
   const previous = findMostRecentWorkingSet(exerciseId);
@@ -1675,14 +1677,10 @@ function openSetEntryPanel(exerciseId, planTarget = null) {
   hidePersonalBestBanner();
   appState.editingSetId = null;
   const suggestion = planTarget ? planTarget.suggestion : null;
-  const goalOverrides = planTarget ? planTarget.isGoalOverride : false;
-  // With a goal overriding it, the suggestion is still shown but not
-  // followed: the steppers start from the plan (the goal) instead.
-  const suggestionToFollow = goalOverrides ? null : suggestion;
   appState.setDraft = {
     exerciseId,
-    load: chooseStartingLoad(planTarget, suggestionToFollow, previous, exercise),
-    reps: chooseStartingReps(planTarget, suggestionToFollow, previous),
+    load: chooseStartingLoad(planTarget, suggestion, previous, exercise),
+    reps: chooseStartingReps(planTarget, suggestion, previous),
     rir: previous ? previous.rir : 2,
     isWarmup: false
   };
@@ -1701,7 +1699,7 @@ function openSetEntryPanel(exerciseId, planTarget = null) {
   }
 
   if (suggestion) {
-    progressionSuggestion.textContent = describeProgression(suggestion, planTarget.load, goalOverrides, exercise);
+    progressionSuggestion.textContent = describeProgression(suggestion, exercise);
     progressionSuggestion.hidden = false;
   } else {
     progressionSuggestion.hidden = true;

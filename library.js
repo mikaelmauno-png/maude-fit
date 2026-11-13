@@ -1254,10 +1254,11 @@ function openNextGoalEditor(templateId, exerciseId) {
   const exercise = appState.database.exercises.find((candidate) => candidate.id === exerciseId);
 
   // Starts from the weight today's sets are actually aiming at (the
-  // suggestion, unless a goal already overrides it), not from the workout template's
-  // stored target, which may be an old starting weight by now.
+  // suggestion, which already is the goal's weight when a goal applies),
+  // not from the workout template's stored target, which may be an old
+  // starting weight by now.
   const suggestion = getSuggestionForPlanned(planned);
-  const currentLoad = suggestion && !isGoalOverride(planned, suggestion) ? suggestion.load : planned.targetLoad;
+  const currentLoad = suggestion ? suggestion.load : planned.targetLoad;
 
   // `startingLoad` is remembered so saving can tell whether the load was
   // actually changed; see the save handler.

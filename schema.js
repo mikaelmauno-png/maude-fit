@@ -255,7 +255,9 @@ const DAY_STATUSES = ["normal", "poorSleep", "ill", "stressed"];
 //                                   // via "Set goal for next time", or null
 //                                   // if never. A goal set after the session
 //                                   // a progression suggestion is based on
-//                                   // overrides that suggestion; once a newer
+//                                   // replaces that suggestion's weight (the
+//                                   // reps are still worked out for it,
+//                                   // see suggestAtGoalLoad); once a newer
 //                                   // session is logged, suggestions take
 //                                   // over again (see isGoalOverride in
 //                                   // workout.js). So a goal lasts one session.

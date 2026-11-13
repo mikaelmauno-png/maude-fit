@@ -611,6 +611,69 @@ function buildDeloadSuggestion(lastNormalSession, repsMin, repsMax, exercise) {
 }
 
 
+// ---------------------------------------------------------------------------
+// A goal set by hand
+//
+// "Set goal for next time" picks the weight, but the rules still pick the
+// reps for it. So a goal steers progression rather than switching it off,
+// and the session done at the goal becomes the next suggestion's starting
+// point like any other.
+// ---------------------------------------------------------------------------
+
+// Turns today's normal suggestion into one at `goalLoad`. Returns the same
+// shape as suggestNextTarget, plus `isGoal: true` so the screen can say
+// it's the goal's weight.
+//
+// When the goal is the weight the rules suggested anyway, their reps are
+// kept as they are. Otherwise every set gets the reps estimated for the
+// goal weight (see estimateRepsAtLoad), kept inside the rep range.
+function suggestAtGoalLoad(database, suggestion, goalLoad, repsMin, repsMax, targetRir, activeSession, exerciseId) {
+  if (goalLoad === suggestion.load) {
+    return { ...suggestion, isGoal: true };
+  }
+
+  const exercise = database.exercises.find((candidate) => candidate.id === exerciseId);
+  // The same session the normal suggestion was worked out from.
+  const latestSession = findRecentSessions(database, exercise, activeSession, 1, true)[0];
+  const topLoadSets = findTopLoadSets(latestSession.workingSets);
+  const estimatedReps = estimateRepsAtLoad(
+    topLoadSets, goalLoad, targetRir, exercise, findLatestBodyweightKg(database)
+  );
+
+  // No estimate (a bodyweight exercise with no weigh-in): the bottom of
+  // the range is the safe start at a weight the rules didn't choose.
+  const goalSuggestion = estimatedReps === null
+    ? buildUniformSuggestion(
+      goalLoad, repsMin, suggestion.repsPerSet.length,
+      "No strength estimate yet, so start from the bottom of the range."
+    )
+    : buildUniformSuggestion(
+      goalLoad, Math.min(Math.max(estimatedReps, repsMin), repsMax), suggestion.repsPerSet.length,
+      `Reps estimated from last time's sets at your target RIR ${targetRir}.`
+    );
+  goalSuggestion.isGoal = true;
+  goalSuggestion.basedOnSessionStartedAt = suggestion.basedOnSessionStartedAt;
+  return goalSuggestion;
+}
+
+// How many reps `load` should allow while still finishing at the target
+// RIR, judged from one session's heaviest sets. The same strength estimate
+// canAddWeight uses. Null when the lifter's total weight isn't known.
+//
+// Rounded to the nearest whole rep rather than down: the estimate is an
+// average over several sets, so it's as likely to be a little low as a
+// little high.
+function estimateRepsAtLoad(topLoadSets, load, targetRir, exercise, bodyweightKg) {
+  const lastTotal = findTotalLoad(topLoadSets[0].load, exercise, bodyweightKg);
+  const newTotal = findTotalLoad(load, exercise, bodyweightKg);
+  if (lastTotal === null || newTotal === null || newTotal <= 0) {
+    return null;
+  }
+  const oneRepMax = estimateSessionOneRepMax(topLoadSets, lastTotal);
+  return Math.round(repsToFailureAt(newTotal, oneRepMax) - targetRir);
+}
+
+
 // The suggested reps for one set, counting from 0. A set beyond those done
 // last time (the plan has more sets now, or it's an extra set) gets the
 // lowest target, the safe choice for a set with nothing to compare to.
