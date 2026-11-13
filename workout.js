@@ -1855,6 +1855,45 @@ function findSetEntryPanelAnchor() {
   return visibleExerciseArea.querySelector(`[data-set-panel-anchor="${CSS.escape(exerciseId)}"]`);
 }
 
+// Closing the set panel shifts the page: the panel itself (a few hundred
+// pixels tall, sitting inside the exercise card) disappears, and the rest
+// timer, deload offer and cards are redrawn. The browser keeps the same
+// scroll position through all that, so everything below slides up and you
+// end up looking further down the list than where you were logging. This
+// runs `updatePage` and then scrolls by exactly the amount the tapped
+// exercise's pills moved, so they sit at the same spot on screen as before.
+function keepTappedExerciseInPlace(updatePage) {
+  const anchorBefore = setEntryPanel.hidden ? null : findSetEntryPanelAnchor();
+  if (anchorBefore === null) {
+    // Bottom sheet (History) or nothing open: there's nothing to keep put.
+    updatePage();
+    return;
+  }
+  const exerciseId = appState.setDraft.exerciseId;
+  const wasInReviewCard = freeformReviewCardElement.contains(anchorBefore);
+  const topBefore = anchorBefore.getBoundingClientRect().top;
+
+  updatePage();
+
+  // The old pills were thrown away by the redraw, so look up their
+  // replacement. setDraft is cleared by now, which is why the exercise id
+  // was saved above instead of calling findSetEntryPanelAnchor again.
+  const anchorAfter = findRedrawnAnchor(exerciseId, wasInReviewCard);
+  if (anchorAfter === null) {
+    return;
+  }
+  const distanceMoved = anchorAfter.getBoundingClientRect().top - topBefore;
+  window.scrollBy(0, distanceMoved);
+}
+
+function findRedrawnAnchor(exerciseId, wasInReviewCard) {
+  if (wasInReviewCard) {
+    return freeformReviewCardElement.hidden ? null : freeformReviewCardElement.querySelector(".set-pills");
+  }
+  const visibleExerciseArea = getActiveTemplate() ? templateWorkoutCardsElement : exerciseListElement;
+  return visibleExerciseArea.querySelector(`[data-set-panel-anchor="${CSS.escape(exerciseId)}"]`);
+}
+
 function closeSetEntryPanel() {
   appState.setDraft = null;
   appState.editingSetId = null;
@@ -1970,6 +2009,14 @@ warmupToggleButton.addEventListener("click", () => {
 });
 
 saveSetButton.addEventListener("click", () => {
+  keepTappedExerciseInPlace(saveSetDraft);
+});
+
+document.getElementById("cancelSetButton").addEventListener("click", () => {
+  keepTappedExerciseInPlace(closeSetEntryPanel);
+});
+
+function saveSetDraft() {
   const draft = appState.setDraft;
   // RIR is meaningless for a warmup, so it's stored as null rather than a
   // made-up number — schema.js's contract calls this out explicitly.
@@ -2018,11 +2065,7 @@ saveSetButton.addEventListener("click", () => {
   closeSetEntryPanel();
   // The workout's deload offer is only for before the first set.
   renderBackstopOfferCards();
-});
-
-document.getElementById("cancelSetButton").addEventListener("click", () => {
-  closeSetEntryPanel();
-});
+}
 
 deleteSetButton.addEventListener("click", () => {
   // A set is a leaf record nothing else references by id, unlike Exercise or
@@ -2036,7 +2079,7 @@ deleteSetButton.addEventListener("click", () => {
   const index = appState.database.sets.findIndex((set) => set.id === appState.editingSetId);
   appState.database.sets.splice(index, 1);
   saveDatabase(appState.database);
-  closeSetEntryPanel();
+  keepTappedExerciseInPlace(closeSetEntryPanel);
 });
 
 
